@@ -1,0 +1,164 @@
+[
+  {
+    "name": "the reported evening — zoom, after-office and yoga",
+    "clashes": [
+      {
+        "a": "zoom",
+        "b": "after",
+        "overlapMinutes": 30,
+        "travelShortfall": null,
+        "questionEn": "\"פגישת זום\" & \"אפטר אופיס\" overlap by 30 min.",
+        "questionHe": "\"פגישת זום\" & \"אפטר אופיס\" חופפות ב-30 דק'.",
+        "options": [
+          {
+            "kind": "attend-remotely",
+            "taskId": "zoom",
+            "newTime": null,
+            "labelEn": "Join \"פגישת זום\" on the way to \"אפטר אופיס\"",
+            "labelHe": "להצטרף ל\"פגישת זום\" בדרך ל\"אפטר אופיס\""
+          },
+          {
+            "kind": "delay-next",
+            "taskId": "after",
+            "newTime": "19:00",
+            "labelEn": "Start \"אפטר אופיס\" at 19:00 instead — after \"פגישת זום\"",
+            "labelHe": "להתחיל את \"אפטר אופיס\" ב-19:00 — אחרי \"פגישת זום\""
+          },
+          {
+            "kind": "shorten",
+            "taskId": "after",
+            "newTime": "19:00",
+            "labelEn": "Start \"אפטר אופיס\" at 19:00 instead — 240 min rather than 270",
+            "labelHe": "להתחיל את \"אפטר אופיס\" ב-19:00 — 240 דק' במקום 270"
+          }
+        ]
+      },
+      {
+        "a": "after",
+        "b": "yoga",
+        "overlapMinutes": 60,
+        "travelShortfall": null,
+        "questionEn": "\"אפטר אופיס\" & \"יוגה\" overlap by 60 min.",
+        "questionHe": "\"אפטר אופיס\" & \"יוגה\" חופפות ב-60 דק'.",
+        "options": [
+          {
+            "kind": "end-earlier",
+            "taskId": "after",
+            "newTime": "19:00",
+            "labelEn": "Keep both — leave \"אפטר אופיס\" at 19:00 — in time for \"יוגה\"",
+            "labelHe": "להספיק את שתיהן — לצאת מ\"אפטר אופיס\" ב-19:00 — בזמן ל\"יוגה\""
+          },
+          {
+            "kind": "shorten",
+            "taskId": "after",
+            "newTime": "20:00",
+            "labelEn": "Start \"אפטר אופיס\" at 20:00 instead — 180 min rather than 270",
+            "labelHe": "להתחיל את \"אפטר אופיס\" ב-20:00 — 180 דק' במקום 270"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "a conference that swallows the evening, and a class across town",
+    "clashes": [
+      {
+        "a": "conf",
+        "b": "pilates",
+        "overlapMinutes": 60,
+        "travelShortfall": 270,
+        "questionEn": "\"conference\" & \"pilates\" overlap by 60 min.",
+        "questionHe": "\"conference\" & \"pilates\" חופפות ב-60 דק'.",
+        "options": [
+          {
+            "kind": "end-earlier",
+            "taskId": "conf",
+            "newTime": "17:30",
+            "labelEn": "Keep both — leave \"conference\" at 17:30 — 30 min to \"pilates\"",
+            "labelHe": "להספיק את שתיהן — לצאת מ\"conference\" ב-17:30 — 30 דק' ל\"pilates\""
+          },
+          {
+            "kind": "delay-next",
+            "taskId": "pilates",
+            "newTime": "22:30",
+            "labelEn": "Start \"pilates\" at 22:30 instead — after \"conference\"",
+            "labelHe": "להתחיל את \"pilates\" ב-22:30 — אחרי \"conference\""
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "back-to-back in two places — zero overlap, still impossible",
+    "clashes": [
+      {
+        "a": "gym",
+        "b": "beach",
+        "overlapMinutes": 0,
+        "travelShortfall": 25,
+        "questionEn": "\"gym\" ends when \"beach\" starts, but they are 25 min apart. Which gives?",
+        "questionHe": "\"gym\" נגמרת כש\"beach\" מתחילה, אבל יש ביניהן 25 דק' נסיעה. מה מוותר?",
+        "options": [
+          {
+            "kind": "move",
+            "taskId": "beach",
+            "newTime": "21:30",
+            "labelEn": "Move \"beach\" to 21:30",
+            "labelHe": "להזיז את \"beach\" ל-21:30"
+          },
+          {
+            "kind": "end-earlier",
+            "taskId": "gym",
+            "newTime": "19:35",
+            "labelEn": "Keep both — leave \"gym\" at 19:35 — 25 min to \"beach\"",
+            "labelHe": "להספיק את שתיהן — לצאת מ\"gym\" ב-19:35 — 25 דק' ל\"beach\""
+          },
+          {
+            "kind": "delay-next",
+            "taskId": "beach",
+            "newTime": "20:25",
+            "labelEn": "Start \"beach\" at 20:25 instead — after \"gym\"",
+            "labelHe": "להתחיל את \"beach\" ב-20:25 — אחרי \"gym\""
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "two appointments nobody can move",
+    "clashes": [
+      {
+        "a": "interview",
+        "b": "doctor",
+        "overlapMinutes": 60,
+        "travelShortfall": 75,
+        "questionEn": "\"job interview\" & \"dentist\" overlap by 60 min and neither can move. Which matters more today?",
+        "questionHe": "\"job interview\" & \"dentist\" חופפות ב-60 דק' ואי אפשר להזיז אף אחת. מה יותר חשוב לך היום?",
+        "options": [
+          {
+            "kind": "choose",
+            "taskId": "interview",
+            "newTime": null,
+            "labelEn": "Keep \"job interview\" · let go of \"dentist\"",
+            "labelHe": "להשאיר את \"job interview\" · לוותר על \"dentist\""
+          },
+          {
+            "kind": "choose",
+            "taskId": "doctor",
+            "newTime": null,
+            "labelEn": "Keep \"dentist\" · let go of \"job interview\"",
+            "labelHe": "להשאיר את \"dentist\" · לוותר על \"job interview\""
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "a completed task cannot clash with anything",
+    "clashes": []
+  },
+  {
+    "name": "a long evening plan with nowhere left to go",
+    "clashes": []
+  }
+]

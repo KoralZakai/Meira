@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  launchd agent for the Lumi bug fixer.
+
+  RunAtLoad + KeepAlive means it starts at login and comes back if it dies, so
+  it is running whenever the Mac is on — which is the whole deal we accepted by
+  putting the fixer here instead of in CI.
+
+  Install:
+    cp tools/lumi-bug-agent/com.lumi.bugagent.plist ~/Library/LaunchAgents/
+    # put the real token in ~/Library/LaunchAgents/com.lumi.bugagent.plist
+    launchctl load  ~/Library/LaunchAgents/com.lumi.bugagent.plist
+    launchctl unload ~/Library/LaunchAgents/com.lumi.bugagent.plist   # to stop
+
+  Logs:  tail -f /tmp/lumi-bug-agent.log
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.lumi.bugagent</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/node</string>
+    <string>/Users/user/dev/Lumi-My-AI-Assistant/tools/lumi-bug-agent/agent.mjs</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>LUMI_ADMIN_TOKEN</key>
+    <string>PUT_YOUR_ADMIN_TOKEN_HERE</string>
+    <key>LUMI_SERVER_URL</key>
+    <string>https://lumi-whatsapp.fly.dev</string>
+    <key>LUMI_REPO</key>
+    <string>/Users/user/dev/Lumi-My-AI-Assistant</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/user/dev/Lumi-My-AI-Assistant</string>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/lumi-bug-agent.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/lumi-bug-agent.log</string>
+</dict>
+</plist>

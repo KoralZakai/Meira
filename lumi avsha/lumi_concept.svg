@@ -1,0 +1,134 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="640" viewBox="0 0 600 640" font-family="'Segoe UI',system-ui,sans-serif">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="42%" r="70%">
+      <stop offset="0%" stop-color="#FFF6E0"/>
+      <stop offset="55%" stop-color="#FFE8C7"/>
+      <stop offset="100%" stop-color="#FCD9AE"/>
+    </radialGradient>
+    <linearGradient id="hair" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#F7DE8B"/>
+      <stop offset="100%" stop-color="#EEC65A"/>
+    </linearGradient>
+    <linearGradient id="hairShade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#EEC65A"/>
+      <stop offset="100%" stop-color="#E0B142"/>
+    </linearGradient>
+    <linearGradient id="skin" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FBD9BE"/>
+      <stop offset="100%" stop-color="#F6C9A6"/>
+    </linearGradient>
+    <linearGradient id="shirt" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FBD7E4"/>
+      <stop offset="100%" stop-color="#F6BBD1"/>
+    </linearGradient>
+    <radialGradient id="halo" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- background -->
+  <rect width="600" height="640" fill="url(#bg)"/>
+
+  <!-- sun rays -->
+  <g stroke="#FFD98A" stroke-width="14" stroke-linecap="round" opacity="0.45">
+    <line x1="300" y1="300" x2="300" y2="40"/>
+    <line x1="300" y1="300" x2="70" y2="120"/>
+    <line x1="300" y1="300" x2="530" y2="120"/>
+    <line x1="300" y1="300" x2="40" y2="330"/>
+    <line x1="300" y1="300" x2="560" y2="330"/>
+    <line x1="300" y1="300" x2="120" y2="60"/>
+    <line x1="300" y1="300" x2="480" y2="60"/>
+  </g>
+  <circle cx="300" cy="300" r="230" fill="url(#halo)"/>
+
+  <!-- shoulders / baby pink shirt -->
+  <path d="M150 640 Q150 500 300 500 Q450 500 450 640 Z" fill="url(#shirt)"/>
+  <path d="M300 500 Q360 505 380 560 L300 575 L220 560 Q240 505 300 500 Z" fill="#FFFFFF" opacity="0.55"/>
+  <!-- collar -->
+  <path d="M262 505 Q300 540 338 505 L322 500 Q300 522 278 500 Z" fill="#F2A9C6"/>
+
+  <!-- neck -->
+  <path d="M262 430 Q262 490 300 500 Q338 490 338 430 Z" fill="url(#skin)"/>
+  <path d="M262 430 Q300 470 338 430 L338 452 Q300 486 262 452 Z" fill="#E9B48F" opacity="0.5"/>
+
+  <!-- hair back -->
+  <path d="M150 300 Q150 120 300 118 Q450 120 450 300 Q470 470 405 500 Q430 330 390 250 L210 250 Q170 330 195 500 Q130 470 150 300 Z" fill="url(#hairShade)"/>
+
+  <!-- face -->
+  <ellipse cx="300" cy="300" rx="120" ry="140" fill="url(#skin)"/>
+
+  <!-- ears -->
+  <ellipse cx="182" cy="305" rx="20" ry="28" fill="url(#skin)"/>
+  <ellipse cx="418" cy="305" rx="20" ry="28" fill="url(#skin)"/>
+
+  <!-- blush -->
+  <ellipse cx="232" cy="330" rx="30" ry="18" fill="#F7A9BE" opacity="0.55"/>
+  <ellipse cx="368" cy="330" rx="30" ry="18" fill="#F7A9BE" opacity="0.55"/>
+
+  <!-- hair front / bangs -->
+  <path d="M181 300 Q160 140 300 128 Q440 140 419 300 Q430 220 400 195 Q360 150 300 152 Q240 150 200 195 Q170 220 181 300 Z" fill="url(#hair)"/>
+  <path d="M300 128 Q210 132 196 250 Q250 175 300 178 Q300 150 300 128 Z" fill="url(#hair)"/>
+  <path d="M300 128 Q390 132 404 250 Q350 175 300 178 Q300 150 300 128 Z" fill="url(#hairShade)"/>
+  <!-- side sweeps -->
+  <path d="M188 235 Q168 360 205 470 Q185 340 210 250 Z" fill="url(#hair)"/>
+  <path d="M412 235 Q432 360 395 470 Q415 340 390 250 Z" fill="url(#hairShade)"/>
+  <!-- fringe strands -->
+  <path d="M300 178 Q262 182 250 245 Q290 200 300 205 Q312 200 350 245 Q338 182 300 178 Z" fill="#FBEAB0" opacity="0.7"/>
+
+  <!-- eyebrows -->
+  <path d="M228 258 Q252 246 278 256" stroke="#D9A94A" stroke-width="7" fill="none" stroke-linecap="round"/>
+  <path d="M322 256 Q348 246 372 258" stroke="#D9A94A" stroke-width="7" fill="none" stroke-linecap="round"/>
+
+  <!-- eyes (green) -->
+  <g>
+    <ellipse cx="253" cy="292" rx="27" ry="22" fill="#FFFFFF"/>
+    <ellipse cx="347" cy="292" rx="27" ry="22" fill="#FFFFFF"/>
+    <circle cx="256" cy="293" r="15" fill="#4FA96B"/>
+    <circle cx="344" cy="293" r="15" fill="#4FA96B"/>
+    <circle cx="256" cy="293" r="12" fill="#3E8F57"/>
+    <circle cx="344" cy="293" r="12" fill="#3E8F57"/>
+    <circle cx="256" cy="293" r="6.5" fill="#22331F"/>
+    <circle cx="344" cy="293" r="6.5" fill="#22331F"/>
+    <circle cx="261" cy="287" r="4" fill="#FFFFFF"/>
+    <circle cx="349" cy="287" r="4" fill="#FFFFFF"/>
+    <!-- lashes -->
+    <path d="M226 288 Q224 280 232 276" stroke="#6B4A1E" stroke-width="3" fill="none" stroke-linecap="round"/>
+    <path d="M374 288 Q376 280 368 276" stroke="#6B4A1E" stroke-width="3" fill="none" stroke-linecap="round"/>
+  </g>
+
+  <!-- stylish cat-eye glasses -->
+  <g fill="none" stroke="#3A4A52" stroke-width="6">
+    <path d="M216 296 Q214 268 250 266 Q292 266 288 292 Q288 316 250 318 Q220 318 216 296 Z"/>
+    <path d="M384 296 Q386 268 350 266 Q308 266 312 292 Q312 316 350 318 Q380 318 384 296 Z"/>
+    <path d="M288 288 Q300 282 312 288"/>
+    <path d="M216 286 L186 292"/>
+    <path d="M384 286 L414 292"/>
+  </g>
+  <!-- cat-eye tips -->
+  <path d="M214 272 Q206 264 214 262 Q222 264 224 272 Z" fill="#3A4A52"/>
+  <path d="M386 272 Q394 264 386 262 Q378 264 376 272 Z" fill="#3A4A52"/>
+
+  <!-- nose -->
+  <path d="M296 306 Q290 330 302 336 Q312 332 306 306" fill="none" stroke="#E3A985" stroke-width="4" stroke-linecap="round"/>
+
+  <!-- freckles -->
+  <g fill="#D79A6E" opacity="0.8">
+    <circle cx="228" cy="322" r="3"/><circle cx="242" cy="332" r="2.6"/><circle cx="254" cy="326" r="2.4"/>
+    <circle cx="238" cy="318" r="2.2"/><circle cx="222" cy="334" r="2.4"/>
+    <circle cx="372" cy="322" r="3"/><circle cx="358" cy="332" r="2.6"/><circle cx="346" cy="326" r="2.4"/>
+    <circle cx="362" cy="318" r="2.2"/><circle cx="378" cy="334" r="2.4"/>
+    <circle cx="292" cy="330" r="2.2"/><circle cx="308" cy="330" r="2.2"/>
+  </g>
+
+  <!-- big friendly smile -->
+  <path d="M256 356 Q300 402 344 356 Q322 372 300 372 Q278 372 256 356 Z" fill="#7A2E37"/>
+  <path d="M266 360 Q300 384 334 360 Q300 372 266 360 Z" fill="#FFFFFF"/>
+  <path d="M292 378 Q300 392 308 378 Q300 384 292 378 Z" fill="#F28BA3"/>
+
+  <!-- little sun sparkle -->
+  <g fill="#FFC24B">
+    <path d="M470 150 l6 16 16 6 -16 6 -6 16 -6 -16 -16 -6 16 -6 Z"/>
+    <path d="M120 420 l4 11 11 4 -11 4 -4 11 -4 -11 -11 -4 11 -4 Z"/>
+  </g>
+</svg>

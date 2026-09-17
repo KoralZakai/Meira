@@ -1,0 +1,93 @@
+# Fly.io deploys the Python FastAPI backend that lives in server/.
+# (The mobile app is NOT deployed here — it ships as an Android build via EAS.)
+# Build context is the repo root, so the Dockerfile copies from server/.
+#
+# ─── READ THIS BEFORE CHANGING THE APP NAME ─────────────────────────────────
+#
+# There are TWO apps on this Fly account and only one of them is real:
+#
+#   lumi-whatsapp         THIS one. The phone points here (EXPO_PUBLIC_SERVER_URL),
+#                         Meta posts the WhatsApp webhook here, and it holds the
+#                         only data volume — lumi_data, mounted at /data.
+#   lumi-my-ai-assistant  Stale. No volume. Still deployed and still answers
+#                         /health, which is exactly how it fools you.
+#
+# This file used to say `app = 'lumi-my-ai-assistant'` with internal_port 8080,
+# region iad and NO [[mounts]] — it was generated for that app and never updated.
+# Deploying it as written sent the build to the stale app; deploying it AT the
+# live one (`fly deploy -a lumi-whatsapp`) would have been worse, because it
+# would have moved the service to port 8080 while the container still binds 8000
+# (instant outage) and dropped the volume mount, leaving /data an empty
+# ephemeral directory. Anything reading the JSON stores would then have found
+# nothing and reported it as "0 rows" — a success message for data loss.
+#
+# The values below are this app's LIVE configuration, pulled with
+# `fly config save -a lumi-whatsapp` on 2026-09-07, so `fly deploy` from the
+# repo root now ships the right code to the right app with no config drift.
+#
+# Two of them are load-bearing and must not be "tidied":
+#   internal_port = 8000   the Dockerfile's CMD binds ${PORT:-8000}
+#   [[mounts]]             without it the server loses every JSON store
+#
+# THIS IS THE ONLY FLY CONFIG IN THE REPO. There used to be a second one at
+# server/fly.toml, and the two drifted: the root said auto_stop_machines='stop'
+# while CI deployed the server/ copy that said 'off'. Editing the file you are
+# looking at had no effect on production. If you ever find yourself adding a
+# second fly.toml, that is the bug, not the fix.
+#
+# See https://fly.io/docs/reference/configuration/
+
+app = 'lumi-whatsapp'
+primary_region = 'ams'
+# Swap turns an OOM KILL into a slowdown: the kernel evicts cold pages to disk
+# instead of shooting the process. Must be top-level — inside [[vm]] it is
+# silently ignored and a deploy reports success while SwapTotal stays 0.
+swap_size_mb = 512
+
+[env]
+  DATA_DIR = '/data'
+
+[[mounts]]
+  source = 'lumi_data'
+  destination = '/data'
+
+[http_service]
+  # internal_port MUST stay 8000 — the Dockerfile's CMD binds ${PORT:-8000}.
+  # Setting it to 8080 is an instant outage; see the header of this file.
+  internal_port = 8000
+  force_https = true
+  # Free tier during development: the machine sleeps when idle and
+  # auto_start_machines wakes it on any request (including Meta's webhook).
+  # Safe for travel alerts — since 2026-09-07 the PHONE owns departure
+  # reminders (server/reminders._app_owns_departures), so nothing that has to
+  # ring on time depends on this machine being awake. Standalone WhatsApp
+  # reminders ("remind me at 15:00") DO still need it up, and will fire late
+  # until something pings it — a free cron (GitHub Actions → /health) is the
+  # planned fix.
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type = 'requests'
+    hard_limit = 25
+    soft_limit = 20
+
+[[vm]]
+  # 256mb is enough again. It was not on 2026-08-28, when the server was
+  # OOM-killed (exit 137) and dropped the WhatsApp message Meta was delivering
+  # during the ~8s restart. There was never a leak — it was the import list:
+  # langchain_openai + langgraph cost ~35 MB to supply a `while` loop the model
+  # does the thinking inside anyway. That loop now lives in react_loop.py
+  # against the openai SDK already resident.
+  #
+  # Measured ON THE BOX after deploying, which is the number to trust:
+  #     import main                     61.1 MB peak
+  #     one full agent turn             72.3 MB peak
+  #     uvicorn resident, idle          90.6 MB   (was ~100)
+  #     MemAvailable                    81.5 MB   (was ~57)
+  #
+  # ~21 MB of headroom is what actually appeared — do not quote 35 MB.
+  memory = '256mb'
+  cpus = 1
+  memory_mb = 256

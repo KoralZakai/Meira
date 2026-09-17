@@ -1,0 +1,13 @@
+{
+  "id": "multi-task-example",
+  "description": "User says multiple tasks at once: simple, with location/time, with deadline",
+  "input": "call mom tomorrow, finish SVM homework by Friday, go to yoga at 8pm in Tel Aviv, sign into Nebius challenge, have interview in Binyamina on 10/6 at 10am",
+  "expected_split": [
+    "call mom tomorrow",
+    "finish SVM homework by Friday",
+    "go to yoga at 8pm in Tel Aviv",
+    "sign into Nebius challenge",
+    "have interview in Binyamina on 10/6 at 10am"
+  ],
+  "expected_count": 5
+}

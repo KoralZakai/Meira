@@ -1,0 +1,77 @@
+{
+  "name": "Dana Levi",
+  "note": "Invented persona. A co-parent with the kids half the week and a job that moves her around the country — the shape that breaks naive schedulers, because her constraints change by weekday and her travel time dominates everything.",
+  "home": "רחוב ארלוזורוב 40, תל אביב",
+  "work_base": "רחוב הרצל 12, רמת גן",
+  "transport_default": "car",
+  "wake": "06:30",
+  "sleep": "23:00",
+  "constraints": [
+    {"kind": "kids", "days": ["sunday", "monday", "tuesday"], "note": "kids with her — must collect from school in Givatayim by 16:00 and cannot travel after 17:30"},
+    {"kind": "kids", "days": ["wednesday", "thursday", "friday", "saturday"], "note": "kids with their other parent — free to travel and stay out late"},
+    {"kind": "hard", "note": "Friday 14:00 onward is family dinner prep — nothing scheduled"},
+    {"kind": "routine", "note": "gym 3x a week, usually evenings, never before work"},
+    {"kind": "habit", "note": "will not schedule two long drives on the same day"},
+    {"kind": "habit", "note": "works best on deep tasks in the morning; calls and admin after 15:00"}
+  ],
+  "known_places": {
+    "חדר כושר": "יגאל אלון 94, תל אביב",
+    "בית ספר": "כצנלסון 8, גבעתיים",
+    "משרד": "רחוב הרצל 12, רמת גן"
+  },
+  "week": [
+    {"day": "sunday",  "date": "2026-09-06", "tasks": [
+      {"text": "ישיבת צוות במשרד", "time": "09:00", "duration": 90, "place": "רחוב הרצל 12, רמת גן", "fixed": true},
+      {"text": "איסוף ילדים מבית הספר", "time": "16:00", "duration": 30, "place": "כצנלסון 8, גבעתיים", "fixed": true},
+      {"text": "לסיים מצגת לרבעון", "duration": 120, "fixed": false}
+    ]},
+    {"day": "monday", "date": "2026-09-07", "tasks": [
+      {"text": "פגישת לקוח בחיפה", "time": "11:00", "duration": 90, "place": "שדרות המגינים 30, חיפה", "fixed": true},
+      {"text": "איסוף ילדים מבית הספר", "time": "16:00", "duration": 30, "place": "כצנלסון 8, גבעתיים", "fixed": true}
+    ]},
+    {"day": "tuesday", "date": "2026-09-08", "tasks": [
+      {"text": "שיחה עם ספק", "time": "15:30", "duration": 30, "fixed": true},
+      {"text": "איסוף ילדים מבית הספר", "time": "16:00", "duration": 30, "place": "כצנלסון 8, גבעתיים", "fixed": true}
+    ]},
+    {"day": "wednesday", "date": "2026-09-09", "tasks": [
+      {"text": "כנס בבאר שבע", "time": "10:00", "duration": 240, "place": "רחוב רגר 1, באר שבע", "fixed": true},
+      {"text": "אימון בחדר כושר", "time": "20:00", "duration": 60, "fixed": false}
+    ]},
+    {"day": "thursday", "date": "2026-09-10", "tasks": [
+      {"text": "ישיבת צוות במשרד", "time": "09:00", "duration": 90, "place": "רחוב הרצל 12, רמת גן", "fixed": true},
+      {"text": "לסיים מצגת לרבעון", "duration": 120, "fixed": false}
+    ]}
+  ],
+  "cases": [
+    {
+      "id": "cancellation",
+      "prompt": "פגישת הלקוח בחיפה ביום שני בוטלה. מה לעשות עם הזמן שהתפנה?",
+      "expects": [
+        "notices a 4-5 hour hole opened on Monday",
+        "does NOT propose anything requiring travel after 17:30 (kids)",
+        "offers the unfinished מצגת לרבעון rather than inventing new work",
+        "prefers something near home or at the משרד — not a second long drive"
+      ]
+    },
+    {
+      "id": "schedule_new",
+      "prompt": "צריך לקבוע פגישה חדשה עם ספק בירושלים, שעה וחצי. מתי?",
+      "expects": [
+        "rules out sun/mon/tue — Jerusalem plus a 16:00 school pickup does not fit",
+        "rules out Friday afternoon",
+        "proposes Wednesday or Thursday",
+        "flags that Wednesday already has the Beer Sheva conference — two long drives in one day is against her habit"
+      ]
+    },
+    {
+      "id": "am_i_free",
+      "prompt": "חברים רוצים להיפגש ביום רביעי בערב בין 19:00 ל-22:00. אני פנויה?",
+      "expects": [
+        "checks Wednesday, not today",
+        "sees the Beer Sheva conference ends 14:00 and the drive home",
+        "sees the 20:00 gym is flexible, not fixed",
+        "answers plainly yes/no and says what it would move"
+      ]
+    }
+  ]
+}

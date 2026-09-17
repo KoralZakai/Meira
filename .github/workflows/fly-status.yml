@@ -1,0 +1,12 @@
+name: Fly Status
+on: { workflow_dispatch: {} }
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - run: |
+          echo "===== STATUS ====="; flyctl status -a lumi-whatsapp || true
+          echo "===== RECENT LOGS ====="; timeout 25 flyctl logs -a lumi-whatsapp --no-tail || true
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

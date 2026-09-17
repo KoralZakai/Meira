@@ -1,0 +1,85 @@
+# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# local env files
+.env
+.env.*
+.env*.local
+!.env.example
+
+# typescript
+*.tsbuildinfo
+
+# generated native folders
+/ios
+/android
+
+# Nebius job local artifacts
+nebius/**/data/
+nebius/**/data-*/
+nebius/**/.venv/
+nebius/**/*.log
+
+# ─── Server image (Dockerfile does `COPY server/ .`) ─────────────────────────
+# Everything below is either personal data or dead weight, and until now all of
+# it was baked into the deployed image.
+#
+# The JSON stores are the ones that matter: at RUNTIME every store is opened
+# from config.DATA_DIR (/data, the Fly volume), never from the code directory,
+# so these copies were never read — they simply travelled to the registry with
+# real conversations, profiles and travel history inside them. Found on
+# 2026-09-15 when a deploy reported a 728 MB build context.
+server/conversations.json
+server/profiles.json
+server/user_memory.json
+server/reminders.json
+server/active_session.json
+server/travel_prefs.json
+server/known_places.json
+server/bug_reports.json
+server/judge_log.json
+server/llm_usage.json
+server/agents.json
+server/sessions.json
+server/cv_master.json
+server/hr_pending.json
+
+# 144 MB of virtualenv that the image rebuilds from requirements.txt anyway —
+# and that `COPY server/ .` would lay on top of the pip-installed packages.
+server/.venv/
+server/__pycache__/
+**/__pycache__/
+
+# Tests and fixtures do not run in the production image.
+server/tests/
+server/personas/
+server/personality_parity_fixture.json

@@ -1,0 +1,105 @@
+{
+  "expo": {
+    "name": "Lumi",
+    "slug": "lumi",
+    "version": "1.0.0",
+    "newArchEnabled": false,
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Allow Lumi to use your microphone for voice check-ins.",
+        "NSSpeechRecognitionUsageDescription": "Allow Lumi to transcribe your speech into tasks.",
+        "NSContactsUsageDescription": "Allow Lumi to pick a person from your contacts for task details.",
+        "NSLocationWhenInUseUsageDescription": "Allow Lumi to access your location for nearby task reminders.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Allow Lumi to alert you when you are near task locations."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#FFD166",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "RECORD_AUDIO",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "READ_CONTACTS",
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE",
+        "SCHEDULE_EXACT_ALARM",
+        "USE_EXACT_ALARM",
+        "com.android.alarm.permission.SET_ALARM"
+      ],
+      "blockedPermissions": [
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.WRITE_CONTACTS",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ],
+      "package": "com.lumi.app",
+      "googleServicesFile": "./google-services.json"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-notifications",
+      "expo-status-bar",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Allow Lumi to use your microphone for voice check-ins.",
+          "speechRecognitionPermission": "Allow Lumi to transcribe your speech into tasks.",
+          "androidSpeechServicePackages": [
+            "com.google.android.googlequicksearchbox",
+            "com.google.android.tts",
+            "com.google.android.as"
+          ]
+        }
+      ],
+      "expo-secure-store",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Lumi needs background location to verify arrivals.",
+          "locationAlwaysPermission": "Lumi needs background location to verify arrivals.",
+          "locationWhenInUsePermission": "Lumi uses your location for travel time calculations."
+        }
+      ],
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "Lumi reads contacts to match names you mention."
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "newArchEnabled": false
+          }
+        }
+      ],
+      "expo-font"
+    ],
+    "scheme": [
+      "lumi",
+      "com.googleusercontent.apps.433828308700-0rnh00aa6d183f9q4sjh1ii779qvu2am"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "3d39395e-fcfd-462f-8e5f-3655d8df53b8"
+      }
+    },
+    "owner": "koralzakai"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "Lumi — your assistant",
+  "short_name": "Lumi",
+  "description": "Your animated assistant that lightens the day.",
+  "start_url": "./?talk=1",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FFF6E9",
+  "theme_color": "#F6BBD1",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Talk to Lumi", "short_name": "Talk", "url": "./?talk=1",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] }
+  ]
+}

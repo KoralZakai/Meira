@@ -1,0 +1,192 @@
+[
+  {
+    "quickType": "ESFP",
+    "quickConf": 0.4,
+    "signals": [],
+    "expected": {
+      "finalType": "ESFP",
+      "behavioralType": null,
+      "signalCount": 0,
+      "behavioralConfidence": 0.0,
+      "finalConfidence": 0.4
+    }
+  },
+  {
+    "quickType": "ESFP",
+    "quickConf": 0.4,
+    "signals": [
+      {
+        "signalType": "suggestion_rejected",
+        "confidence": 0.5
+      },
+      {
+        "signalType": "detail_requested",
+        "confidence": 0.6
+      },
+      {
+        "signalType": "logic_motivated",
+        "confidence": 0.7
+      },
+      {
+        "signalType": "flexible_task_completed",
+        "confidence": 0.8
+      }
+    ],
+    "expected": {
+      "finalType": "ISTP",
+      "behavioralType": "ISTP",
+      "signalCount": 4,
+      "behavioralConfidence": 0.4,
+      "finalConfidence": 0.4
+    }
+  },
+  {
+    "quickType": "INTJ",
+    "quickConf": 0.4,
+    "signals": [
+      {
+        "signalType": "suggestion_accepted",
+        "confidence": 0.4
+      },
+      {
+        "signalType": "suggestion_accepted",
+        "confidence": 0.4
+      },
+      {
+        "signalType": "emotion_motivated",
+        "confidence": 0.9
+      }
+    ],
+    "expected": {
+      "finalType": "ENFJ",
+      "behavioralType": "ENFJ",
+      "signalCount": 3,
+      "behavioralConfidence": 0.3,
+      "finalConfidence": 0.4
+    }
+  },
+  {
+    "quickType": null,
+    "quickConf": 0.0,
+    "signals": [
+      {
+        "signalType": "detail_requested",
+        "confidence": 0.5
+      }
+    ],
+    "expected": {
+      "finalType": "ESTJ",
+      "behavioralType": "ESTJ",
+      "signalCount": 1,
+      "behavioralConfidence": 0.1,
+      "finalConfidence": 0.1
+    }
+  },
+  {
+    "quickType": "ENFP",
+    "quickConf": 0.4,
+    "signals": [
+      {
+        "signalType": "big_picture_preferred",
+        "confidence": 0.6
+      },
+      {
+        "signalType": "big_picture_preferred",
+        "confidence": 0.6
+      },
+      {
+        "signalType": "logic_motivated",
+        "confidence": 0.3
+      },
+      {
+        "signalType": "emotion_motivated",
+        "confidence": 0.7
+      }
+    ],
+    "expected": {
+      "finalType": "ENFP",
+      "behavioralType": "ENFP",
+      "signalCount": 4,
+      "behavioralConfidence": 0.4,
+      "finalConfidence": 0.4
+    }
+  },
+  {
+    "quickType": "ISTJ",
+    "quickConf": 0.4,
+    "signals": [
+      {
+        "signalType": "suggestion_accepted",
+        "confidence": 1.0
+      },
+      {
+        "signalType": "suggestion_accepted",
+        "confidence": 1.0
+      },
+      {
+        "signalType": "suggestion_accepted",
+        "confidence": 1.0
+      },
+      {
+        "signalType": "suggestion_accepted",
+        "confidence": 1.0
+      },
+      {
+        "signalType": "suggestion_accepted",
+        "confidence": 1.0
+      },
+      {
+        "signalType": "suggestion_accepted",
+        "confidence": 1.0
+      },
+      {
+        "signalType": "suggestion_accepted",
+        "confidence": 1.0
+      },
+      {
+        "signalType": "suggestion_accepted",
+        "confidence": 1.0
+      },
+      {
+        "signalType": "suggestion_accepted",
+        "confidence": 1.0
+      },
+      {
+        "signalType": "suggestion_accepted",
+        "confidence": 1.0
+      },
+      {
+        "signalType": "suggestion_accepted",
+        "confidence": 1.0
+      },
+      {
+        "signalType": "suggestion_accepted",
+        "confidence": 1.0
+      }
+    ],
+    "expected": {
+      "finalType": "ESTJ",
+      "behavioralType": "ESTJ",
+      "signalCount": 12,
+      "behavioralConfidence": 1.0,
+      "finalConfidence": 1.0
+    }
+  },
+  {
+    "quickType": "INTP",
+    "quickConf": 0.4,
+    "signals": [
+      {
+        "signalType": "not_a_real_signal",
+        "confidence": 1.0
+      }
+    ],
+    "expected": {
+      "finalType": "INTP",
+      "behavioralType": "INTP",
+      "signalCount": 1,
+      "behavioralConfidence": 0.1,
+      "finalConfidence": 0.4
+    }
+  }
+]

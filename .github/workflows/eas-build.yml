@@ -1,0 +1,111 @@
+# Build the Android APK on GitHub's runners.
+#
+# WHY THIS EXISTS
+# The server deploys itself: every push to master runs fly-deploy.yml and
+# lumi-whatsapp is live within a minute. The APP does not. Nothing in this repo
+# ever built an APK, so `master` could be twenty commits ahead of whatever is
+# installed on the phone and no one would see a difference — the phone is not
+# behind, it was never asked to move.
+#
+# It is also the same problem fly-deploy.yml solved: the build tool cannot run
+# where the work happens (there, a blocked fly.exe; here, no local Android
+# toolchain and no reachable expo.dev). Run it on a runner instead.
+#
+# ONE-TIME SETUP (you, in the browser):
+#   1. https://expo.dev/accounts/[account]/settings/access-tokens
+#      → "Create token". Copy it — it is shown once.
+#   2. GitHub → repo → Settings → Secrets and variables → Actions →
+#      New repository secret → name EXPO_TOKEN, value = the token.
+# After that: Actions tab → "EAS Build" → Run workflow.
+#
+# DISPATCH ONLY, DELIBERATELY. This does not run on push. EAS free-tier builds
+# are rationed per month and a 20-minute Android build on every commit would
+# spend them on changes nobody is going to install. You decide when a build is
+# worth one.
+#
+# PROFILE. 'preview' is the one to use. It is `distribution: internal` +
+# assembleRelease: a standalone APK with the JS bundle compiled in, installable
+# and runnable with no computer involved. 'development' is NOT an app — it is a
+# dev client shell that boots to a "Start a local development server with npx
+# expo start" screen and can do nothing until a Metro server on a laptop hands
+# it a bundle. Installing that build and expecting Lumi is the failure this
+# workflow exists to stop repeating.
+name: EAS Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: "EAS profile — preview = installable APK, production = Play Store AAB"
+        required: true
+        default: preview
+        type: choice
+        options: [preview, production]
+
+jobs:
+  build:
+    name: Build Android
+    runs-on: ubuntu-latest
+    concurrency: eas-build      # never two builds of the same app at once
+    steps:
+      - uses: actions/checkout@v4
+
+      # 22, not 20. eas-cli pulls @oclif/plugin-autocomplete, which declares
+      # engines.node >=22 — on 20 the install dies before the token is ever
+      # read, so the run looks like an auth failure and is not one.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      # expo-github-action does NOT fail when the token is absent — it installs
+      # the CLI and skips authentication, so the run stays green through step 4
+      # and dies ninety seconds later inside eas-cli, under a Node stack trace
+      # whose top line is `execFileSync`. That reads as a broken script. It is
+      # a missing secret, and this says so in two seconds.
+      - name: Require EXPO_TOKEN
+        run: |
+          if [ -z "${EXPO_TOKEN}" ]; then
+            echo "::error title=EXPO_TOKEN is not set::No Expo token, so no build can run."
+            echo ""
+            echo "  1. https://expo.dev/settings/access-tokens -> Create token"
+            echo "  2. This repo -> Settings -> Secrets and variables -> Actions"
+            echo "     -> New repository secret -> name: EXPO_TOKEN"
+            echo ""
+            echo "Then re-run this workflow."
+            exit 1
+          fi
+          echo "EXPO_TOKEN is present (\${#EXPO_TOKEN} chars)."
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Pre-flight, not ceremony. EXPO_PUBLIC_* is inlined into the bundle at
+      # build time; a value missing then is `undefined` in the installed app
+      # forever, and every feature depending on it fails silently — no crash, no
+      # message. That is how APKs shipped for weeks with no Supabase, no maps and
+      # no server. This script refuses to continue when one is missing, so the
+      # failure costs 30 seconds here instead of a build slot and a day.
+      - name: Check the build env is complete
+        run: node scripts/prepare-build-env.mjs
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+      # No --no-wait: waiting is the point. The job's final line is the artifact
+      # URL, so the APK link is in the run itself rather than somewhere you have
+      # to go and look for it.
+      - name: Build
+        run: |
+          npx eas-cli build \
+            --platform android \
+            --profile "${{ inputs.profile }}" \
+            --non-interactive
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}

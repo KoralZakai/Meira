@@ -1,0 +1,15 @@
+{
+  "id": "time-duration",
+  "description": "Task with implicit duration from category",
+  "input": "sign into Nebius challenge",
+  "date": "2026-06-07",
+  "expected": {
+    "count": 1,
+    "tasks": [{
+      "text_contains": "Nebius",
+      "category_in": ["work", "general"],
+      "priority": "need_to",
+      "durationMinutes_approx": 15
+    }]
+  }
+}

@@ -1,0 +1,87 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #0f0f11;
+  --surface: #1a1a1f;
+  --border: #2e2e38;
+  --primary: #7c3aed;
+  --ai: #06b6d4;
+  --success: #22c55e;
+  --danger: #ef4444;
+  --text: #f4f4f5;
+  --muted: #71717a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Thin, dark scrollbars to match the shell */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: #2e2e38;
+  border-radius: 999px;
+  border: 2px solid var(--bg);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3a3a46;
+}
+
+@layer components {
+  .card {
+    @apply rounded-card border border-border bg-surface shadow-card;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-chip border border-border px-2.5 py-0.5 text-xs text-muted;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-input px-3.5 py-2 text-sm font-medium transition-colors;
+  }
+  .btn-primary {
+    @apply btn bg-primary text-white hover:bg-primary-soft;
+  }
+  .btn-ghost {
+    @apply btn text-muted hover:bg-surface-2 hover:text-text;
+  }
+  .input {
+    @apply w-full rounded-input border border-border bg-bg px-3 py-2 text-sm text-text placeholder:text-muted focus:border-primary focus:outline-none;
+  }
+  .num {
+    @apply font-mono tabular-nums;
+  }
+  /* cyan = AI activity */
+  .ai-glow {
+    @apply shadow-glow;
+  }
+}
+
+/* Hide scrollbar where we want clean swipe areas */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

@@ -1,0 +1,109 @@
+[
+  {
+    "id": "fixed-time-am",
+    "input": "call mom at 10am",
+    "date": "2026-06-07",
+    "expected": {
+      "type": "fixed_time",
+      "fixedTime": "10:00"
+    }
+  },
+  {
+    "id": "fixed-time-pm",
+    "input": "yoga class at 8pm",
+    "date": "2026-06-07",
+    "expected": {
+      "type": "fixed_time",
+      "fixedTime": "20:00"
+    }
+  },
+  {
+    "id": "fixed-time-24h",
+    "input": "meeting at 14:30",
+    "date": "2026-06-07",
+    "expected": {
+      "type": "fixed_time",
+      "fixedTime": "14:30"
+    }
+  },
+  {
+    "id": "tomorrow",
+    "input": "call mom tomorrow",
+    "date": "2026-06-07",
+    "expected": {
+      "type": "relative",
+      "daysFromNow": 1,
+      "deadline": "2026-06-08"
+    }
+  },
+  {
+    "id": "in-2-days",
+    "input": "finish SVM in 2 days",
+    "date": "2026-06-07",
+    "expected": {
+      "type": "relative",
+      "daysFromNow": 2,
+      "deadline": "2026-06-09"
+    }
+  },
+  {
+    "id": "day-after-tomorrow",
+    "input": "interview day after tomorrow",
+    "date": "2026-06-07",
+    "expected": {
+      "type": "relative",
+      "daysFromNow": 2,
+      "deadline": "2026-06-09"
+    }
+  },
+  {
+    "id": "by-friday",
+    "input": "submit homework by Friday",
+    "date": "2026-06-02",
+    "expected": {
+      "type": "relative",
+      "daysFromNow_approx": 3,
+      "deadline_contains": "Friday"
+    }
+  },
+  {
+    "id": "every-day",
+    "input": "exercise every day",
+    "date": "2026-06-07",
+    "expected": {
+      "type": "recurring",
+      "recurringDays": 7,
+      "recurringType": "daily"
+    }
+  },
+  {
+    "id": "for-next-5-days",
+    "input": "work on project for next 5 days",
+    "date": "2026-06-07",
+    "expected": {
+      "type": "recurring",
+      "recurringDays": 5,
+      "recurringType": "daily"
+    }
+  },
+  {
+    "id": "from-today-for-5-days",
+    "input": "from today and for the next 5 days, work on Lumi",
+    "date": "2026-06-07",
+    "expected": {
+      "type": "recurring",
+      "recurringDays": 5,
+      "recurringType": "daily",
+      "recurringEndDate": "2026-06-12"
+    }
+  },
+  {
+    "id": "explicit-date",
+    "input": "interview on 10/6/26 at 10am",
+    "date": "2026-06-07",
+    "expected": {
+      "type": "deadline",
+      "deadline": "2026-10-06"
+    }
+  }
+]

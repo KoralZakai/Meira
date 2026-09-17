@@ -1,0 +1,107 @@
+# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# local env files
+.env
+.env.*
+.env*.local
+!.env.example
+
+# typescript
+*.tsbuildinfo
+
+# generated native folders
+/ios
+/android
+
+# Nebius job local artifacts
+nebius/**/data/
+nebius/**/data-*/
+nebius/**/.venv/
+nebius/**/*.log
+.vercel
+.env*
+
+# Python build artifacts
+__pycache__/
+*.pyc
+
+# Server runtime data (personal — CVs, phones, conversations). Never commit.
+server/cv_master.json
+server/hr_pending.json
+server/profiles.json
+server/conversations.json
+server/user_memory.json
+server/reminders.json
+server/judge_log.json
+server/llm_usage.json
+server/lumi_guidelines.txt
+server/_conv.txt
+server/_out.txt
+server/active_session.json
+server/tests/llm_usage.json
+
+# Build output — 90MB per commit, and never useful to anyone else.
+*.apk
+
+# design-sync: staged converter scripts + their node_modules (27MB, regenerated per run)
+.ds-sync/
+ds-bundle/
+.design-sync/.cache/
+.design-sync/learnings/
+.design-sync/node_modules
+
+# Local Python venv for running server tests
+server/.venv/
+
+# Claude Code local settings — holds the Tavily MCP key. NEVER commit.
+.claude/settings.local.json
+
+# Runtime user stores. These live on the Fly volume, not in git — travel_prefs
+# was tracked and carried a real phone number and the places she goes, which is
+# the same leak conversations.json and profiles.json were.
+server/reminders.json
+server/travel_prefs.json
+server/user_memory.json
+server/sessions.json
+server/active_session.json
+server/agents.json
+server/known_places.json
+server/bug_reports.json
+server/llm_usage.json
+server/meeting_briefs.json
+server/user_store.json
+server/pending_mirror.json
+server/judge_log.json
+
+# Firebase config is NOT published in the public mirror — supply your own.
+google-services.json

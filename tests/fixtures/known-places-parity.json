@@ -1,0 +1,251 @@
+{
+ "phrases": [
+  {
+   "text": "יוגה ב 11 בבוקר ביגאל אלון 94",
+   "concept": "fitness",
+   "key": "@fitness",
+   "tokens": [
+    "אלון",
+    "ביגאל",
+    "יוגה"
+   ]
+  },
+  {
+   "text": "יוגה",
+   "concept": "fitness",
+   "key": "@fitness",
+   "tokens": [
+    "יוגה"
+   ]
+  },
+  {
+   "text": "שיעור יוגה בערב",
+   "concept": "fitness",
+   "key": "@fitness",
+   "tokens": [
+    "יוגה",
+    "שיעור"
+   ]
+  },
+  {
+   "text": "yoga class",
+   "concept": "fitness",
+   "key": "@fitness",
+   "tokens": [
+    "yoga"
+   ]
+  },
+  {
+   "text": "אימון בחדר כושר",
+   "concept": "fitness",
+   "key": "@fitness",
+   "tokens": [
+    "אימון",
+    "בחדר",
+    "כושר"
+   ]
+  },
+  {
+   "text": "workout",
+   "concept": "fitness",
+   "key": "@fitness",
+   "tokens": [
+    "workout"
+   ]
+  },
+  {
+   "text": "training",
+   "concept": "fitness",
+   "key": "@fitness",
+   "tokens": [
+    "training"
+   ]
+  },
+  {
+   "text": "gym",
+   "concept": "fitness",
+   "key": "@fitness",
+   "tokens": [
+    "gym"
+   ]
+  },
+  {
+   "text": "פילאטיס בבוקר",
+   "concept": "fitness",
+   "key": "@fitness",
+   "tokens": [
+    "פילאטיס"
+   ]
+  },
+  {
+   "text": "בריכה",
+   "concept": "pool",
+   "key": "@pool",
+   "tokens": [
+    "בריכה"
+   ]
+  },
+  {
+   "text": "swimming at 7",
+   "concept": "pool",
+   "key": "@pool",
+   "tokens": [
+    "swimming"
+   ]
+  },
+  {
+   "text": "עבודה במשרד",
+   "concept": "work",
+   "key": "@work",
+   "tokens": [
+    "במשרד",
+    "עבודה"
+   ]
+  },
+  {
+   "text": "תור לרופא שיניים",
+   "concept": "doctor",
+   "key": "@doctor",
+   "tokens": [
+    "לרופא",
+    "שיניים",
+    "תור"
+   ]
+  },
+  {
+   "text": "טיפול אצל פסיכולוג",
+   "concept": "therapy",
+   "key": "@therapy",
+   "tokens": [
+    "אצל",
+    "טיפול",
+    "פסיכולוג"
+   ]
+  },
+  {
+   "text": "שיעור אנגלית",
+   "concept": "class",
+   "key": "@class:אנגלית",
+   "tokens": [
+    "אנגלית",
+    "שיעור"
+   ]
+  },
+  {
+   "text": "קורס מתמטיקה",
+   "concept": "class",
+   "key": "@class:מתמטיקה",
+   "tokens": [
+    "מתמטיקה",
+    "קורס"
+   ]
+  },
+  {
+   "text": "הרצאה באוניברסיטה",
+   "concept": "class",
+   "key": "@class:באוניברסיטה",
+   "tokens": [
+    "באוניברסיטה",
+    "הרצאה"
+   ]
+  },
+  {
+   "text": "חוג ציור לילדה",
+   "concept": "class",
+   "key": "@class:לילדה ציור",
+   "tokens": [
+    "חוג",
+    "לילדה",
+    "ציור"
+   ]
+  },
+  {
+   "text": "חוג קרמיקה של נועה",
+   "concept": "class",
+   "key": "@class:נועה קרמיקה",
+   "tokens": [
+    "חוג",
+    "נועה",
+    "קרמיקה"
+   ]
+  },
+  {
+   "text": "שיעור גיטרה",
+   "concept": "class",
+   "key": "@class:גיטרה",
+   "tokens": [
+    "גיטרה",
+    "שיעור"
+   ]
+  },
+  {
+   "text": "שיעור",
+   "concept": "class",
+   "key": "@class",
+   "tokens": [
+    "שיעור"
+   ]
+  },
+  {
+   "text": "קפה עם דני",
+   "concept": null,
+   "key": "דני קפה",
+   "tokens": [
+    "דני",
+    "קפה"
+   ]
+  },
+  {
+   "text": "לשלוח קורות חיים",
+   "concept": null,
+   "key": "חיים לשלוח קורות",
+   "tokens": [
+    "חיים",
+    "לשלוח",
+    "קורות"
+   ]
+  },
+  {
+   "text": "ראיון בסבא",
+   "concept": null,
+   "key": "בסבא ראיון",
+   "tokens": [
+    "בסבא",
+    "ראיון"
+   ]
+  },
+  {
+   "text": "meeting with the team",
+   "concept": null,
+   "key": "meeting team",
+   "tokens": [
+    "meeting",
+    "team"
+   ]
+  },
+  {
+   "text": "",
+   "concept": null,
+   "key": "",
+   "tokens": []
+  },
+  {
+   "text": "   ",
+   "concept": null,
+   "key": "",
+   "tokens": []
+  },
+  {
+   "text": "11:00",
+   "concept": null,
+   "key": "",
+   "tokens": []
+  },
+  {
+   "text": "מחר בערב",
+   "concept": null,
+   "key": "",
+   "tokens": []
+  }
+ ]
+}

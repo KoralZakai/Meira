@@ -1,0 +1,44 @@
+# Deploy Lumi to Fly.io on every push to master.
+# Bypasses a locally-blocked fly.exe: the deploy runs on GitHub's runners.
+#
+# ONE-TIME SETUP (you, in the browser):
+#   1. Get a Fly deploy token — Fly dashboard → app `lumi-whatsapp` → Tokens →
+#      "Create deploy token" (or Account → Access tokens).
+#   2. GitHub repo → Settings → Secrets and variables → Actions → New repository
+#      secret → name FLY_API_TOKEN, value = the token.
+# After that, every push to master (or a manual "Run workflow") deploys.
+#
+# fly.toml (repo root) IS the live `lumi-whatsapp` config — app name, port 8000,
+# the lumi_data mount, and auto_stop_machines='stop' for the free tier. The
+# --app flag below is belt-and-braces, not a correction.
+name: Fly Deploy
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch: {}   # lets you deploy manually from the Actions tab
+
+jobs:
+  deploy:
+    name: Deploy app
+    runs-on: ubuntu-latest
+    concurrency: deploy-group      # never run two deploys at once
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      # There is now exactly ONE fly config, at the repo root. The second copy
+      # at server/fly.toml was deleted because CI deployed it while everyone
+      # edited the root one — the free-tier sleep setting was changed in a file
+      # that never reached production.
+      #
+      # This used to run `flyctl config save -c fly.live.toml` first to pull the
+      # live config, but newer flyctl resolves --config eagerly and fails with
+      # "config file not found" because the file does not exist yet — every
+      # deploy since 2026-08-16 died there. Using the checked-in config removes
+      # the fetch step entirely, so the config is reviewable in git.
+      #
+      # Build context stays the repo root: the root Dockerfile copies server/.
+      - name: Deploy
+        run: flyctl deploy --remote-only -a lumi-whatsapp -c fly.toml --yes
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

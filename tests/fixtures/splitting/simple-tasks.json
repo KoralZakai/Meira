@@ -1,0 +1,7 @@
+{
+  "id": "simple-tasks",
+  "description": "Simple tasks separated by commas and 'and'",
+  "input": "call mom, buy groceries, work on Lumi project, feed the bread",
+  "expected_count_gte": 3,
+  "notes": "Should split even simple tasks correctly"
+}

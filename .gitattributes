@@ -1,0 +1,5 @@
+# Keep container/shell files LF so images built from a Windows checkout don't
+# get CRLF line endings (which break `#!/usr/bin/env bash` and entrypoints).
+*.sh        text eol=lf
+Dockerfile  text eol=lf
+*.jsonl     text eol=lf

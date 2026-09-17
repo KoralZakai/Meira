@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lumi — Character Sheet</title>
+<style>
+  :root{ --pink:#F6BBD1; --gold:#EEC65A; --ink:#3A4A52; --bg:#FFF6E9; --card:#ffffff; }
+  @media (prefers-color-scheme: dark){ :root{ --bg:#221c17; --card:#2e2721; --ink:#e9dcc9; } }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--ink);line-height:1.5}
+  .wrap{max-width:1000px;margin:0 auto;padding:28px}
+  h1{margin:0;font-size:2.2rem}
+  .sub{opacity:.7;margin:.2rem 0 1.4rem;font-size:1rem}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  @media(max-width:760px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--card);border-radius:18px;padding:20px;box-shadow:0 6px 22px rgba(0,0,0,.08)}
+  .art{display:flex;align-items:center;justify-content:center;background:linear-gradient(160deg,#FFF6E0,#FCD9AE);border-radius:18px;overflow:hidden}
+  .art svg{width:100%;height:auto;display:block}
+  h2{font-size:1.05rem;letter-spacing:.02em;text-transform:uppercase;opacity:.75;margin:.2rem 0 .8rem}
+  .row{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px dashed rgba(128,128,128,.25);font-size:.96rem}
+  .row:last-child{border-bottom:0}
+  .row b{min-width:96px}
+  .sw{width:20px;height:20px;border-radius:6px;border:1px solid rgba(0,0,0,.15);flex:none}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+  .chip{background:linear-gradient(135deg,#FBD7E4,#F6BBD1);color:#5a2233;border-radius:999px;padding:5px 12px;font-size:.85rem;font-weight:600}
+  .chip.g{background:linear-gradient(135deg,#F7DE8B,#EEC65A);color:#5a4410}
+  .note{font-size:.9rem;opacity:.85;margin-top:10px;background:rgba(246,187,209,.18);border-left:4px solid var(--pink);padding:10px 12px;border-radius:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>☀️ Lumi</h1>
+  <div class="sub">Personal assistant avatar — <i>luminance / light</i>. Bright, warm, always greets you. · 3D VRM · Galaxy S24</div>
+  <div class="grid">
+    <div class="card art">
+      <!-- concept art -->
+      <svg xmlns="http://www.w3.org/2000/svg" width="600" height="640" viewBox="0 0 600 640">
+        <defs>
+          <radialGradient id="bg" cx="50%" cy="42%" r="70%"><stop offset="0%" stop-color="#FFF6E0"/><stop offset="55%" stop-color="#FFE8C7"/><stop offset="100%" stop-color="#FCD9AE"/></radialGradient>
+          <linearGradient id="hair" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#F7DE8B"/><stop offset="100%" stop-color="#EEC65A"/></linearGradient>
+          <linearGradient id="hairShade" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#EEC65A"/><stop offset="100%" stop-color="#E0B142"/></linearGradient>
+          <linearGradient id="skin" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#FBD9BE"/><stop offset="100%" stop-color="#F6C9A6"/></linearGradient>
+          <linearGradient id="shirt" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#FBD7E4"/><stop offset="100%" stop-color="#F6BBD1"/></linearGradient>
+          <radialGradient id="halo" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.9"/><stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/></radialGradient>
+        </defs>
+        <rect width="600" height="640" fill="url(#bg)"/>
+        <g stroke="#FFD98A" stroke-width="14" stroke-linecap="round" opacity="0.45">
+          <line x1="300" y1="300" x2="300" y2="40"/><line x1="300" y1="300" x2="70" y2="120"/><line x1="300" y1="300" x2="530" y2="120"/><line x1="300" y1="300" x2="40" y2="330"/><line x1="300" y1="300" x2="560" y2="330"/><line x1="300" y1="300" x2="120" y2="60"/><line x1="300" y1="300" x2="480" y2="60"/>
+        </g>
+        <circle cx="300" cy="300" r="230" fill="url(#halo)"/>
+        <path d="M150 640 Q150 500 300 500 Q450 500 450 640 Z" fill="url(#shirt)"/>
+        <path d="M300 500 Q360 505 380 560 L300 575 L220 560 Q240 505 300 500 Z" fill="#FFFFFF" opacity="0.55"/>
+        <path d="M262 505 Q300 540 338 505 L322 500 Q300 522 278 500 Z" fill="#F2A9C6"/>
+        <path d="M262 430 Q262 490 300 500 Q338 490 338 430 Z" fill="url(#skin)"/>
+        <path d="M262 430 Q300 470 338 430 L338 452 Q300 486 262 452 Z" fill="#E9B48F" opacity="0.5"/>
+        <path d="M150 300 Q150 120 300 118 Q450 120 450 300 Q470 470 405 500 Q430 330 390 250 L210 250 Q170 330 195 500 Q130 470 150 300 Z" fill="url(#hairShade)"/>
+        <ellipse cx="300" cy="300" rx="120" ry="140" fill="url(#skin)"/>
+        <ellipse cx="182" cy="305" rx="20" ry="28" fill="url(#skin)"/><ellipse cx="418" cy="305" rx="20" ry="28" fill="url(#skin)"/>
+        <ellipse cx="232" cy="330" rx="30" ry="18" fill="#F7A9BE" opacity="0.55"/><ellipse cx="368" cy="330" rx="30" ry="18" fill="#F7A9BE" opacity="0.55"/>
+        <path d="M181 300 Q160 140 300 128 Q440 140 419 300 Q430 220 400 195 Q360 150 300 152 Q240 150 200 195 Q170 220 181 300 Z" fill="url(#hair)"/>
+        <path d="M300 128 Q210 132 196 250 Q250 175 300 178 Q300 150 300 128 Z" fill="url(#hair)"/>
+        <path d="M300 128 Q390 132 404 250 Q350 175 300 178 Q300 150 300 128 Z" fill="url(#hairShade)"/>
+        <path d="M188 235 Q168 360 205 470 Q185 340 210 250 Z" fill="url(#hair)"/>
+        <path d="M412 235 Q432 360 395 470 Q415 340 390 250 Z" fill="url(#hairShade)"/>
+        <path d="M300 178 Q262 182 250 245 Q290 200 300 205 Q312 200 350 245 Q338 182 300 178 Z" fill="#FBEAB0" opacity="0.7"/>
+        <path d="M228 258 Q252 246 278 256" stroke="#D9A94A" stroke-width="7" fill="none" stroke-linecap="round"/>
+        <path d="M322 256 Q348 246 372 258" stroke="#D9A94A" stroke-width="7" fill="none" stroke-linecap="round"/>
+        <ellipse cx="253" cy="292" rx="27" ry="22" fill="#FFFFFF"/><ellipse cx="347" cy="292" rx="27" ry="22" fill="#FFFFFF"/>
+        <circle cx="256" cy="293" r="15" fill="#4FA96B"/><circle cx="344" cy="293" r="15" fill="#4FA96B"/>
+        <circle cx="256" cy="293" r="12" fill="#3E8F57"/><circle cx="344" cy="293" r="12" fill="#3E8F57"/>
+        <circle cx="256" cy="293" r="6.5" fill="#22331F"/><circle cx="344" cy="293" r="6.5" fill="#22331F"/>
+        <circle cx="261" cy="287" r="4" fill="#FFFFFF"/><circle cx="349" cy="287" r="4" fill="#FFFFFF"/>
+        <g fill="none" stroke="#3A4A52" stroke-width="6">
+          <path d="M216 296 Q214 268 250 266 Q292 266 288 292 Q288 316 250 318 Q220 318 216 296 Z"/>
+          <path d="M384 296 Q386 268 350 266 Q308 266 312 292 Q312 316 350 318 Q380 318 384 296 Z"/>
+          <path d="M288 288 Q300 282 312 288"/><path d="M216 286 L186 292"/><path d="M384 286 L414 292"/>
+        </g>
+        <path d="M214 272 Q206 264 214 262 Q222 264 224 272 Z" fill="#3A4A52"/><path d="M386 272 Q394 264 386 262 Q378 264 376 272 Z" fill="#3A4A52"/>
+        <path d="M296 306 Q290 330 302 336 Q312 332 306 306" fill="none" stroke="#E3A985" stroke-width="4" stroke-linecap="round"/>
+        <g fill="#D79A6E" opacity="0.8">
+          <circle cx="228" cy="322" r="3"/><circle cx="242" cy="332" r="2.6"/><circle cx="254" cy="326" r="2.4"/><circle cx="238" cy="318" r="2.2"/><circle cx="222" cy="334" r="2.4"/>
+          <circle cx="372" cy="322" r="3"/><circle cx="358" cy="332" r="2.6"/><circle cx="346" cy="326" r="2.4"/><circle cx="362" cy="318" r="2.2"/><circle cx="378" cy="334" r="2.4"/>
+          <circle cx="292" cy="330" r="2.2"/><circle cx="308" cy="330" r="2.2"/>
+        </g>
+        <path d="M256 356 Q300 402 344 356 Q322 372 300 372 Q278 372 256 356 Z" fill="#7A2E37"/>
+        <path d="M266 360 Q300 384 334 360 Q300 372 266 360 Z" fill="#FFFFFF"/>
+        <path d="M292 378 Q300 392 308 378 Q300 384 292 378 Z" fill="#F28BA3"/>
+        <g fill="#FFC24B"><path d="M470 150 l6 16 16 6 -16 6 -6 16 -6 -16 -16 -6 16 -6 Z"/><path d="M120 420 l4 11 11 4 -11 4 -4 11 -4 -11 -11 -4 11 -4 Z"/></g>
+      </svg>
+    </div>
+
+    <div class="card">
+      <h2>Visual identity</h2>
+      <div class="row"><b>Hair</b><span class="sw" style="background:#F0C64F"></span> Blonde, shoulder-length + bangs</div>
+      <div class="row"><b>Eyes</b><span class="sw" style="background:#3E8F57"></span> Green, bright &amp; friendly</div>
+      <div class="row"><b>Freckles</b><span class="sw" style="background:#D79A6E"></span> Soft scatter, cheeks + nose</div>
+      <div class="row"><b>Glasses</b><span class="sw" style="background:#3A4A52"></span> Stylish cat-eye (signature)</div>
+      <div class="row"><b>Shirt</b><span class="sw" style="background:#F6BBD1"></span> Baby pink</div>
+      <div class="row"><b>Vibe</b><span class="sw" style="background:#EEC65A"></span> Sunny glow, big greeting smile</div>
+      <div class="note">Appearance is stored as data (<code>lumi_appearance.json</code> + swappable <code>.vrm</code>), so her look can be changed anytime — no rebuild.</div>
+    </div>
+
+    <div class="card">
+      <h2>Personality</h2>
+      <p style="margin:.2rem 0 .6rem">Bright, upbeat, warm, lightly playful — "morning-sun" energy. Celebrates your wins, never nags. Greets you on every summon with a wave and a smile.</p>
+      <div class="chips"><span class="chip g">warm</span><span class="chip g">encouraging</span><span class="chip g">playful</span><span class="chip g">bright</span></div>
+    </div>
+
+    <div class="card">
+      <h2>Gesture library (engaging)</h2>
+      <div class="chips">
+        <span class="chip">wave greet</span><span class="chip">peace sign</span><span class="chip">head tilt</span>
+        <span class="chip">nod / listen</span><span class="chip">tap chin (think)</span><span class="chip">present hands</span>
+        <span class="chip">point</span><span class="chip">count on fingers</span><span class="chip">thumbs up</span>
+        <span class="chip">clap / celebrate</span><span class="chip">heart hands</span><span class="chip">giggle</span>
+        <span class="chip">gasp / surprise</span><span class="chip">shrug</span><span class="chip">blink + idle sway</span>
+      </div>
+      <div class="note">Driven by response sentiment tags, e.g. reminder set → <code>[face:Joy][anim:thumbs_up]</code>. Weighted-random pools keep motion from repeating.</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

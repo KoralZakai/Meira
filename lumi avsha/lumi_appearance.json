@@ -1,0 +1,22 @@
+{
+  "$schema": "lumi.appearance.v1",
+  "activeLook": "sunny",
+  "looks": {
+    "sunny": {
+      "displayName": "Sunny (default)",
+      "vrmFile": "avatars/lumi_sunny.vrm",
+      "hair": { "style": "shoulder_length_bangs", "color": "#F0C64F" },
+      "eyes": { "color": "#3E8F57", "style": "bright_round" },
+      "skin": { "tone": "#F6C9A6", "freckles": true, "freckleIntensity": 0.7, "blush": true },
+      "glasses": { "enabled": true, "style": "cat_eye", "frameColor": "#3A4A52" },
+      "outfit": { "top": "shirt", "topColor": "#F6BBD1", "collar": true },
+      "defaultExpression": "smile_greeting",
+      "voice": { "provider": "cloud_tts", "name": "warm_bright_female", "pitch": 1.05, "rate": 1.0 }
+    }
+  },
+  "editableInApp": {
+    "note": "Fields the future in-app avatar designer will expose as controls.",
+    "controls": ["hair.color", "eyes.color", "skin.freckleIntensity", "glasses.enabled", "glasses.frameColor", "outfit.topColor", "voice.name"],
+    "advanced": "User can drop a new .vrm into avatars/ and add a new entry under 'looks' to fully redesign Lumi."
+  }
+}

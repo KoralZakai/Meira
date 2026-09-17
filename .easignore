@@ -1,0 +1,62 @@
+# EAS build upload rules. When this file exists, EAS uses it INSTEAD of
+# .gitignore to decide what gets uploaded to the cloud build.
+# Difference vs .gitignore: `.env.production` IS uploaded — it holds ONLY the
+# EXPO_PUBLIC_* client keys (regenerate with:
+#   grep '^EXPO_PUBLIC_' .env > .env.production
+# ). The full .env (server secrets: WhatsApp token, DB, Anthropic…) stays
+# excluded and must NEVER be uploaded.
+
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# env: exclude everything EXCEPT the public client vars
+.env
+.env.*
+!.env.production
+!.env.example
+
+# typescript
+*.tsbuildinfo
+
+# generated native folders (a local prebuild must never flip EAS to bare workflow)
+/android
+/ios
+
+# generated native folders
+/ios
+/android
+
+# server + research artifacts the app build doesn't need
+server/
+nebius/
+web/
+lumi avsha/
+docs/
+.vercel

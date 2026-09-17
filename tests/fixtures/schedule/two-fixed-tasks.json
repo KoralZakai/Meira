@@ -1,0 +1,48 @@
+{
+  "id": "two-fixed-tasks",
+  "description": "Schedule with multiple priorities and fixed tasks",
+  "input_tasks": [
+    {
+      "id": "1",
+      "text": "Finish report",
+      "category": "work",
+      "priority": "have_to",
+      "isFixed": false,
+      "durationMinutes": 120,
+      "date": "2026-06-07",
+      "status": "pending",
+      "createdAt": 1717779600000,
+      "historicalDurations": []
+    },
+    {
+      "id": "2",
+      "text": "Team meeting",
+      "category": "meeting",
+      "priority": "must",
+      "isFixed": true,
+      "fixedTime": "10:00",
+      "durationMinutes": 60,
+      "date": "2026-06-07",
+      "status": "pending",
+      "createdAt": 1717779600000,
+      "historicalDurations": []
+    },
+    {
+      "id": "3",
+      "text": "Lunch break",
+      "category": "leisure",
+      "priority": "nice_to_do",
+      "isFixed": false,
+      "durationMinutes": 30,
+      "date": "2026-06-07",
+      "status": "pending",
+      "createdAt": 1717779600000,
+      "historicalDurations": []
+    }
+  ],
+  "expected_schedule": {
+    "tasks_count_gte": 3,
+    "first_task_priority_must": true,
+    "tasks_are_sorted": true
+  }
+}

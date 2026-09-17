@@ -1,0 +1,54 @@
+{
+  "_comment": "Shared input for the clash-resolver parity check. The SAME days are run through src/utils/resolveClashes.ts and server/clashes.py; tests/run-clash-parity.ts writes clash-golden.json from the TypeScript, and server/tests/test_clash_parity.py fails if Python disagrees with it. Camel-case on purpose — both sides accept it.",
+  "days": [
+    {
+      "name": "the reported evening — zoom, after-office and yoga",
+      "dayEnd": "23:00",
+      "tasks": [
+        { "id": "zoom", "text": "פגישת זום", "category": "zoom", "isFixed": true, "fixedTime": "18:00", "durationMinutes": 60, "meetingUrl": "https://us02web.zoom.us/j/123", "status": "pending" },
+        { "id": "after", "text": "אפטר אופיס", "category": "leisure", "isFixed": false, "fixedTime": "18:30", "durationMinutes": 270, "status": "pending" },
+        { "id": "yoga", "text": "יוגה", "category": "hobby_class", "isFixed": true, "fixedTime": "19:00", "durationMinutes": 60, "location": "Yigal Alon 94", "status": "pending" }
+      ]
+    },
+    {
+      "name": "a conference that swallows the evening, and a class across town",
+      "dayEnd": "23:00",
+      "tasks": [
+        { "id": "conf", "text": "conference", "category": "conference", "isFixed": true, "fixedTime": "09:00", "durationMinutes": 780, "location": "Expo Tel Aviv", "status": "pending" },
+        { "id": "pilates", "text": "pilates", "category": "hobby_class", "isFixed": true, "fixedTime": "18:00", "durationMinutes": 60, "location": { "address": "Space Gym", "travelMinutes": 30 }, "status": "pending" }
+      ]
+    },
+    {
+      "name": "back-to-back in two places — zero overlap, still impossible",
+      "dayEnd": "23:00",
+      "tasks": [
+        { "id": "gym", "text": "gym", "category": "gym", "isFixed": true, "fixedTime": "19:00", "durationMinutes": 60, "location": "Space Gym", "status": "pending" },
+        { "id": "beach", "text": "beach", "category": "leisure", "isFixed": false, "fixedTime": "20:00", "durationMinutes": 90, "location": { "address": "Gordon Beach", "travelMinutes": 25 }, "status": "pending" }
+      ]
+    },
+    {
+      "name": "two appointments nobody can move",
+      "dayEnd": "23:00",
+      "tasks": [
+        { "id": "interview", "text": "job interview", "category": "interview", "isFixed": true, "fixedTime": "10:00", "durationMinutes": 90, "location": "MER Group", "status": "pending" },
+        { "id": "doctor", "text": "dentist", "category": "doctor", "isFixed": true, "fixedTime": "10:30", "durationMinutes": 60, "location": "Clinic", "status": "pending" }
+      ]
+    },
+    {
+      "name": "a completed task cannot clash with anything",
+      "dayEnd": "23:00",
+      "tasks": [
+        { "id": "done", "text": "finished thing", "category": "work", "isFixed": true, "fixedTime": "18:00", "durationMinutes": 120, "status": "complete" },
+        { "id": "live", "text": "live thing", "category": "work", "isFixed": true, "fixedTime": "18:30", "durationMinutes": 60, "status": "pending" }
+      ]
+    },
+    {
+      "name": "a long evening plan with nowhere left to go",
+      "dayEnd": "23:00",
+      "tasks": [
+        { "id": "class", "text": "evening class", "category": "class", "isFixed": true, "fixedTime": "19:00", "durationMinutes": 60, "status": "pending" },
+        { "id": "long", "text": "long plan", "category": "leisure", "isFixed": false, "fixedTime": "19:30", "durationMinutes": 270, "status": "pending" }
+      ]
+    }
+  ]
+}

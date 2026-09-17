@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#F6BBD1">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Lumi">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<title>Lumi — your assistant</title>
+<style>
+  :root{
+    --pink:#F6BBD1; --pink-d:#EF9DBC; --gold:#EEC65A; --gold-d:#E0B142;
+    --ink:#4a3b33; --bg1:#FFF6E9; --bg2:#FFE3EE; --card:#ffffff; --muted:#8a7b70;
+    --ok:#4FA96B;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%}
+  body{
+    font-family:'Segoe UI',system-ui,-apple-system,sans-serif;color:var(--ink);
+    background:linear-gradient(165deg,var(--bg1),var(--bg2));
+    display:flex;flex-direction:column;min-height:100dvh;overflow-x:hidden;
+  }
+  header{padding:14px 18px 4px;text-align:center}
+  header h1{margin:0;font-size:1.5rem;letter-spacing:.5px}
+  header .tag{font-size:.8rem;color:var(--muted)}
+
+  /* stage */
+  .stage{position:relative;display:flex;align-items:center;justify-content:center;padding:6px 0 0;min-height:300px}
+  .aura{position:absolute;width:340px;height:340px;border-radius:50%;
+    background:radial-gradient(circle, rgba(255,214,120,.55), rgba(255,214,120,0) 68%);
+    filter:blur(2px);animation:pulse 4s ease-in-out infinite}
+  @keyframes pulse{0%,100%{transform:scale(1);opacity:.75}50%{transform:scale(1.08);opacity:1}}
+  #avatarWrap{position:relative;width:270px;max-width:74vw;transition:transform .3s}
+  #avatarWrap svg{width:100%;height:auto;display:block;filter:drop-shadow(0 10px 22px rgba(200,120,150,.25))}
+  #avatarWrap.idle{animation:sway 5s ease-in-out infinite}
+  @keyframes sway{0%,100%{transform:translateY(0) rotate(-1deg)}50%{transform:translateY(-6px) rotate(1deg)}}
+  #avatarWrap.talking{animation:talkbob .5s ease-in-out infinite}
+  @keyframes talkbob{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+  #avatarWrap.celebrate{animation:cel .6s ease}
+  @keyframes cel{0%{transform:translateY(0) scale(1)}30%{transform:translateY(-22px) scale(1.05)}60%{transform:translateY(0) scale(1)}80%{transform:translateY(-8px)}100%{transform:translateY(0)}}
+  #avatarWrap.think{animation:think 2s ease-in-out infinite}
+  @keyframes think{0%,100%{transform:rotate(-3deg)}50%{transform:rotate(3deg)}}
+  .anim{transform-box:fill-box}
+  /* blink */
+  #lidL,#lidR{transform-origin:center;transform:scaleY(0)}
+  .blink #lidL,.blink #lidR{animation:blink .28s ease}
+  @keyframes blink{0%,100%{transform:scaleY(0)}50%{transform:scaleY(1)}}
+  /* mouth talk */
+  #mouthOpen{transform-origin:center;transform:scaleY(.25);opacity:0}
+  .talking #mouthOpen{opacity:1;animation:talk .26s ease-in-out infinite}
+  .talking #mouthSmile{opacity:.25}
+  @keyframes talk{0%,100%{transform:scaleY(.28)}50%{transform:scaleY(1)}}
+  /* wave hand */
+  #waveHand{transform-origin:bottom center;opacity:0;transform:translateY(10px) rotate(0deg)}
+  .wave #waveHand{opacity:1;animation:wave 0.5s ease-in-out 4}
+  @keyframes wave{0%,100%{transform:translateY(0) rotate(-18deg)}50%{transform:translateY(0) rotate(18deg)}}
+  /* sparkles */
+  .spark{animation:twinkle 2.4s ease-in-out infinite}
+  .spark:nth-child(2){animation-delay:1.1s}
+  @keyframes twinkle{0%,100%{opacity:.3;transform:scale(.8)}50%{opacity:1;transform:scale(1.15)}}
+
+  /* subtitle */
+  .subtitle{min-height:52px;margin:2px 16px 6px;text-align:center;font-size:1.05rem;font-weight:600;
+    display:flex;align-items:center;justify-content:center;transition:opacity .2s}
+  .subtitle.you{color:var(--muted);font-weight:500;font-style:italic}
+  .listening-dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:#e0533c;margin-right:8px;animation:pulse2 1s infinite}
+  @keyframes pulse2{0%,100%{opacity:.4}50%{opacity:1}}
+
+  /* controls */
+  .controls{display:flex;gap:12px;justify-content:center;align-items:center;padding:4px 0 10px;flex-wrap:wrap}
+  .mic{width:76px;height:76px;border-radius:50%;border:none;cursor:pointer;color:#fff;font-size:1.9rem;
+    background:radial-gradient(circle at 30% 30%,var(--pink),var(--pink-d));
+    box-shadow:0 8px 20px rgba(239,157,188,.5);transition:transform .15s}
+  .mic:active{transform:scale(.92)}
+  .mic.on{background:radial-gradient(circle at 30% 30%,#ff7a7a,#e0533c);animation:pulse2 1s infinite}
+  .pill{border:none;background:#fff;color:var(--ink);border-radius:22px;padding:11px 16px;font-size:.9rem;
+    font-weight:600;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,.08)}
+  .pill:active{transform:scale(.96)}
+  .pill.gold{background:linear-gradient(135deg,var(--gold),var(--gold-d));color:#5a4410}
+
+  /* typed input */
+  .typerow{display:flex;gap:8px;padding:2px 16px 12px;max-width:640px;margin:0 auto;width:100%}
+  .typerow input{flex:1;border:none;border-radius:20px;padding:12px 16px;font-size:1rem;
+    box-shadow:0 3px 10px rgba(0,0,0,.08);outline:none}
+  .typerow button{border:none;border-radius:20px;padding:0 18px;background:var(--gold);font-weight:700;cursor:pointer;color:#5a4410}
+
+  /* panels */
+  .panels{max-width:640px;margin:0 auto;width:100%;padding:0 16px 40px}
+  .card{background:var(--card);border-radius:18px;padding:16px;margin-bottom:14px;box-shadow:0 4px 16px rgba(0,0,0,.06)}
+  .card h2{margin:0 0 10px;font-size:.95rem;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);display:flex;justify-content:space-between;align-items:center}
+  .add{border:none;background:var(--pink);color:#fff;border-radius:50%;width:26px;height:26px;font-size:1.1rem;cursor:pointer;line-height:1}
+  .item{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px dashed rgba(140,120,110,.22);font-size:.96rem}
+  .item:last-child{border-bottom:0}
+  .item .t{font-weight:700;color:var(--pink-d);min-width:56px}
+  .item .grow{flex:1}
+  .item .x{color:var(--muted);cursor:pointer;font-size:1.1rem;padding:0 4px}
+  .item small{display:block;color:var(--muted);font-weight:400}
+  .chk{width:20px;height:20px;border-radius:6px;border:2px solid var(--gold);cursor:pointer;flex:none;display:flex;align-items:center;justify-content:center;font-size:.8rem;color:#fff}
+  .chk.on{background:var(--ok);border-color:var(--ok)}
+  .empty{color:var(--muted);font-size:.9rem;padding:6px 0}
+  .tagpill{display:inline-block;background:#FBE7B4;color:#6b5416;border-radius:999px;padding:2px 9px;font-size:.78rem;margin:2px 4px 2px 0}
+
+  /* modal */
+  .modal{position:fixed;inset:0;background:rgba(60,40,45,.45);display:none;align-items:center;justify-content:center;padding:20px;z-index:50}
+  .modal.show{display:flex}
+  .modal .box{background:#fff;border-radius:22px;padding:22px;max-width:420px;width:100%;box-shadow:0 20px 50px rgba(0,0,0,.3)}
+  .modal h3{margin:0 0 4px}
+  .modal p{margin:0 0 14px;color:var(--muted);font-size:.9rem}
+  .modal label{display:block;font-size:.82rem;font-weight:600;margin:10px 0 4px}
+  .modal input,.modal select{width:100%;border:1px solid #eadfd6;border-radius:12px;padding:11px;font-size:1rem;outline:none}
+  .modal .btns{display:flex;gap:10px;margin-top:18px}
+  .modal .btns button{flex:1;border:none;border-radius:14px;padding:13px;font-weight:700;cursor:pointer}
+  .btnp{background:linear-gradient(135deg,var(--pink),var(--pink-d));color:#fff}
+  .btns .ghost{background:#f2ece6;color:var(--ink)}
+  .foot{text-align:center;font-size:.75rem;color:var(--muted);padding:0 16px 24px}
+  .foot a{color:var(--pink-d)}
+</style>
+</head>
+<body>
+<header>
+  <h1>☀️ Lumi</h1>
+  <div class="tag">your assistant that lightens the day</div>
+</header>
+
+<div class="stage">
+  <div class="aura"></div>
+  <div id="avatarWrap" class="idle">
+    <!-- Lumi -->
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 640">
+      <defs>
+        <radialGradient id="bg" cx="50%" cy="42%" r="70%"><stop offset="0%" stop-color="#FFF6E0"/><stop offset="55%" stop-color="#FFE8C7"/><stop offset="100%" stop-color="#FCD9AE"/></radialGradient>
+        <linearGradient id="hair" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#F7DE8B"/><stop offset="100%" stop-color="#EEC65A"/></linearGradient>
+        <linearGradient id="hairShade" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#EEC65A"/><stop offset="100%" stop-color="#E0B142"/></linearGradient>
+        <linearGradient id="skin" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#FBD9BE"/><stop offset="100%" stop-color="#F6C9A6"/></linearGradient>
+        <linearGradient id="shirt" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#FBD7E4"/><stop offset="100%" stop-color="#F6BBD1"/></linearGradient>
+      </defs>
+      <path d="M150 640 Q150 500 300 500 Q450 500 450 640 Z" fill="url(#shirt)"/>
+      <path d="M262 505 Q300 540 338 505 L322 500 Q300 522 278 500 Z" fill="#F2A9C6"/>
+      <path d="M262 430 Q262 490 300 500 Q338 490 338 430 Z" fill="url(#skin)"/>
+      <path d="M150 300 Q150 120 300 118 Q450 120 450 300 Q470 470 405 500 Q430 330 390 250 L210 250 Q170 330 195 500 Q130 470 150 300 Z" fill="url(#hairShade)"/>
+      <ellipse cx="300" cy="300" rx="120" ry="140" fill="url(#skin)"/>
+      <ellipse cx="182" cy="305" rx="20" ry="28" fill="url(#skin)"/><ellipse cx="418" cy="305" rx="20" ry="28" fill="url(#skin)"/>
+      <ellipse cx="232" cy="330" rx="30" ry="18" fill="#F7A9BE" opacity="0.55"/><ellipse cx="368" cy="330" rx="30" ry="18" fill="#F7A9BE" opacity="0.55"/>
+      <path d="M181 300 Q160 140 300 128 Q440 140 419 300 Q430 220 400 195 Q360 150 300 152 Q240 150 200 195 Q170 220 181 300 Z" fill="url(#hair)"/>
+      <path d="M300 128 Q210 132 196 250 Q250 175 300 178 Q300 150 300 128 Z" fill="url(#hair)"/>
+      <path d="M300 128 Q390 132 404 250 Q350 175 300 178 Q300 150 300 128 Z" fill="url(#hairShade)"/>
+      <path d="M188 235 Q168 360 205 470 Q185 340 210 250 Z" fill="url(#hair)"/>
+      <path d="M412 235 Q432 360 395 470 Q415 340 390 250 Z" fill="url(#hairShade)"/>
+      <path d="M228 258 Q252 246 278 256" stroke="#D9A94A" stroke-width="7" fill="none" stroke-linecap="round"/>
+      <path d="M322 256 Q348 246 372 258" stroke="#D9A94A" stroke-width="7" fill="none" stroke-linecap="round"/>
+      <!-- eyes -->
+      <ellipse cx="253" cy="292" rx="27" ry="22" fill="#FFFFFF"/><ellipse cx="347" cy="292" rx="27" ry="22" fill="#FFFFFF"/>
+      <circle cx="256" cy="293" r="15" fill="#4FA96B"/><circle cx="344" cy="293" r="15" fill="#4FA96B"/>
+      <circle cx="256" cy="293" r="12" fill="#3E8F57"/><circle cx="344" cy="293" r="12" fill="#3E8F57"/>
+      <circle cx="256" cy="293" r="6.5" fill="#22331F"/><circle cx="344" cy="293" r="6.5" fill="#22331F"/>
+      <circle cx="261" cy="287" r="4" fill="#FFFFFF"/><circle cx="349" cy="287" r="4" fill="#FFFFFF"/>
+      <!-- eyelids for blink -->
+      <ellipse id="lidL" class="anim" cx="253" cy="292" rx="28" ry="23" fill="url(#skin)"/>
+      <ellipse id="lidR" class="anim" cx="347" cy="292" rx="28" ry="23" fill="url(#skin)"/>
+      <!-- glasses -->
+      <g fill="none" stroke="#3A4A52" stroke-width="6">
+        <path d="M216 296 Q214 268 250 266 Q292 266 288 292 Q288 316 250 318 Q220 318 216 296 Z"/>
+        <path d="M384 296 Q386 268 350 266 Q308 266 312 292 Q312 316 350 318 Q380 318 384 296 Z"/>
+        <path d="M288 288 Q300 282 312 288"/><path d="M216 286 L186 292"/><path d="M384 286 L414 292"/>
+      </g>
+      <path d="M214 272 Q206 264 214 262 Q222 264 224 272 Z" fill="#3A4A52"/><path d="M386 272 Q394 264 386 262 Q378 264 376 272 Z" fill="#3A4A52"/>
+      <path d="M296 306 Q290 330 302 336 Q312 332 306 306" fill="none" stroke="#E3A985" stroke-width="4" stroke-linecap="round"/>
+      <!-- freckles -->
+      <g fill="#D79A6E" opacity="0.8">
+        <circle cx="228" cy="322" r="3"/><circle cx="242" cy="332" r="2.6"/><circle cx="254" cy="326" r="2.4"/><circle cx="238" cy="318" r="2.2"/><circle cx="222" cy="334" r="2.4"/>
+        <circle cx="372" cy="322" r="3"/><circle cx="358" cy="332" r="2.6"/><circle cx="346" cy="326" r="2.4"/><circle cx="362" cy="318" r="2.2"/><circle cx="378" cy="334" r="2.4"/>
+        <circle cx="292" cy="330" r="2.2"/><circle cx="308" cy="330" r="2.2"/>
+      </g>
+      <!-- mouth -->
+      <path id="mouthSmile" d="M256 356 Q300 402 344 356 Q322 372 300 372 Q278 372 256 356 Z" fill="#7A2E37"/>
+      <ellipse id="mouthOpen" class="anim" cx="300" cy="366" rx="30" ry="22" fill="#7A2E37"/>
+      <path d="M266 360 Q300 384 334 360 Q300 372 266 360 Z" fill="#FFFFFF"/>
+      <!-- wave hand -->
+      <g id="waveHand" class="anim">
+        <ellipse cx="452" cy="470" rx="26" ry="34" fill="url(#skin)"/>
+        <rect x="438" y="430" width="10" height="34" rx="5" fill="url(#skin)"/>
+        <rect x="450" y="424" width="10" height="40" rx="5" fill="url(#skin)"/>
+        <rect x="462" y="430" width="10" height="34" rx="5" fill="url(#skin)"/>
+      </g>
+      <!-- sparkles -->
+      <g fill="#FFC24B"><path class="spark" d="M470 150 l6 16 16 6 -16 6 -6 16 -6 -16 -16 -6 16 -6 Z"/><path class="spark" d="M120 420 l4 11 11 4 -11 4 -4 11 -4 -11 -11 -4 11 -4 Z"/></g>
+    </svg>
+  </div>
+</div>
+
+<div id="subtitle" class="subtitle"></div>
+
+<div class="controls">
+  <button class="pill gold" id="btnMorning">☀️ Morning briefing</button>
+  <button class="mic" id="btnMic" title="Talk to Lumi">🎤</button>
+  <button class="pill" id="btnSettings">⚙️</button>
+</div>
+
+<div class="typerow">
+  <input id="typed" placeholder="Type to Lumi… e.g. “I have a meeting at 9:00 by train, 30 min”">
+  <button id="btnSend">Send</button>
+</div>
+
+<div class="panels">
+  <div class="card">
+    <h2>Today's schedule <button class="add" id="addEvent">+</button></h2>
+    <div id="eventList"></div>
+  </div>
+  <div class="card">
+    <h2>Remember before you leave <button class="add" id="addReminder">+</button></h2>
+    <div id="reminderList"></div>
+  </div>
+  <div class="card">
+    <h2>What Lumi has learned about you</h2>
+    <div id="habitList"></div>
+  </div>
+</div>
+
+<div class="foot">
+  Lumi Phase-1 prototype · runs in your browser · voice needs Chrome mic permission.<br>
+  <a id="resetLink" href="#">reset Lumi's memory</a>
+</div>
+
+<!-- Setup modal -->
+<div class="modal" id="setupModal">
+  <div class="box">
+    <h3>Hi! I'm Lumi ☀️</h3>
+    <p>Let's set up your mornings. I'll remember all of this.</p>
+    <label>What should I call you?</label>
+    <input id="setName" placeholder="Your name" autocomplete="off">
+    <label>What time should I wake you on weekdays?</label>
+    <input id="setWake" type="time" value="07:00">
+    <label>Enable my voice? (I'll speak out loud)</label>
+    <select id="setVoice"><option value="1">Yes, talk to me</option><option value="0">Silent (text only)</option></select>
+    <div class="btns">
+      <button class="btnp" id="setupSave">Let's go ☀️</button>
+    </div>
+  </div>
+</div>
+
+<!-- Event modal -->
+<div class="modal" id="eventModal">
+  <div class="box">
+    <h3>Add to today</h3>
+    <p>Lumi will work out when you need to leave and warn you 5 minutes before.</p>
+    <label>What is it?</label>
+    <input id="evTitle" placeholder="e.g. Team meeting, Doctor, Gym">
+    <label>What time does it start?</label>
+    <input id="evTime" type="time">
+    <label>How will you get there?</label>
+    <select id="evMode"><option>walk</option><option>drive</option><option>train</option><option>bus</option><option>bike</option></select>
+    <label>How long does the trip take? (minutes)</label>
+    <input id="evTravel" type="number" value="20" min="0">
+    <label>How long to get ready? (minutes)</label>
+    <input id="evPrep" type="number" value="30" min="0">
+    <div class="btns">
+      <button class="ghost" id="evCancel">Cancel</button>
+      <button class="btnp" id="evSave">Add it</button>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ---------- state ---------- */
+const KEY="lumi.v1";
+const DEFAULT={name:"",wake:"07:00",voiceOn:true,events:[],reminders:[],habits:{},lastRoutine:"",lastVoice:""};
+let S=load();
+function load(){try{return Object.assign({},DEFAULT,JSON.parse(localStorage.getItem(KEY)||"{}"))}catch(e){return Object.assign({},DEFAULT)}}
+function save(){localStorage.setItem(KEY,JSON.stringify(S))}
+const $=s=>document.querySelector(s);
+const uid=()=>Math.random().toString(36).slice(2,9);
+function todayKey(){const d=new Date();return d.getFullYear()+"-"+(d.getMonth()+1)+"-"+d.getDate();}
+
+/* ---------- avatar + gestures ---------- */
+const wrap=$("#avatarWrap");
+function gesture(name){
+  wrap.classList.remove("wave","celebrate","think");
+  if(name==="wave"){wrap.classList.add("wave");setTimeout(()=>wrap.classList.remove("wave"),2200);}
+  if(name==="celebrate"){wrap.classList.add("celebrate");setTimeout(()=>wrap.classList.remove("celebrate"),700);}
+  if(name==="think"){wrap.classList.add("think");setTimeout(()=>wrap.classList.remove("think"),2200);}
+}
+setInterval(()=>{wrap.classList.add("blink");setTimeout(()=>wrap.classList.remove("blink"),300);},3800);
+
+/* ---------- speech (TTS) ---------- */
+let VOICE=null;
+function pickVoice(){
+  const vs=speechSynthesis.getVoices();
+  const pref=["Google UK English Female","Samantha","Microsoft Zira","Google US English","female"];
+  for(const p of pref){const v=vs.find(v=>v.name.toLowerCase().includes(p.toLowerCase()));if(v){VOICE=v;return;}}
+  VOICE=vs.find(v=>/en/i.test(v.lang))||vs[0]||null;
+}
+if("speechSynthesis" in window){speechSynthesis.onvoiceschanged=pickVoice;pickVoice();}
+let speaking=false;
+function say(text,opts={}){
+  setSubtitle(text,false);
+  S.lastVoice=text;
+  if(!S.voiceOn||!("speechSynthesis" in window)){ startTalkAnim(text.length*45); return; }
+  try{
+    speechSynthesis.cancel();
+    const u=new SpeechSynthesisUtterance(text);
+    if(VOICE)u.voice=VOICE;
+    u.pitch=1.06;u.rate=1.0;u.lang=(VOICE&&VOICE.lang)||"en-US";
+    u.onstart=()=>{speaking=true;wrap.classList.add("talking");};
+    u.onend=()=>{speaking=false;wrap.classList.remove("talking");if(opts.then)opts.then();};
+    speechSynthesis.speak(u);
+  }catch(e){startTalkAnim(text.length*45);}
+}
+function startTalkAnim(ms){wrap.classList.add("talking");setTimeout(()=>wrap.classList.remove("talking"),Math.min(ms,6000));}
+function sayLines(lines,i=0){ if(i>=lines.length)return; say(lines[i],{then:()=>setTimeout(()=>sayLines(lines,i+1),260)}); }
+
+function setSubtitle(t,isYou){const el=$("#subtitle");el.textContent=t;el.className="subtitle"+(isYou?" you":"");}
+
+/* ---------- speech (STT) ---------- */
+let recog=null,listening=false;
+function initRecog(){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR)return null;
+  const r=new SR();r.lang="en-US";r.interimResults=true;r.continuous=false;
+  r.onresult=e=>{
+    let txt="";for(let i=e.resultIndex;i<e.results.length;i++)txt+=e.results[i][0].transcript;
+    setSubtitle("“"+txt+"”",true);
+    if(e.results[e.results.length-1].isFinal){handle(txt.trim());}
+  };
+  r.onend=()=>{listening=false;$("#btnMic").classList.remove("on");};
+  r.onerror=()=>{listening=false;$("#btnMic").classList.remove("on");};
+  return r;
+}
+function toggleMic(){
+  if(!recog)recog=initRecog();
+  if(!recog){say("Voice input isn't supported in this browser. You can type to me instead!");return;}
+  if(listening){recog.stop();return;}
+  try{ speechSynthesis.cancel(); recog.start(); listening=true; $("#btnMic").classList.add("on"); setSubtitle("listening…",true);}catch(e){}
+}
+
+/* ---------- time helpers ---------- */
+function now(){return new Date();}
+function hm(str){const [h,m]=str.split(":").map(Number);const d=new Date();d.setHours(h,m,0,0);return d;}
+function fmtTime(d){let h=d.getHours(),m=d.getMinutes();const ap=h>=12?"PM":"AM";h=h%12||12;return h+":"+String(m).padStart(2,"0")+" "+ap;}
+function minsBetween(a,b){return Math.round((a-b)/60000);}
+function human(mins){if(mins<=0)return "no time";const h=Math.floor(mins/60),m=mins%60;return (h?h+" hour"+(h>1?"s":"")+(m?" ":""):"")+(m?m+" minute"+(m>1?"s":""):"");}
+const MODEVERB={walk:"walk",drive:"drive",train:"catch the train",bus:"catch the bus",bike:"bike"};
+
+/* ---------- morning routine ---------- */
+function morningBriefing(fromAlarm){
+  gesture("wave");
+  const d=now();
+  const name=S.name?(", "+S.name):"";
+  const weekday=d.toLocaleDateString(undefined,{weekday:"long"});
+  const date=d.toLocaleDateString(undefined,{month:"long",day:"numeric"});
+  const lines=[];
+  lines.push("Good morning"+name+"! ☀️ Let's make today a good one.");
+  lines.push("It's "+weekday+", "+date+", and the time is "+fmtTime(d)+".");
+  const evs=todaysEvents().sort((a,b)=>hm(a.time)-hm(b.time)).filter(e=>hm(e.time)>=d);
+  if(evs.length===0){
+    lines.push("You have nothing scheduled for now — your day is open. Enjoy it!");
+  }else{
+    lines.push("Here's what you've got: "+evs.map(e=>e.title+" at "+fmtTime(hm(e.time))).join(", ")+".");
+    const first=evs[0];
+    const leave=new Date(hm(first.time)-first.travel*60000);
+    const readyMins=minsBetween(leave,d)-(first.prep||0);
+    const leaveIn=minsBetween(leave,d);
+    lines.push("Your first thing is "+first.title+" at "+fmtTime(hm(first.time))+". To "+(MODEVERB[first.mode]||"get there")+" on time, you should leave by "+fmtTime(leave)+".");
+    if(leaveIn>0) lines.push("That gives you "+human(leaveIn)+" until you head out"+((first.prep&&readyMins>0)?", and about "+human(readyMins>0?readyMins:0)+" to get ready":"")+". I'll tap you on the shoulder 5 minutes before.");
+    else lines.push("Heads up — that's very soon, so let's get moving!");
+  }
+  const checklist=learnedChecklist();
+  if(checklist.length) lines.push("Before you go, don't forget: "+checklist.join(", ")+".");
+  lines.push(S.reminders.length? "You also asked me to remind you: "+S.reminders.map(r=>r.text).join(", ")+"." : "Is there anything you'd like me to remind you before you head out? Just tell me.");
+  sayLines(lines);
+  S.lastRoutine=todayKey();save();
+  if(fromAlarm)chime();
+}
+
+/* ---------- learning ---------- */
+function learn(item){
+  item=item.toLowerCase().trim();if(!item)return;
+  S.habits[item]=(S.habits[item]||0)+1;save();renderHabits();
+}
+function learnedChecklist(){
+  return Object.keys(S.habits).filter(k=>S.habits[k]>=1).sort((a,b)=>S.habits[b]-S.habits[a]).slice(0,6);
+}
+
+/* ---------- encouragement ---------- */
+const CHEERS=[
+ "That's the way — one step at a time and you're unstoppable. 💪",
+ "Look at you go! Every little win stacks up. I'm proud of you.",
+ "Done and dusted — you're on fire today! 🔥",
+ "See? You had it in you all along. Keep that momentum!",
+ "Beautiful work. Future-you is already grateful.",
+ "Crushed it. Let's keep the sunshine going ☀️"
+];
+const cheer=()=>CHEERS[Math.floor(Math.random()*CHEERS.length)];
+
+/* ---------- command parser ---------- */
+function handle(text){
+  if(!text)return;
+  const t=text.toLowerCase();
+  // morning
+  if(/(good morning|wake me|morning briefing|what's my day|whats my day|start my day)/.test(t)){morningBriefing(false);return;}
+  // time / date
+  if(/(what.*time|what time is it)/.test(t)){say("It's "+fmtTime(now())+" right now.");return;}
+  if(/(what.*day|what.*date|today)/.test(t)&&!/schedule|have/.test(t)){const d=now();say("Today is "+d.toLocaleDateString(undefined,{weekday:"long",month:"long",day:"numeric"})+".");return;}
+  // set wake
+  let m=t.match(/(?:wake me|set (?:an )?alarm|wake up)(?: at| for)?\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/);
+  if(m){let h=+m[1],mn=+(m[2]||0);if(m[3]==="pm"&&h<12)h+=12;if(m[3]==="am"&&h===12)h=0;S.wake=String(h).padStart(2,"0")+":"+String(mn).padStart(2,"0");save();gesture("celebrate");say("Done! I'll wake you at "+fmtTime(hm(S.wake))+" with a bright good morning. ☀️");return;}
+  // learn forgetting
+  m=t.match(/(?:forgot|always forget|keep forgetting|don't forget)(?: my| the)?\s+([a-z ]{2,30})/);
+  if(m){const item=m[1].trim().replace(/\b(last time|again|yesterday)\b/g,"").trim();learn(item);gesture("think");say("Got it — I'll make sure you remember your "+item+" next time you head out. I won't let you forget again.");return;}
+  // remind me
+  m=t.match(/remind me(?: to| about| that)?\s+(.+)/);
+  if(m){S.reminders.push({id:uid(),text:m[1].trim()});save();renderReminders();gesture("celebrate");say("You've got it. I'll remind you to "+m[1].trim()+" before you leave.");return;}
+  // add event
+  m=t.match(/(?:i have|add|schedule|meeting|appointment|remind me of)\s*(?:a|an)?\s*(.+?)\s+(?:at|by)\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/);
+  if(m){
+    let title=m[1].trim()||"event";
+    let h=+m[2],mn=+(m[3]||0);const ap=m[4];if(ap==="pm"&&h<12)h+=12;if(ap==="am"&&h===12)h=0;
+    let mode="walk";const mm=t.match(/\b(walk|drive|driving|train|bus|bike|biking)\b/);if(mm)mode=mm[1].replace("driving","drive").replace("biking","bike");
+    let travel=20;const tv=t.match(/(\d{1,3})\s*(?:min|minute)/);if(tv)travel=+tv[1];
+    S.events.push({id:uid(),title:title.charAt(0).toUpperCase()+title.slice(1),time:String(h).padStart(2,"0")+":"+String(mn).padStart(2,"0"),mode,travel,prep:30,day:todayKey(),notified:{}});
+    save();renderEvents();gesture("celebrate");
+    const ev=S.events[S.events.length-1];const leave=new Date(hm(ev.time)-travel*60000);
+    say(title+" at "+fmtTime(hm(ev.time))+", added! To "+(MODEVERB[mode]||"get there")+" on time you'll want to leave by "+fmtTime(leave)+". I'll warn you 5 minutes before.");
+    return;
+  }
+  // whats my schedule
+  if(/(schedule|what do i have|my day|my tasks|agenda)/.test(t)){
+    const evs=todaysEvents();
+    if(!evs.length){say("Your schedule is clear right now. Want to add something? Just say 'I have lunch at 1pm'.");return;}
+    say("Today you have: "+evs.sort((a,b)=>hm(a.time)-hm(b.time)).map(e=>e.title+" at "+fmtTime(hm(e.time))).join(", ")+".");return;
+  }
+  // done / encouragement
+  if(/(i'm done|im done|finished|completed|did it|got it done)/.test(t)){gesture("celebrate");chime(true);say(cheer());return;}
+  // change look
+  if(/(change|new).*(look|outfit|appearance|hair)/.test(t)){say("You can redesign me anytime! My whole look lives in a settings file, so we can change my hair, eyes, glasses or outfit whenever you like. In the full app you'll have a designer screen for it.");return;}
+  // greeting
+  if(/(hi|hello|hey|how are you)/.test(t)){gesture("wave");say("Hi"+(S.name?" "+S.name:"")+"! I'm here and ready. Ask me about your day, add a task, or say 'good morning'.");return;}
+  if(/thank/.test(t)){say("Anytime — that's what I'm here for. ☀️");return;}
+  // help / fallback
+  say("I can wake you up, run your morning briefing, track your schedule and tell you when to leave, remember things for you, and cheer you on. Try: 'I have a meeting at 9 by train, 30 minutes', or 'remind me to take my keys'.");
+}
+
+/* ---------- scheduler ---------- */
+function todaysEvents(){return S.events.filter(e=>e.day===todayKey());}
+function tick(){
+  const d=now();
+  // wake alarm
+  const w=hm(S.wake);
+  if(d.getHours()===w.getHours()&&d.getMinutes()===w.getMinutes()&&S.lastRoutine!==todayKey()){
+    morningBriefing(true);
+  }
+  // departure warnings
+  todaysEvents().forEach(e=>{
+    e.notified=e.notified||{};
+    const leave=new Date(hm(e.time)-e.travel*60000);
+    const five=new Date(leave-5*60000);
+    if(sameMinute(d,five)&&!e.notified.five){e.notified.five=true;save();
+      gesture("wave");chime();
+      const cl=learnedChecklist();
+      say("Heads up"+(S.name?" "+S.name:"")+" — 5 minutes until you need to leave for "+e.title+"."+(cl.length?" Grab your "+cl.join(", ")+" before you go.":"")+(S.reminders.length?" And remember: "+S.reminders.map(r=>r.text).join(", ")+".":""));
+    }
+    if(sameMinute(d,leave)&&!e.notified.go){e.notified.go=true;save();
+      gesture("wave");chime(true);
+      say("Time to head out now to "+(MODEVERB[e.mode]||"go")+" and make "+e.title+" by "+fmtTime(hm(e.time))+". Off you go — you've got this!");
+    }
+  });
+}
+function sameMinute(a,b){return a.getHours()===b.getHours()&&a.getMinutes()===b.getMinutes();}
+setInterval(tick,15000);
+
+/* ---------- chime (WebAudio) ---------- */
+function chime(happy){
+  try{const ac=new (window.AudioContext||window.webkitAudioContext)();
+    const notes=happy?[523,659,784,1046]:[659,784];
+    notes.forEach((f,i)=>{const o=ac.createOscillator(),g=ac.createGain();o.frequency.value=f;o.type="sine";
+      o.connect(g);g.connect(ac.destination);const t=ac.currentTime+i*0.16;
+      g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(0.25,t+0.03);g.gain.exponentialRampToValueAtTime(0.0001,t+0.35);
+      o.start(t);o.stop(t+0.4);});
+  }catch(e){}
+}
+
+/* ---------- rendering ---------- */
+function renderEvents(){
+  const box=$("#eventList");const evs=todaysEvents().sort((a,b)=>hm(a.time)-hm(b.time));
+  if(!evs.length){box.innerHTML='<div class="empty">Nothing yet. Tap + or tell Lumi "I have a meeting at 9 by train".</div>';return;}
+  box.innerHTML="";
+  evs.forEach(e=>{
+    const leave=new Date(hm(e.time)-e.travel*60000);
+    const div=document.createElement("div");div.className="item";
+    div.innerHTML='<span class="t">'+fmtTime(hm(e.time))+'</span><span class="grow"><b>'+esc(e.title)+'</b><small>'+(MODEVERB[e.mode]||e.mode)+' · leave by '+fmtTime(leave)+'</small></span><span class="x">✕</span>';
+    div.querySelector(".x").onclick=()=>{S.events=S.events.filter(x=>x.id!==e.id);save();renderEvents();};
+    box.appendChild(div);
+  });
+}
+function renderReminders(){
+  const box=$("#reminderList");
+  if(!S.reminders.length){box.innerHTML='<div class="empty">Nothing to remember yet. Say "remind me to take my keys".</div>';return;}
+  box.innerHTML="";
+  S.reminders.forEach(r=>{
+    const div=document.createElement("div");div.className="item";
+    div.innerHTML='<span class="grow">'+esc(r.text)+'</span><span class="x">✕</span>';
+    div.querySelector(".x").onclick=()=>{S.reminders=S.reminders.filter(x=>x.id!==r.id);save();renderReminders();};
+    box.appendChild(div);
+  });
+}
+function renderHabits(){
+  const box=$("#habitList");const keys=Object.keys(S.habits);
+  if(!keys.length){box.innerHTML='<div class="empty">As you use me, I\'ll learn your patterns. Tell me "I forgot my keys" and I\'ll always remind you.</div>';return;}
+  box.innerHTML='<div style="padding:4px 0">Pre-leave checklist I\'ll remind you about:</div>'+
+    keys.sort((a,b)=>S.habits[b]-S.habits[a]).map(k=>'<span class="tagpill">'+esc(k)+' ×'+S.habits[k]+'</span>').join("");
+}
+function esc(s){return String(s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));}
+
+/* ---------- UI wiring ---------- */
+$("#btnMic").onclick=()=>{ if(!S.name){openSetup();return;} toggleMic(); };
+$("#btnMorning").onclick=()=>{ if(!S.name){openSetup();return;} morningBriefing(false); };
+$("#btnSettings").onclick=openSetup;
+$("#btnSend").onclick=sendTyped;
+$("#typed").addEventListener("keydown",e=>{if(e.key==="Enter")sendTyped();});
+function sendTyped(){const v=$("#typed").value.trim();if(!v)return;$("#typed").value="";handle(v);}
+
+$("#addEvent").onclick=()=>$("#eventModal").classList.add("show");
+$("#evCancel").onclick=()=>$("#eventModal").classList.remove("show");
+$("#evSave").onclick=()=>{
+  const title=$("#evTitle").value.trim()||"Event";const time=$("#evTime").value||"09:00";
+  S.events.push({id:uid(),title,time,mode:$("#evMode").value,travel:+$("#evTravel").value||0,prep:+$("#evPrep").value||0,day:todayKey(),notified:{}});
+  save();renderEvents();$("#eventModal").classList.remove("show");$("#evTitle").value="";
+  gesture("celebrate");
+  const leave=new Date(hm(time)-(+$("#evTravel").value||0)*60000);
+  say(title+" added for "+fmtTime(hm(time))+". Leave by "+fmtTime(leave)+" — I'll remind you.");
+};
+$("#addReminder").onclick=()=>{const v=prompt("What should Lumi remind you before you leave?");if(v){S.reminders.push({id:uid(),text:v.trim()});save();renderReminders();say("I'll remember that for you.");}};
+
+$("#resetLink").onclick=e=>{e.preventDefault();if(confirm("Reset Lumi's memory (schedule, reminders, learned habits)?")){localStorage.removeItem(KEY);S=load();renderAll();openSetup();}};
+
+/* setup modal */
+function openSetup(){$("#setName").value=S.name;$("#setWake").value=S.wake;$("#setVoice").value=S.voiceOn?"1":"0";$("#setupModal").classList.add("show");}
+$("#setupSave").onclick=()=>{
+  S.name=$("#setName").value.trim();S.wake=$("#setWake").value||"07:00";S.voiceOn=$("#setVoice").value==="1";save();
+  $("#setupModal").classList.remove("show");renderAll();
+  gesture("wave");
+  say("Perfect"+(S.name?", "+S.name:"")+"! I'm all set. I'll wake you at "+fmtTime(hm(S.wake))+". Tap the microphone anytime, or press Morning briefing to hear your day.");
+};
+
+function renderAll(){renderEvents();renderReminders();renderHabits();}
+renderAll();
+
+/* first run */
+if(!S.name){setTimeout(openSetup,500);}
+else{setTimeout(()=>{gesture("wave");setSubtitle("Tap 🎤 to talk, or ☀️ for your briefing.",false);},400);}
+
+// unlock audio on first interaction (mobile)
+document.body.addEventListener("click",function unlock(){try{const a=new(window.AudioContext||window.webkitAudioContext)();a.resume();}catch(e){}document.body.removeEventListener("click",unlock);},{once:true});
+
+/* ---------- PWA: install + open-into-listening (hardware key) ---------- */
+if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.serviceWorker.register("sw.js").catch(()=>{});});}
+
+// When opened via the app icon / hardware-key shortcut (start_url has ?talk=1),
+// Lumi jumps straight into push-to-talk.
+(function talkMode(){
+  const wantTalk=new URLSearchParams(location.search).get("talk");
+  if(!wantTalk)return;
+  function go(){
+    if(!S.name){return;}            // first-run: let setup happen first
+    setSubtitle("Ready — say something to Lumi ☀️",true);
+    // A big translucent tap-catcher guarantees a gesture if the browser needs one.
+    let armed=false;
+    const arm=()=>{ if(armed)return; armed=true; try{toggleMic();}catch(e){} };
+    try{ toggleMic(); }catch(e){}   // try to auto-start
+    // Fallback: first tap anywhere starts listening
+    window.addEventListener("pointerdown",arm,{once:true});
+  }
+  window.addEventListener("load",()=>setTimeout(go,700));
+})();
+</script>
+</body>
+</html>
