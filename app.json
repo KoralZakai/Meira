@@ -30,6 +30,7 @@
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
         "READ_CONTACTS",
+        "READ_CALENDAR",
         "RECEIVE_BOOT_COMPLETED",
         "VIBRATE",
         "SCHEDULE_EXACT_ALARM",
@@ -90,6 +91,12 @@
         }
       ],
       "expo-font",
+      [
+        "expo-calendar",
+        {
+          "calendarPermission": "Meira reads your calendars (Outlook, work, family) to plan the journey to each meeting."
+        }
+      ],
       "expo-background-task",
       [
         "expo-audio",

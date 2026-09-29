@@ -96,6 +96,13 @@ export async function askServerForDirections(
     const json = await res.json();
     const results = json?.results;
     if (!Array.isArray(results)) throw new Error('server returned no results array');
+    // One line per ask: what was asked (date, arrive-by, depart-at) and the
+    // first departure Google answered. A route that comes back hours off is
+    // then traceable to the question that produced it (28.9: 16:00 → 18:16).
+    const first = (results as any[])[0]?.data?.routes?.[0]?.legs?.[0];
+    console.warn('[RouteGateway] asked', req.date, req.arriveBy ? `arrive-by ${req.arriveBy}` : 'no arrive-by',
+      req.queries.map((q) => `${q.mode}${q.transit_mode ? `/${q.transit_mode}` : ''}${q.depart_epoch ? `@${new Date(q.depart_epoch * 1000).toTimeString().slice(0, 5)}` : ''}`).join(','),
+      '→ first', first?.departure_time?.text ?? '-', '→', first?.arrival_time?.text ?? '-');
     return results as DirectionsResult[];
   } finally {
     clearTimeout(timer);

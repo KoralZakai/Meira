@@ -43,6 +43,7 @@ import email_events
 import meeting_brief
 import task_prep
 import errands_along
+import feedback_store
 import profile_extract
 import rate_limit
 import route_proxy
@@ -299,7 +300,43 @@ async def errands_along_route(request: Request, caller: dict = Depends(app_auth.
         memory = (await memory_recall.block_for(caller["key"], task.get("text") or "")) or ""
     except Exception as exc:  # noqa: BLE001 — works without memory
         logger.info("errands_along: memory unavailable (%s)", exc)
-    return await errands_along.along(task.get("text") or "", trips[:3], memory=memory)
+    liked = feedback_store.lines(caller["key"], "errand")
+    if liked:
+        memory = f"{memory}\nHER VERDICTS ON PAST SUGGESTIONS:\n{liked}".strip()
+    return await errands_along.along(task.get("text") or "", trips[:3], memory=memory,
+                                     user_key=caller["key"])
+
+
+@router.post("/feedback")
+async def feedback_route(request: Request, caller: dict = Depends(app_auth.require_caller)):
+    """👍/👎 on a suggestion. Body: {surface: errand|prep|brief, verdict: up|down,
+    subject, place_id?, about?, reason?}.
+
+    Returns {ok, saved, effect} — `effect` says in words what the verdict will
+    change, so the app can confirm something TRUE rather than just "thanks".
+    """
+    body = await request.json() if await request.body() else {}
+    try:
+        v = feedback_store.record(
+            caller["key"], str(body.get("surface") or ""), str(body.get("verdict") or ""),
+            str(body.get("subject") or ""), place_id=body.get("place_id"),
+            about=body.get("about"), reason=body.get("reason"))
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "reason": str(exc)}, status_code=400)
+    except Exception as exc:  # noqa: BLE001 — say it failed, never "thanks"
+        logger.warning("feedback not saved: %s", exc)
+        return JSONResponse({"ok": False, "reason": "not_saved"}, status_code=500)
+    if v["surface"] == "prep" and v["verdict"] == "down":
+        try:
+            task_prep.forget(caller["key"], v["subject"])
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("feedback: prep cache not cleared: %s", exc)
+    if v["surface"] == "errand":
+        effect = ("moves up next time" if v["verdict"] == "up"
+                  else "won't be recommended again")
+    else:
+        effect = "Meira will prepare more like this" if v["verdict"] == "up" else "Meira will prepare differently"
+    return {"ok": True, "saved": v, "effect": effect}
 
 
 @router.post("/geocode")

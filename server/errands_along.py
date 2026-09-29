@@ -264,7 +264,7 @@ def score(c: dict) -> float:
 
 
 async def along(task_text: str, trips: list[dict], *, memory: str = "",
-                plan: Optional[dict] = None) -> dict:
+                plan: Optional[dict] = None, user_key: Optional[str] = None) -> dict:
     """{ok, query, candidates[]} or {ok: false, reason}.
 
     trips: [{polyline, leave: "HH:MM", arrive: "HH:MM", date: "YYYY-MM-DD",
@@ -333,21 +333,47 @@ async def along(task_text: str, trips: list[dict], *, memory: str = "",
         logger.warning("errands_along: Places unreachable — %s", exc)
         return {"ok": False, "reason": "places_unreachable"}
 
+    # Her own verdicts (feedback_store): a place she liked moves up, one she
+    # turned down sinks below everything she has not judged. None → as before.
+    verdict: dict[str, Optional[str]] = {}
+    if user_key:
+        try:
+            import feedback_store
+            for c in shortlist:
+                verdict[c["place_id"]] = feedback_store.place_verdict(user_key, c["place_id"])
+                if verdict[c["place_id"]]:
+                    c["your_verdict"] = verdict[c["place_id"]]
+        except Exception as exc:  # noqa: BLE001 — ranking without her verdicts, not no ranking
+            logger.warning("errands_along: verdicts unavailable: %s", exc)
     rank = {True: 0, None: 1, False: 2}
-    ordered = sorted(shortlist, key=lambda c: (rank[c["open_when_passing"]], -score(c)))
+    ordered = sorted(shortlist, key=lambda c: (
+        rank[c["open_when_passing"]],
+        1 if verdict.get(c["place_id"]) == "down" else 0,
+        -(score(c) + (1.0 if verdict.get(c["place_id"]) == "up" else 0.0)),
+    ))
     if all(c["open_when_passing"] is False for c in ordered):
         return {"ok": False, "reason": "nothing_open_when_passing", "query": query,
                 "closed": ordered[:_TOP]}
     top = [c for c in ordered if c["open_when_passing"] is not False][:_TOP]
     # One recommendation, with the reason in words she can check.
-    if top:
-        best = top[0]
+    # Never recommend a place she turned down.
+    best = next((c for c in top if verdict.get(c["place_id"]) != "down"), None)
+    if best:
         best["recommended"] = True
         best["why"] = [w for w in (
+            "you liked it before" if verdict.get(best["place_id"]) == "up" else None,
             "open_when_passing" if best["open_when_passing"] else None,
             f"rating {best['rating']}" if best.get("rating") else None,
             f"{best['off_route_m']} m off route",
         ) if w]
+    # What it costs, from the web — each price verified against its source.
+    try:
+        import errand_prices
+        await errand_prices.enrich(top, p["query_he"] or p["query_en"] or query)
+        if best and best.get("price"):
+            best["why"].append(f"price {best['price']['price']}")
+    except Exception as exc:  # noqa: BLE001 — prices are a bonus, the route is the answer
+        logger.warning("errands_along: prices skipped: %s", exc)
     for c in top:
         c["maps_url"] = f"https://www.google.com/maps/search/?api=1&query={c['lat']},{c['lng']}&query_place_id={c['place_id']}"
     return {"ok": True, "query": query, "minutes": p["minutes"], "candidates": top}

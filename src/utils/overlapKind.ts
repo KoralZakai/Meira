@@ -298,3 +298,58 @@ export function suggestReschedule(
     ? { when: 'today', at: minutesToTime(cursor) }
     : { when: 'tomorrow' };
 }
+
+/** Two consecutive places whose gap is shorter than the ride between them. */
+export interface TightTransfer {
+  from: Task;
+  to: Task;
+  /** Minutes between the end of `from` and the start of `to`. */
+  gapMinutes: number;
+  travelMinutes: number;
+  /** How late she lands at `to` if she stays to the end of `from`. */
+  lateBy: number;
+  /** …at this time. */
+  arriveAt: string;
+}
+
+/**
+ * The clash that is not an overlap.
+ *
+ * Koral, 29.9: "if you insert a task in another place than the previous task
+ * and the time is not enough to do that in real life" — a meeting at Azrieli
+ * until 14:00 and coffee in Herzliya at 14:15 share no minute, so
+ * classifyOverlap (which needs an overlap) said nothing, while the ride is
+ * half an hour. dayWarnings knew this all along but only the week view read it.
+ *
+ * Pairs each PLACED task with the previous placed one (floating work in
+ * between does not move her). Travel is the second task's own planned ride —
+ * never a guess: an unplanned leg is not reported, so this cannot cry wolf.
+ * Overlapping pairs are skipped; they are ordinary clashes already.
+ */
+export function tightTransfers(tasks: Task[]): TightTransfer[] {
+  const placed = tasks
+    .filter((t) => t.status === 'pending' && startOf(t) && !isFloatingTask(t))
+    .sort((a, b) => timeToMinutes(startOf(a)!) - timeToMinutes(startOf(b)!));
+  const out: TightTransfer[] = [];
+  for (let k = 1; k < placed.length; k++) {
+    const from = placed[k - 1];
+    const to = placed[k];
+    if (placeKey(from) === placeKey(to)) continue;
+    const fromEnd = timeToMinutes(endOf(from));
+    const toStart = timeToMinutes(startOf(to)!);
+    const gap = toStart - fromEnd;
+    if (gap < 0) continue;
+    const loc: any = typeof to.location === 'object' ? to.location : undefined;
+    const travel = Number(loc?.travelMinutes ?? loc?.transitPlan?.totalDurationMinutes);
+    if (!Number.isFinite(travel) || travel <= 0) continue;
+    if (gap >= travel) continue;
+    out.push({
+      from, to,
+      gapMinutes: gap,
+      travelMinutes: travel,
+      lateBy: travel - gap,
+      arriveAt: minutesToTime(fromEnd + travel),
+    });
+  }
+  return out;
+}

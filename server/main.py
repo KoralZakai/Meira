@@ -66,6 +66,8 @@ import bug_reports
 import stt
 import dedup_service
 import routes_app
+import mcp_server
+import secret_guard
 import tz as _tz
 
 logging.basicConfig(level=logging.INFO)
@@ -158,6 +160,7 @@ app = FastAPI(title="Lumi-App", version="1.0", lifespan=lifespan)
 # The app's own doors (thin client: capture + schedule). First router in this
 # file — everything above it predates the split and moves out gradually.
 app.include_router(routes_app.router)
+app.include_router(mcp_server.router)
 
 # In-memory dedup: WhatsApp retries the same msg_id up to 4× if it thinks we're slow.
 # Keep the last 200 processed IDs (tiny memory footprint, clears on restart which is fine).
@@ -691,22 +694,13 @@ async def agent_chat(request: Request):
     content = (body.get("message") or "").strip()
     if not content:
         return JSONResponse({"error": "message is required"}, status_code=400)
+    _guard = secret_guard.handle(content, he=bool(re.search(r"[\u0590-\u05FF]", content)))
+    if _guard:
+        return {"text": _guard, "type": "secret_blocked", "tasks": [], "departures": []}
 
     key = caller["key"]
-    # The same user record the WhatsApp path resolves, so history, memory and
-    # personality are shared rather than started again per channel.
-    user = None
-    learned = None
-    try:
-        if caller["phone"]:
-            user = await DatabaseService.get_user_by_whatsapp(caller["phone"])
-            if not user:
-                user = await DatabaseService.create_user_from_whatsapp(caller["phone"])
-        if user:
-            learned = await PersonalityLearningService.get_learned_personality(str(user["id"]))
-    except Exception as exc:  # noqa: BLE001 — degrade gracefully without a DB
-        logger.warning("agent_chat DB step skipped: %s", exc)
-    user = user or {"id": key, "name": "User", "language": "en"}
+    # The same user record the WhatsApp path resolves (agent_turn.user_for_caller).
+    user, learned = await agent_turn.user_for_caller(caller)
 
     try:
         result = await agent_turn.run_turn(
@@ -2114,6 +2108,15 @@ async def whatsapp_webhook(request: Request):
                                     currentLat=loc.get("latitude"), currentLng=loc.get("longitude"))
         content = f"(I'm sharing my current location: {addr}) {content}".strip()
 
+
+    # ── A key pasted into the chat ─────────────────────────────────────────
+    # Before ANYTHING stores or forwards the text: not the history, not the
+    # DB, not the model. A Meira key is revoked on the spot. See secret_guard.
+    _guard = secret_guard.handle(content, he=(user_profile.get_profile(phone).get("language") or "he") == "he")
+    if _guard:
+        await WhatsAppService.mark_as_read(msg_id)
+        await WhatsAppService.send_message(phone, _guard)
+        return JSONResponse({"status": "ok"})
 
     # ── Bug reports ────────────────────────────────────────────────────────
     # "באג בלומי: …" / "bug in lumi: …". Filed as a tracked record with an id

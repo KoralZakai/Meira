@@ -67,6 +67,8 @@ _STORE_MODULES = (
     "bug_reports",      # anything they reported
     "meeting_brief",    # who they were about to meet
     "task_prep",        # what Meira prepared for their tasks
+    "mcp_server",       # AI-assistant tokens: deleting the account revokes them
+    "feedback_store",   # their 👍/👎 on suggestions
 )
 
 # Supabase tables owned directly by an auth user id.

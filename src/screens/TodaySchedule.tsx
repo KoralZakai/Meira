@@ -24,7 +24,7 @@ import {
 import { addMinutes, timeToMinutes } from '../utils/timeUtils';
 import { hydrateCustomCategories } from '../constants/categories';
 import { resolveClashes, Clash, ClashOption } from '../utils/resolveClashes';
-import { classifyOverlap } from '../utils/overlapKind';
+import { classifyOverlap, tightTransfers } from '../utils/overlapKind';
 import { findSameThingGroups, mergedInto, SameThingGroup } from '../utils/likelySameTask';
 import ClashCard from '../components/ClashCard';
 import SameThingCard from '../components/SameThingCard';
@@ -1506,6 +1506,9 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
     return !verdict || verdict.kind === 'spatial';
   });
   const daySameThing = showingToday ? sameThing : findSameThingGroups(otherDayTasks);
+  // Two places with no overlap but not enough time to get between them —
+  // the clash an overlap check cannot see (utils/overlapKind.tightTransfers).
+  const dayTight = tightTransfers(showingToday ? tasks : otherDayTasks);
   const clashAt = dayClashes[0]
     ? [dayClashes[0].a, dayClashes[0].b].map((t) => t.fixedTime || t.scheduledTime || '').filter(Boolean).sort()[1] || ''
     : '';
@@ -1676,6 +1679,23 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
             </Text>
           </TouchableOpacity>
         )}
+
+        {dayTight.map((tt) => (
+          <TouchableOpacity
+            key={`tight-${tt.from.id}-${tt.to.id}`}
+            style={styles.clashLink}
+            activeOpacity={0.85}
+            // The card of the second one: move it, or change how she gets there.
+            onPress={() => setSelectedTask(tt.to)}
+            accessibilityRole="button"
+          >
+            <Text style={styles.clashLinkText} numberOfLines={2}>
+              {language === 'he'
+                ? `⚠️ ${tt.gapMinutes} דק׳ להגיע ל"${tt.to.text}" — הנסיעה ${tt.travelMinutes} · הגעה ${tt.arriveAt} (${tt.lateBy} דק׳ איחור) ›`
+                : `⚠️ ${tt.gapMinutes} min to reach "${tt.to.text}" — the ride is ${tt.travelMinutes} · arrive ${tt.arriveAt} (${tt.lateBy} min late) ›`}
+            </Text>
+          </TouchableOpacity>
+        ))}
 
         {/* "Is this the same interview?" — three rows for one appointment,
             each with a different hour, is what a conversation leaves behind.

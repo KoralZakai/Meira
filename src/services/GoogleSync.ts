@@ -24,7 +24,9 @@ import {
   getDismissedExternalIds, reconcileExternalTask, deleteTasks,
 } from './TaskStorage';
 import { loadProfile } from './UserProfileStorage';
-import { categoryForCalendarEvent } from '../utils/categorize';
+import {
+  calendarEventToTask, withoutDuplicates, type CalendarProvider,
+} from '../utils/calendarEventTask';
 import {
   missingPrepTasks, isInterview, departureTimeOf, runawayPrepIds,
 } from '../utils/interviewPrep';
@@ -45,7 +47,6 @@ import { getTodayString, getTomorrowString, timeToMinutes, subtractMinutes } fro
 // Pure planning decisions (conflict detection, email-vs-calendar matching) live
 // in utils/dayPlanning so they can be unit-tested outside the Expo runtime.
 import { locOf, addrOf, timeOf, sortTimed, dayWarnings, alreadyScheduled, pickNextUpcoming } from '../utils/dayPlanning';
-import { isMeetingLink } from '../utils/meetingLink';
 import { pickCoords, needsGeocode, locationIsPlaced } from '../utils/placeCoords';
 import { learnPlace } from './KnownPlacesStore';
 import { modeFor } from './TravelPreferenceStore';
@@ -92,12 +93,6 @@ const CALENDAR_SYNC_DAYS = 30;
  */
 const TRAVEL_PLAN_DAYS = 30;
 
-/** Duration in minutes between two HH:MM times (>= 15). */
-function diffMinutes(start: string, end: string): number {
-  const [sh, sm] = start.split(':').map(Number);
-  const [eh, em] = end.split(':').map(Number);
-  return Math.max(15, eh * 60 + em - (sh * 60 + sm));
-}
 
 /**
  * Reminders for a newly imported fixed-time task.
@@ -134,78 +129,60 @@ export async function syncCalendarForDate(date: string, lang: AppLanguage): Prom
 
     const tasks: Task[] = events
       .filter((e) => e.title)
-      .map((e) => {
-        // The title is the one field nobody controls. An invitation called
-        // "Ceva — Dana Levi" says nothing, while its body says "An
-        // in-person interview has been scheduled for you" and its organiser is
-        // scheduler@comeet-notifications.com. Both were in the payload and
-        // neither was read.
-        const label = categoryForCalendarEvent({
-          title: e.title,
-          description: e.description,
-          organizer: e.organizer,
-          hasMeetingUrl: Boolean(e.meetingUrl),
-        });
-        return ({
-        id: `gcal-${e.id}`,
-        text: e.title,
-        isFixed: true,
-        fixedTime: e.startTime,
-        scheduledTime: e.startTime,
-        durationMinutes: diffMinutes(e.startTime, e.endTime),
-        date,
-        status: 'pending',
-        source: 'calendar',
-        calendarEventId: e.id,
-        // A video link is NOT a location. Putting it there made Lumi geocode
-        // it, plan a bus to it and set a wake alarm for it. Links go to
-        // meetingUrl; `location` keeps only somewhere you can actually stand.
-        location: isMeetingLink(e.location) ? undefined : e.location,
-        hasLocation: Boolean(e.location) && !isMeetingLink(e.location),
-        meetingUrl: e.meetingUrl,
-        attendees: e.attendees,
-        // A call you join from anywhere is a different KIND of commitment from
-        // one you travel to — but the TITLE outranks both. This used to be
-        // `e.meetingUrl ? 'zoom' : 'meeting'` with the words never consulted,
-        // so "Your in-person interview with Ceva" arrived as a generic
-        // 45-minute `meeting` and every interview behaviour — the 🎯, the
-        // `must` that floats it to the top of the day, the 90-minute block,
-        // the preparation days — was keyed to a category it never got.
-        category: label.category,
-        priority: label.priority,
-        createdAt: Date.now(),
-        historicalDurations: [],
-        } as unknown as Task);
-      });
-
-    // Snapshot existing ids BEFORE the merge so only genuinely new imports
-    // get alerts (re-scheduling existing ones would duplicate notifications).
-    const existingIds = new Set((await getAllTasks()).map((t) => t.id));
-    const added = await mergeExternalTasks(tasks);
-    if (added > 0) {
-      for (const t of tasks) {
-        if (!existingIds.has(t.id) && t.fixedTime) scheduleImportedTask(t, lang);
-      }
-    }
-    // An event that was ALREADY imported is skipped by mergeExternalTasks — it
-    // matches on id and moves on — so for the whole life of the task Lumi kept
-    // whatever Google said the first time. An organiser moving an interview by
-    // an hour, or adding the address they forgot, changed nothing here and the
-    // old alarm stayed armed for the old hour. Re-read the ones we already have.
-    await refreshImportedTasks(tasks, lang);
-    // The authority, and it runs BEFORE prep blocks are derived — those are
-    // built from the stored interview, so the stored interview has to be right
-    // first. Whatever the two passes above declined to touch, this makes match
-    // Google, including a row whose date is wrong: nothing else in this file
-    // has ever been able to fix that.
-    const report = await reconcileCalendarTasks(tasks, lang);
-    await ensureInterviewPrep(lang);
-    return added + report.inserted + report.updated;
+      .map((e) => calendarEventToTask(e, date, 'google'));
+    return await importCalendarTasks(tasks, lang, 'google');
   } catch (e) {
     lastCalendarError = `sync: ${String((e as Error)?.message || e).slice(0, 200)}`;
     console.warn('[GoogleSync] calendar sync failed', e);
     return 0;
   }
+}
+
+/**
+ * Land a batch of calendar events as tasks: merge → refresh → reconcile →
+ * interview prep. Shared by every calendar Meira reads (Google, the phone's
+ * own calendars, Outlook), so an event is handled the same way whichever app
+ * she booked it in. Returns how many rows were added or corrected.
+ *
+ * The same meeting seen through two calendars (Outlook mirrored into Google)
+ * is imported once — `withoutDuplicates`, logged at warn so a dropped event
+ * is never a silent one.
+ */
+export async function importCalendarTasks(
+  incoming: Task[],
+  lang: AppLanguage,
+  provider: CalendarProvider,
+): Promise<number> {
+  const store = await getAllTasks();
+  const { kept: tasks, duplicates } = withoutDuplicates(incoming, store);
+  if (duplicates.length) {
+    console.warn(`[CalendarImport] ${provider}: ${duplicates.length} already in the day from another calendar:`,
+      duplicates.map((t) => `${t.date} ${t.fixedTime} ${t.text}`).join(' | '));
+  }
+  if (!tasks.length) return 0;
+  // Snapshot existing ids BEFORE the merge so only genuinely new imports
+  // get alerts (re-scheduling existing ones would duplicate notifications).
+  const existingIds = new Set(store.map((t) => t.id));
+  const added = await mergeExternalTasks(tasks);
+  if (added > 0) {
+    for (const t of tasks) {
+      if (!existingIds.has(t.id) && t.fixedTime) scheduleImportedTask(t, lang);
+    }
+  }
+  // An event that was ALREADY imported is skipped by mergeExternalTasks — it
+  // matches on id and moves on — so for the whole life of the task Lumi kept
+  // whatever Google said the first time. An organiser moving an interview by
+  // an hour, or adding the address they forgot, changed nothing here and the
+  // old alarm stayed armed for the old hour. Re-read the ones we already have.
+  await refreshImportedTasks(tasks, lang);
+  // The authority, and it runs BEFORE prep blocks are derived — those are
+  // built from the stored interview, so the stored interview has to be right
+  // first. Whatever the two passes above declined to touch, this makes match
+  // Google, including a row whose date is wrong: nothing else in this file
+  // has ever been able to fix that.
+  const report = await reconcileCalendarTasks(tasks, lang);
+  await ensureInterviewPrep(lang);
+  return added + report.inserted + report.updated;
 }
 
 /**
@@ -1149,6 +1126,7 @@ export async function ensureTravelChain(
             // Under the per-task lock: armTaskAlerts re-plans the same task
             // from five other call sites, and two runs interleaving here is
             // how "time to start getting ready" arrived four times over.
+            console.warn(`[GoogleSync] chain saved ${plan.leaveHomeAt}→${plan.arriveAt} for "${t.text.slice(0, 30)}" at ${arrival} on ${date}`);
             await withTaskAlertLock(t.id, async () => {
               await cancelTaskNotifications(t).catch(() => {});
               const notifTask = { ...t, location, notificationIds: [] } as Task;

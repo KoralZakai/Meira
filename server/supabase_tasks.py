@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import time
+import re
 import uuid
 from typing import Optional
 
@@ -25,6 +26,7 @@ import config
 import secure_store
 from user_memory import text_similarity
 
+_UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
 logger = logging.getLogger("lumi.supabase")
 
 _TIMEOUT = 8.0
@@ -100,6 +102,13 @@ async def user_id_for_phone(phone: str) -> Optional[str]:
     Exact digits first, then a last-9-digits suffix match (0521… vs 972521…)."""
     if not _enabled():
         return None
+    # An app-only account (no WhatsApp linked) is keyed by its VERIFIED
+    # Supabase user id — app_auth.identify sets key = phone or userId. Read as a
+    # phone number, a UUID's digits were suffix-matched against strangers'
+    # numbers and otherwise found nothing, so everything that account's agent
+    # saved stayed in the JSON mirror and never reached its phone.
+    if _UUID_RE.match(str(phone or "").strip()):
+        return str(phone).strip().lower()
     digits = _digits(phone)
     if not digits:
         return None

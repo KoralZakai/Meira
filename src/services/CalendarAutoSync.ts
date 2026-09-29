@@ -62,6 +62,8 @@ import {
   getSettings,
   updateTaskFields,
 } from './TaskStorage';
+import { syncDeviceCalendars, type DeviceCalendarResult } from './DeviceCalendarSync';
+import { syncOutlook, type OutlookSyncResult } from './OutlookService';
 import { getTodayString, isExpoGo } from '../utils/timeUtils';
 import { AppLanguage, Task } from '../types/index';
 
@@ -101,6 +103,10 @@ export interface CalendarSyncResult {
   newTasks: Task[];
   /** Whether anything at all ran (false = skipped, not failed). */
   ran: boolean;
+  /** The phone's own calendars (Outlook app, Samsung, work, family). */
+  device?: DeviceCalendarResult;
+  /** Outlook / Teams through Microsoft Graph. */
+  outlook?: OutlookSyncResult;
 }
 
 /** One sync at a time. Two at once race on the task array — see TodaySchedule. */
@@ -139,8 +145,15 @@ export async function runCalendarSync(
     const language = lang ?? await getSettings().then((s) => s.language).catch(() => 'en' as AppLanguage);
     const before = new Set((await getAllTasks().catch(() => [] as Task[])).map((t) => t.id));
     let added = 0;
+    let device: DeviceCalendarResult | undefined;
+    let outlook: OutlookSyncResult | undefined;
     try {
       added = await syncCalendarToday(language, opts.force ?? true);
+      // Every other calendar she keeps, BEFORE the travel chain, so their
+      // events get a route, a leave time and an alarm on this same run.
+      device = await syncDeviceCalendars(language);
+      outlook = await syncOutlook(language);
+      added += (device.added || 0) + (outlook.added || 0);
       const today = getTodayString();
       await ensureTravelChain(today, language).catch((e) => {
         console.warn('[CalendarAutoSync] travel chain (today) failed', e);
@@ -183,6 +196,8 @@ export async function runCalendarSync(
       error: lastCalendarFailure(),
       newTasks,
       ran: true,
+      device,
+      outlook,
     };
     if (opts.announce && newTasks.length) await announce(newTasks, language);
     for (const l of listeners) { try { l(result); } catch { /* a bad listener is not a sync failure */ } }

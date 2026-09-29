@@ -351,9 +351,24 @@ a thin client: it sends what the user said and renders what comes back.
 ```
 WhatsApp webhook ─┐
                   ├─► agent_turn.run_turn ─► lumi_agent.handle_whatsapp_message
-POST /agent/chat ─┘         (server/react_loop.py — our own ReAct loop, not
-                             LangGraph, which cost 35 MB on a 256 MB machine)
+POST /agent/chat ─┤         (server/react_loop.py — our own ReAct loop, not
+POST /mcp ────────┘          LangGraph, which cost 35 MB on a 256 MB machine)
 ```
+
+**The third door — MCP** (`server/mcp_server.py`, docs/MCP.md). Claude, ChatGPT
+or Cursor call Meira over the Model Context Protocol with a personal token made
+in the app (Menu → AI assistants; stored as a SHA-256 only). Its 8 tools wrap
+the agent's own tools — never a second implementation — and identity comes
+from the token, never from an argument. A task added there goes through
+`agent_turn.persist_agent_tasks`, like any other.
+
+**Calendars** — every source goes through ONE mapper,
+`src/utils/calendarEventTask.ts`, and ONE import path,
+`GoogleSync.importCalendarTasks`: Google (API), the phone's own calendars
+(`DeviceCalendarSync`, expo-calendar) and Outlook/Teams (`OutlookService`,
+Microsoft Graph). Id prefixes `gcal-` / `dcal-` / `ocal-`. The same meeting via
+two calendars lands once (`withoutDuplicates`). "Microsoft Teams Meeting" as a
+location is not a place (`isOnlineOnlyPlace`) — rule 8 again.
 
 Think → call tool → see result → think → call next tool → answer.
 Recursion limit 15, four transient retries, one silent retry on degenerate output.

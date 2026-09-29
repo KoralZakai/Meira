@@ -274,3 +274,32 @@ export function describePlanOption(plan: TransitPlan, he: boolean): string {
     ? `${icon} ${lines || 'נסיעה'} · ${changes} · ${plan.totalDurationMinutes} דק' · יציאה ${plan.leaveHomeAt}, הגעה ${plan.arriveAt}`
     : `${icon} ${lines || 'ride'} · ${changes} · ${plan.totalDurationMinutes} min · leave ${plan.leaveHomeAt}, arrive ${plan.arriveAt}`;
 }
+
+/**
+ * "Leave now" → the journey that gets her there FIRST.
+ *
+ * parseTransitAlternatives ranks for an arrive-by plan: fewest changes, then
+ * fastest. That is the wrong question once she is late. On 29.9 at 15:19,
+ * still home for a 16:00 birthday, Google's depart-now answer held the 15:36
+ * bus AND a direct line 2 at 18:16 — same minutes, three hours on, because the
+ * line runs a clock-face timetable — and "simplest" picked 18:16: "arrive
+ * 18:57, 177 min late", when she could have been there by 16:12.
+ *
+ * Earliest arrival wins (measured from `now`, so a trip past midnight counts
+ * as later, not earlier); fewer rides only break a tie.
+ */
+export function soonestArrival(plans: TransitPlan[], nowHHMM: string): TransitPlan | null {
+  const toMin = (s: string) => {
+    const [h, m] = (s || '').split(':').map(Number);
+    return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : NaN;
+  };
+  const now = toMin(nowHHMM);
+  const ahead = (s: string) => {
+    const t = toMin(s);
+    if (!Number.isFinite(t) || !Number.isFinite(now)) return Infinity;
+    return (t - now + 1440) % 1440;
+  };
+  const usable = plans.filter((p) => Number.isFinite(ahead(p.arriveAt)));
+  if (!usable.length) return plans[0] ?? null;
+  return [...usable].sort((a, b) => ahead(a.arriveAt) - ahead(b.arriveAt) || rideCount(a) - rideCount(b))[0];
+}

@@ -11,6 +11,7 @@
  * answer says which one it is — "not an errand" is not "Places refused".
  */
 import React, { useEffect, useState } from 'react';
+import FeedbackThumbs from './FeedbackThumbs';
 import { ActivityIndicator, Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { BRAND, FONTS } from '../constants/theme';
 import { Task } from '../types/index';
@@ -39,6 +40,12 @@ export async function plannedTrips(now = new Date()): Promise<ErrandTrip[]> {
     out.push({ polyline: plan.overviewPolyline, leave, arrive, date: t.date, label: t.text });
   }
   return out.sort((a, b) => `${a.date} ${a.leave}`.localeCompare(`${b.date} ${b.leave}`)).slice(0, 3);
+}
+
+/** "yam.example" out of a URL, for the source line. */
+function hostOf(url?: string | null): string {
+  const m = String(url || '').match(/^https?:\/\/(?:www\.)?([^/]+)/i);
+  return m ? m[1] : '';
 }
 
 function reasonLine(r: ErrandsResult | null, he: boolean): string {
@@ -115,6 +122,22 @@ export default function OnYourWayCard({ task, he, onPlan }: Props) {
                 {` · ${c.off_route_m} ${he ? 'מ׳ מהמסלול' : 'm off route'}`}
                 {c.trip ? ` · ${he ? 'בדרך ל' : 'on the way to '}${c.trip}` : ''}
               </Text>
+              {c.price?.price ? (
+                // A real number from the web, verified against its source (server/errand_prices.py).
+                <TouchableOpacity
+                  onPress={() => c.price?.source_url && Linking.openURL(c.price.source_url).catch((e) => console.warn('[OnYourWay] price source', e))}
+                  hitSlop={6}
+                >
+                  <Text style={styles.price} numberOfLines={1}>
+                    💰 {c.price.price}
+                    <Text style={styles.source}>{` · ${he ? 'מקור' : 'source'}: ${hostOf(c.price.source_url) || c.price.source_title || ''} ›`}</Text>
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+              {c.recommended || c.your_verdict ? (
+                <FeedbackThumbs surface="errand" subject={c.name} place_id={c.place_id}
+                  about={state.res?.query} he={he} />
+              ) : null}
             </View>
             {c.maps_url ? (
               <TouchableOpacity onPress={() => Linking.openURL(c.maps_url!).catch((e) => console.warn('[OnYourWay] map', e))} hitSlop={8}>
@@ -134,6 +157,8 @@ export default function OnYourWayCard({ task, he, onPlan }: Props) {
 }
 
 const styles = StyleSheet.create({
+  price: { fontSize: 12, fontFamily: FONTS.bodySemi, color: BRAND.success, marginTop: 2 },
+  source: { fontSize: 11, fontFamily: FONTS.body, color: BRAND.inkSoft },
   card: {
     backgroundColor: BRAND.honey, borderRadius: 16, borderWidth: 1, borderColor: BRAND.sunGold,
     padding: 12, gap: 8, marginVertical: 8,

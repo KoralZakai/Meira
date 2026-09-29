@@ -74,6 +74,7 @@ DEFAULT_TIER: dict[str, str] = {
     "task_prep_plan":  SMALL,    # is there anything worth preparing? which searches
     "task_prep":       MEDIUM,   # cited prep items from the searches
     "errand_understand": SMALL,  # is this an errand, and what to search on the map
+    "errand_price": SMALL,       # read one price out of cited web snippets (code verifies it)
     "research":        LARGE,
 }
 

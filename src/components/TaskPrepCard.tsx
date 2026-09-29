@@ -6,6 +6,7 @@
  * it came from — for songs, that is where the lyrics are.
  */
 import React from 'react';
+import FeedbackThumbs from './FeedbackThumbs';
 import { Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { BRAND, FONTS } from '../constants/theme';
 import { TaskPrepResult } from '../services/LumiServer';
@@ -50,6 +51,7 @@ export default function TaskPrepCard({ prep, he, taskText }: Props) {
         {he ? `כל שורה מגיעה ממקור · ${prep.sources?.length ?? 0} מקורות · Tavily`
           : `Every line cites its source · ${prep.sources?.length ?? 0} sources · Tavily`}
       </Text>
+      <FeedbackThumbs surface="prep" subject={taskText} about={prep.kind ?? undefined} he={he} />
     </View>
   );
 }

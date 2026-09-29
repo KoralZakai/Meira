@@ -289,6 +289,12 @@ export interface ErrandCandidate {
   /** 0 (free) … 4 (very expensive), when Google knows it. */
   price_level?: number | null;
   reviews?: number | null;
+  /** What it costs, from the web (Tavily) — each number verified against its source. */
+  price?: { price: string; source_title?: string; source_url?: string };
+  /** Why there is no price: no_price_published, price_not_in_source, search_failed: … */
+  price_reason?: string;
+  /** Her latest 👍/👎 on this place, when she gave one. */
+  your_verdict?: 'up' | 'down';
   /** Meira's one pick, with the reasons ("open_when_passing", "rating 4.6", "120 m off route"). */
   recommended?: boolean;
   why?: string[];
@@ -519,4 +525,76 @@ export async function planDay(
     windows: Array.isArray(body.windows) ? body.windows : [],
     summary: String(body.summary ?? ''),
   };
+}
+
+// ── AI assistants (MCP) ─────────────────────────────────────────────────────
+
+/** A server answer or the reason there is none — never a bare null (rule 1). */
+export type Reasoned<T> = { ok: true; data: T } | { ok: false; reason: string };
+
+async function request<T>(method: 'GET' | 'POST' | 'DELETE', path: string, body?: unknown): Promise<Reasoned<T>> {
+  if (!SERVER_URL) return { ok: false, reason: 'This build has no server address' };
+  let token: string | undefined;
+  try {
+    token = (await getSession())?.access_token;
+  } catch (e) {
+    console.warn('[LumiServer] session unreadable', e);
+  }
+  if (!token) return { ok: false, reason: 'Sign in first — the server needs to know it is you' };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20_000);
+  try {
+    const res = await fetch(`${SERVER_URL}${path}`, {
+      method,
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const text = (await res.text()).slice(0, 200);
+      console.warn('[LumiServer]', method, path, 'said', res.status, text);
+      return { ok: false, reason: res.status === 404 ? 'The server does not have this yet (deploy pending)' : `Server said ${res.status}: ${text}` };
+    }
+    return { ok: true, data: (await res.json()) as T };
+  } catch (e) {
+    console.warn('[LumiServer]', method, path, 'failed', e);
+    return { ok: false, reason: `Could not reach the server: ${String((e as Error)?.message || e).slice(0, 120)}` };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export interface McpToken { token: string; label: string; created: number; url: string }
+export interface McpTokenInfo { id: string; label: string; created: number; last_used: number | null }
+
+/** A personal token an AI assistant (Claude, ChatGPT, Cursor) uses to reach Meira. Shown once. */
+export function createMcpToken(label: string): Promise<Reasoned<McpToken>> {
+  return request<McpToken>('POST', '/app/mcp/token', { label });
+}
+
+export function listMcpTokens(): Promise<Reasoned<{ tokens: McpTokenInfo[] }>> {
+  return request('GET', '/app/mcp/tokens');
+}
+
+/** Revoke one token by id, or every token when id is omitted. */
+export function revokeMcpTokens(id?: string): Promise<Reasoned<{ revoked: number }>> {
+  return request('DELETE', `/app/mcp/token${id ? `?id=${encodeURIComponent(id)}` : ''}`);
+}
+
+// ── 👍/👎 on suggestions (server/feedback_store.py) ───────────────────────────
+
+export interface FeedbackInput {
+  surface: 'errand' | 'prep' | 'brief';
+  verdict: 'up' | 'down';
+  /** What was judged, in words: the place name, the task text. */
+  subject: string;
+  place_id?: string;
+  /** The kind of thing: 'songs', 'laundromat'. */
+  about?: string;
+  reason?: string;
+}
+
+/** Saved → {effect} in words ("won't be recommended again"); else the reason. */
+export function sendFeedback(f: FeedbackInput): Promise<Reasoned<{ ok: boolean; effect: string }>> {
+  return request('POST', '/app/feedback', f);
 }

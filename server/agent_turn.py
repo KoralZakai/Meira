@@ -258,6 +258,29 @@ def sync_app_profile(phone: str, sent: dict) -> dict:
     return changed
 
 
+async def user_for_caller(caller: dict) -> tuple[dict, Optional[dict]]:
+    """The user record and learned personality for a verified caller.
+
+    The same record the WhatsApp path resolves, so history, memory and
+    personality are shared rather than started again per channel. Used by
+    POST /agent/chat and by the MCP door — two doors, one person.
+    """
+    key = caller["key"]
+    user, learned = None, None
+    try:
+        from user_store import DatabaseService
+        from personality_learning_service import PersonalityLearningService
+        if caller.get("phone"):
+            user = await DatabaseService.get_user_by_whatsapp(caller["phone"])
+            if not user:
+                user = await DatabaseService.create_user_from_whatsapp(caller["phone"])
+        if user:
+            learned = await PersonalityLearningService.get_learned_personality(str(user["id"]))
+    except Exception as exc:  # noqa: BLE001 — degrade gracefully without a DB
+        logger.warning("user_for_caller DB step skipped: %s", exc)
+    return (user or {"id": key, "name": "User", "language": "en"}), learned
+
+
 async def run_turn(
     phone: str,
     content: str,

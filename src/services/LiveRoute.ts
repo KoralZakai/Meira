@@ -60,6 +60,12 @@ export interface LiveReplanResult {
   task?: Task;
 }
 
+/** Every route this module saves, said once at warn (see RouteGateway's twin). */
+function logSaved(where: string, trip: Task, plan: TransitPlan | undefined): void {
+  console.warn(`[LiveRoute] ${where} saved ${plan?.leaveHomeAt ?? '-'}→${plan?.arriveAt ?? '-'}`
+    + ` for "${trip.text.slice(0, 30)}" at ${trip.fixedTime || trip.scheduledTime || '-'} on ${trip.date}`);
+}
+
 /**
  * "I haven't left" → the NEXT departure, and what it does to the arrival.
  *
@@ -109,6 +115,7 @@ export async function replanFromNextDeparture(
     ...(pickCoords(nextBase, plan) ?? {}),
   } as TaskLocation;
   const updated = { ...trip, location: nextLocation } as Task;
+  logSaved('next-departure', trip, plan);
 
   // The old alerts belong to a departure that has gone. Replace them under the
   // per-task lock, the same way the travel chain does, so a re-plan never
@@ -292,6 +299,7 @@ export async function replanFromOrigin(
   if (!plan) return { originLabel, reason: 'route-failed' };
 
   const base = locOf(trip) ?? { address: dest, lat: 0, lng: 0, confirmed: false };
+  logSaved(`from-origin(${typeof origin === 'string' ? origin : 'place'})`, trip, plan);
   const location: TaskLocation = {
     ...base,
     transitPlan: { ...plan, originAddress, originLabel },
@@ -332,6 +340,7 @@ export async function applyDepartureOption(
   plan: TransitPlan,
   language: AppLanguage = 'en',
 ): Promise<Task> {
+  logSaved('picked-option', trip, plan);
   const base = locOf(trip) ?? { address: addrOf(trip) || '', lat: 0, lng: 0, confirmed: false };
   const location: TaskLocation = {
     ...base,
@@ -630,6 +639,7 @@ export async function replanNextTripFromPosition(
     // coordinates are a different thing and must not be overwritten by them.
     ...(pickCoords(posBase, plan) ?? {}),
   };
+  logSaved('from-position', trip, plan);
   await updateTaskFields(trip.id, { location: nextLocation as any });
 
   const changed = oldLeave !== plan.leaveHomeAt;

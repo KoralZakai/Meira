@@ -3,7 +3,10 @@
  * Dependencies: TaskStorage (settings persistence).
  */
 import React, { useState, useEffect } from 'react';
-import { View, ScrollView, StyleSheet, Text, TouchableOpacity, Switch } from 'react-native';
+import { View, ScrollView, StyleSheet, Text, TouchableOpacity, Switch, Alert, ActivityIndicator } from 'react-native';
+import { loadDemoDay, clearDemoDay } from '../services/DemoDay';
+import CalendarConnections from '../components/CalendarConnections';
+import AiAssistants from '../components/AiAssistants';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BRAND, FONTS } from '../constants/theme';
 import { UserProfile } from '../types';
@@ -24,6 +27,27 @@ export default function SettingsMenu({ navigation }: SettingsMenuProps) {
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [demoBusy, setDemoBusy] = useState(false);
+
+  // A fresh account (a judge's) gets a real day to try every feature on.
+  // Each run says what happened — including when it did not.
+  const runDemo = async (load: boolean) => {
+    setDemoBusy(true);
+    try {
+      if (load) {
+        const r = await loadDemoDay(profile?.language === 'he' ? 'he' : 'en');
+        Alert.alert(r.error ? 'Demo day — partly loaded' : 'Demo day loaded',
+          r.error ? `${r.created} tasks created, then: ${r.error}` : `${r.created} tasks, routes and alerts planned. Open Today.`);
+      } else {
+        const n = await clearDemoDay();
+        Alert.alert('Demo day cleared', `${n} demo tasks removed. Your own tasks were not touched.`);
+      }
+    } catch (e) {
+      Alert.alert('Demo day failed', String(e));
+    } finally {
+      setDemoBusy(false);
+    }
+  };
 
   useEffect(() => {
     loadProfile().then((p) => setProfile(normalizeProfile(p)));
@@ -57,10 +81,21 @@ export default function SettingsMenu({ navigation }: SettingsMenuProps) {
           <SettingToggle label="Achievement Badges" value onChange={() => {}} />
         </SettingSection>
 
-        <SettingSection title="Integrations">
-          <SettingButton label="Google Calendar" icon="📅" onPress={() => {}} />
-          <SettingButton label="Gmail" icon="📧" onPress={() => {}} />
-          <SettingButton label="Contacts" icon="👥" onPress={() => {}} />
+        <SettingSection title="Calendars">
+          <CalendarConnections />
+        </SettingSection>
+
+        <SettingSection title="AI assistants">
+          <AiAssistants />
+        </SettingSection>
+
+        <SettingSection title="Demo">
+          {demoBusy ? <ActivityIndicator color={BRAND.sunGold} style={{ marginVertical: 12 }} /> : (
+            <>
+              <SettingButton label="Load demo day" icon="✨" onPress={() => runDemo(true)} />
+              <SettingButton label="Clear demo day" icon="🧹" onPress={() => runDemo(false)} />
+            </>
+          )}
         </SettingSection>
 
         <SettingSection title="About">

@@ -246,15 +246,42 @@ def _cache_write(user_key: str, key: str, prep: dict) -> None:
         logger.warning("task_prep cache write failed: %s", exc)
 
 
+def forget(user_key: str, text: str) -> int:
+    """Drop cached prep for a task with these words — after a 👎, so the next
+    ask is rebuilt with her verdict instead of served stale. Returns how many."""
+    want = (text or "").strip().lower()
+    if not want:
+        return 0
+    store = _load()
+    mine = store.get(user_key) or {}
+    gone = [k for k, row in mine.items()
+            if str(((row.get("prep") or {}).get("task") or {}).get("text") or "").strip().lower() == want]
+    for k in gone:
+        mine.pop(k, None)
+    if gone:
+        _save(store)
+    return len(gone)
+
+
 # ── entry point ─────────────────────────────────────────────────────────────
 
 async def _memory_for(user_key: str, text: str) -> str:
+    block = ""
     try:
         import memory_recall
-        return (await memory_recall.block_for(user_key, text)) or ""
+        block = (await memory_recall.block_for(user_key, text)) or ""
     except Exception as exc:  # noqa: BLE001 — prep works without memory
         logger.info("task_prep: memory recall unavailable (%s)", exc)
-        return ""
+    # Her 👍/👎 on past prep, handed over directly — it must count even when
+    # retrieval is down (feedback_store).
+    try:
+        import feedback_store
+        verdicts = feedback_store.lines(user_key, "prep")
+        if verdicts:
+            block = f"{block}\nHER VERDICTS ON PAST PREP:\n{verdicts}".strip()
+    except Exception as exc:  # noqa: BLE001
+        logger.info("task_prep: verdicts unavailable (%s)", exc)
+    return block
 
 
 async def build(task: dict, user_key: str, *, force: bool = False) -> dict:

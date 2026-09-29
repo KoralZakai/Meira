@@ -34,7 +34,9 @@ is where the day falls apart.
 | ⚠️ **Clash detection** | Two places at once is a clash; a phone call during a meeting is not. She says which one to keep or move. |
 | 🔎 **Meira prepares you** *(new, Tavily)* | For what's next: an interview gets the company, the person and three questions. Karaoke gets songs to practise, with lyrics. A clinic visit gets what to bring and what to ask. Every line cites a live source, and an uncited line is dropped. |
 | 🛣️ **Errands on your way** *(new)* | "Fix the coffee machine", "laundry", "pick up a parcel": Meira searches along the routes she already planned, checks each place's opening hours **for the minute you pass it**, and recommends one ("open when you pass at 17:40, ★4.6, 120 m off route"). One tap puts the stop into your day. |
-| 📬 **Calendar and email aware** | Google Calendar and Gmail are read **on the phone** with your own token. Invitations become tasks, with the venue read from the invite body when the location field is empty. |
+| 📬 **Every calendar you keep** *(new)* | Google Calendar and Gmail, **every calendar on the phone** (the Outlook app, Samsung, work and family calendars) and **Outlook / Teams through Microsoft Graph**. All are read **on the phone** with your own sign-in. One mapper turns every event into a journey. A Teams call arrives as remote, with its join link and no wake alarm for the sofa, and the same meeting seen in two calendars lands once. |
+| 🤖 **Meira as an MCP server** *(new)* | Claude, ChatGPT or Cursor can connect to Meira and ask *"what's on my day?"*, *"do I have time for 2 hours in Haifa on Tuesday?"* or *"add a dentist tomorrow at 16:00"*. The answers come from the same agent tools, memory and real travel times, and an added task reaches the phone, which routes it and sets the alarm. See [docs/MCP.md](docs/MCP.md). |
+| 👍 **Learns from your verdicts** *(new)* | 👍/👎 on an errand pick or on prep. A place you turned down is never recommended again, and one you liked moves up (in code). The verdict also becomes a memory sentence that the Nemotron planners read next time. |
 | 💬 **Two doors, one brain** | The Android app and WhatsApp share one agent and one encrypted memory, keyed by a verified identity. |
 
 ## How it uses Nemotron on Nebius Token Factory
@@ -68,9 +70,35 @@ That is what makes the times trustworthy.
 | Where | What Tavily provides |
 |---|---|
 | `server/task_prep.py` | Live sources for preparing any task: songs and lyrics, what to bring, tips. Nemotron plans the queries (about the task, never about you), then composes items that must each cite a source. |
+| `server/errand_prices.py` | What an errand on your route actually **costs** ("₪12 per kg", "₪45 basic wash"), read from the business's own pages. Nemotron Nano reads the snippets, then **code checks that every number appears in the cited source**, and a price the page doesn't state is dropped. |
+| `server/mcp_server.py` → `prepare_me` | Cited prep, available to any AI assistant over MCP. |
 | `server/meeting_brief.py` | The company, its recent news and the person you're meeting, as a cited pre-meeting brief. |
 | `server/lumi_agent.py` → `web_search` | The agent's live web tool (Tavily first, Google Custom Search as fallback). |
 | `server/agent_runner.py` | Personal agents that run on a schedule and search the web. |
+
+## Meira as an MCP server
+
+Meira is also a tool that **other agents** call. `POST /mcp` speaks the Model
+Context Protocol (Streamable HTTP), so any MCP client can use her.
+
+```bash
+# a personal key comes from the app: Menu → AI assistants
+claude mcp add --transport http meira https://lumi-whatsapp.fly.dev/mcp --header "Authorization: Bearer meira_mcp_…"
+```
+
+| Tool | |
+|---|---|
+| `get_my_day` | The day in order, with leave-home and wake-up times and clashes |
+| `check_availability` | Does it fit, including real travel time before and after? |
+| `plan_journey` | Leave by, wake by, bus/train alternatives |
+| `add_task` | Saves (filling in the usual place and hour from memory), flags clashes, plans the journey |
+| `find_task` · `update_task` | Change what is already there |
+| `prepare_me` | Tavily-cited preparation |
+| `ask_meira` | A full agent turn, in Hebrew or English |
+
+Tokens are shown once, stored as a SHA-256, revocable in the app and deleted
+with the account. The identity always comes from the token, never from a tool
+argument. Details: [docs/MCP.md](docs/MCP.md).
 
 ## Architecture
 
@@ -78,13 +106,15 @@ That is what makes the times trustworthy.
 flowchart LR
   subgraph Phone["Android app (Expo / React Native)"]
     UI[Today · Tasks · Trips] --> LS[LumiServer.ts]
-    GC[Google Calendar + Gmail<br/>read on-device] --> LS
+    GC[Google Calendar + Gmail · phone calendars<br/>Outlook/Teams via Graph · read on-device] --> LS
     GPS[Location + live re-plan] --> LS
   end
   WA[WhatsApp] --> AT
+  MCPC[Claude · ChatGPT · Cursor] -->|MCP, personal token| MCP
   LS -->|JWT-verified| API
   subgraph Server["FastAPI on Fly.io"]
     API[/app/* routes/] --> AT[agent_turn]
+    MCP[/mcp/] --> AT
     AT --> RL[ReAct loop · 21 tools]
     API --> TP[task_prep] & EA[errands_along] & MB[meeting_brief] & RP[route_proxy]
     RL & TP & EA & MB --> MR[model_router]
@@ -116,8 +146,12 @@ flowchart LR
   encrypted per user (`secure_store.py`).
 - **Account deletion covers every store.** A test fails if a new store is added
   without being deleted.
-- **Your mailbox never leaves the phone.** Gmail and Calendar are read
-  on-device; at most one event, or four subject lines, is sent for a brief.
+- **Your mailbox never leaves the phone.** Gmail, Google Calendar, the phone's
+  calendars and Outlook are read on-device; at most one event, or four subject
+  lines, is sent for a brief. Outlook uses PKCE with no client secret and
+  read-only scopes.
+- **MCP keys** are shown once and stored only as a SHA-256. They are revocable
+  in the app and deleted with the account.
 - **Searches carry no personal data.** Tavily and Places queries describe the
   task ("karaoke songs", "laundromat"), never you.
 

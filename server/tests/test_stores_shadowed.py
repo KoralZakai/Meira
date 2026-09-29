@@ -21,6 +21,13 @@ The exclusions are deliberate:
   task_prep.json        the same kind of cache for any task (songs for karaoke,
                         what to bring to a clinic): public pages, rebuildable,
                         per-user, deleted with the account.
+  mcp_tokens.json       SHA-256 hashes of the personal tokens AI assistants use
+                        to reach Meira over MCP. Losing them costs one reconnect;
+                        a database copy of credential material is one more place
+                        for it to leak. Deleted with the account.
+  feedback.json         👍/👎 ranking signals. The durable half of every verdict
+                        is the sentence written to user_memory (which IS
+                        shadowed); losing this file costs the ranking boost only.
 """
 import os
 import re
@@ -51,6 +58,8 @@ EXCLUDED = {
     "session": "active_session.json",          # 45-minute focus, rewritten per turn
     "meeting_brief": "meeting_briefs.json",    # rebuildable cache of public pages
     "task_prep": "task_prep.json",             # same: cited prep from public pages
+    "mcp_server": "mcp_tokens.json",           # credential hashes: see the docstring
+    "feedback_store": "feedback.json",         # ranking signals; the words are in user_memory
 }
 
 

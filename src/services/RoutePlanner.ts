@@ -13,7 +13,7 @@
  */
 import { UserProfile, TransitPlan, TransportType } from '../types/index';
 import {
-  parseTransitRoute, parseTransitAlternatives, hhmmMinus, hhmmPlus,
+  parseTransitRoute, parseTransitAlternatives, hhmmMinus, hhmmPlus, soonestArrival,
 } from '../utils/transitParse';
 import { nowHHMM } from '../utils/liveRoutePlan';
 import { correctPlaceName } from '../utils/fuzzyMatch';
@@ -658,7 +658,9 @@ export async function getDepartNowPlan(
     // returns real arrival_time, so the parsed arriveAt is the true ETA.
     // Same ranking as the arrive-by path: the NEXT bus should also be the
     // simplest one, not whichever route Google happened to list first.
-    return parseTransitAlternatives(data, '', corrected, userProfile.homeAddress)[0] ?? null;
+    // …but "leave now" wants the one that ARRIVES first, not the simplest:
+    // the simplest can leave hours later (utils/transitParse.soonestArrival).
+    return soonestArrival(parseTransitAlternatives(data, '', corrected, userProfile.homeAddress), nowHHMM(now));
   }
 
   // Car / bike / walk: leave now, arrive now + duration (traffic-aware for car).

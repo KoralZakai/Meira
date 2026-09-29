@@ -509,7 +509,7 @@ export async function getDismissedExternalIds(): Promise<string[]> {
  */
 export async function clearDismissedExternalIds(ids?: string[]): Promise<number> {
   const current = await getDismissedIds();
-  const drop = new Set(ids ?? current.filter((id) => id.startsWith('gcal-')));
+  const drop = new Set(ids ?? current.filter((id) => /^(gcal|dcal|ocal)-/.test(id)));
   if (!drop.size) return 0;
   const kept = current.filter((id) => !drop.has(id));
   await writeJSON(DISMISSED_KEY, kept);
