@@ -22,7 +22,7 @@ export type RootStackParamList = {
   Settings: undefined;
   SettingsMenu: undefined;
   Agents: undefined;
-  CoachChat: undefined;
+  CoachChat: { initialText?: string } | undefined;
   FocusNow: { task: Task };
   DayReview: undefined;
   PersonalityQuiz: undefined;
@@ -36,5 +36,4 @@ export type MainTabsParamList = {
   Today: undefined;
   Tasks: undefined;
   Trips: undefined;
-  Profile: undefined;
 };

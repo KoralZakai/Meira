@@ -28,7 +28,7 @@ import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'rea
 import { AppLanguage, TransitPlan } from '../types';
 import {
   DepartureOption, changesLabel, slackLabel, vehicleLabel, boardLabel, urgencyLabel,
-  minutesToDecide, departureUncatchable,
+  minutesToDecide, departureUncatchable, superlativeLabel,
 } from '../utils/departureOptions';
 import { BRAND, FONTS, RADIUS } from '../constants/theme';
 
@@ -49,10 +49,30 @@ interface Props {
    * photograph, and this list is read exactly when a photograph is useless.
    */
   now?: string;
+  /**
+   * The DAY these departures belong to, YYYY-MM-DD.
+   *
+   * Without it this list judged every option against the current clock, and
+   * `now` defaulting to the real time meant a caller could not opt out. So at
+   * 23:35, looking at tomorrow's 13:20 train, every option was "already gone"
+   * and the list said so: "The ones I offered have gone — finding the next…".
+   * Koral, 2026-09-22: "i am looking now at the trip to tomorrow and the other
+   * ways to navigate - it got broken".
+   *
+   * A timetable on another day cannot be missed from here. Omitted = today,
+   * which is what every caller before this one meant.
+   */
+  date?: string;
 }
 
+const todayKey = (): string => {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
+
 export default function TransitOptionsList({
-  options, language, loading, emptyNote, originNote, onPick, pickingDeparture, now,
+  options, language, loading, emptyNote, originNote, onPick, pickingDeparture, now, date,
 }: Props) {
   const he = language === 'he';
   // Every caller gets the clock whether or not it passes one. A caller that
@@ -60,7 +80,14 @@ export default function TransitOptionsList({
   // that does not still cannot render a train that has already left, which is
   // the failure this list was reported for.
   const clock = now ?? new Date().toTimeString().slice(0, 5);
-  const live = options.filter((o) => !departureUncatchable(o, clock));
+  // Only THIS day's departures can have gone. A train tomorrow at 13:20 is not
+  // uncatchable at 23:35 tonight, and filtering it out emptied the whole list
+  // on every future trip — the caller could not even opt out, because `now`
+  // falls back to the real clock whatever it is passed.
+  const isToday = !date || date === todayKey();
+  const live = isToday
+    ? options.filter((o) => !departureUncatchable(o, clock))
+    : options;
 
   if (loading) {
     return (
@@ -91,7 +118,9 @@ export default function TransitOptionsList({
       {originNote ? <Text style={styles.originNote}>{originNote}</Text> : null}
       {live.map((o, i) => {
         const busy = pickingDeparture === o.departAt;
-        const left = minutesToDecide(o, clock);
+        // A countdown only means something today. "leave in -580 min" over
+        // tomorrow's train is worse than no countdown.
+        const left = isToday ? minutesToDecide(o, clock) : undefined;
         const urgent = left !== undefined && left <= 5;
         return (
           <View
@@ -129,6 +158,17 @@ export default function TransitOptionsList({
               )}
             </View>
 
+            {/* Row 1b — what this one is BEST at, in her words: "you need to
+                score the options and offer the best way: fastest route,
+                Earliest arrival, latest departure". The three pull against
+                each other, so the row that wins each says so and she can see
+                what taking a different one costs. */}
+            {superlativeLabel(o, he) ? (
+              <Text style={styles.superlative} numberOfLines={1}>
+                {superlativeLabel(o, he)}
+              </Text>
+            ) : null}
+
             {/* Row 2 — everything that may safely wrap. */}
             <Text style={styles.detail} numberOfLines={2}>
               {vehicleLabel(o, he)}
@@ -145,7 +185,9 @@ export default function TransitOptionsList({
             {boardLabel(o, he) ? (
               <Text style={styles.board} numberOfLines={2}>
                 {boardLabel(o, he)}
-                {urgencyLabel(o, clock, he) ? `  ·  ${urgencyLabel(o, clock, he)}` : ''}
+                {isToday && urgencyLabel(o, clock, he)
+                  ? `  ·  ${urgencyLabel(o, clock, he)}`
+                  : ''}
               </Text>
             ) : null}
           </View>
@@ -174,6 +216,9 @@ const styles = StyleSheet.create({
   },
   board: {
     fontFamily: FONTS.bodySemi, fontSize: 11.5, color: BRAND.goldInk, lineHeight: 16,
+  },
+  superlative: {
+    fontFamily: FONTS.bodyHeavy, fontSize: 11, color: BRAND.success, lineHeight: 15,
   },
   // Five minutes or less to be out of the door: the row says so in colour as
   // well as in words, because at that point she is scanning, not reading.

@@ -142,7 +142,7 @@ function main() {
     confBlocks.map((b) => b.startMin).every((s, i, a) => i === 0 || s >= a[i - 1]));
   check('the whole day is still monotonic', outOfOrderRows(confDay).length === 0);
 
-  console.log('\n3. LEGIBILITY — one task per row, and duration you can see');
+  console.log('\n3. LEGIBILITY — one task per row, no empty frames');
   // The blocks are stacked full width by the renderer; what the layout must
   // guarantee is that a longer task is never drawn shorter than a shorter one.
   const heights = allBlocks(build([
@@ -153,10 +153,11 @@ function main() {
     heights.every((b, i) => i === 0 || b.h >= heights[i - 1].h
       || b.m < heights[i - 1].m),
     heights.map((b) => `${b.id}:${b.h}px`).join(' '));
-  check('an hour is visibly taller than a quarter hour',
-    heights[1].h > heights[0].h, `${heights[1].h} vs ${heights[0].h}`);
-  check('three hours is visibly taller than one',
-    heights[2].h > heights[1].h, `${heights[2].h} vs ${heights[1].h}`);
+  // Koral, 28.9: "shrink the blocks if there is empty space with no content".
+  // Duration reserves no height; the card's content sets it, the rail shows
+  // start and end. So every block gets the same floor from the layout.
+  check('duration reserves no empty space (one floor for all)',
+    heights.every((b) => b.h === heights[0].h), heights.map((b) => b.h).join(','));
   check('nothing is too short to hold a title',
     heights.every((b) => b.h >= 44), heights.map((b) => b.h).join(','));
 

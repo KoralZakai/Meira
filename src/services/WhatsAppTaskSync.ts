@@ -18,7 +18,7 @@ const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL || '';
 /**
  * The floor between two pulls of the same list.
  *
- * The log showed `pulling from …/tasks/972500000000` 53 times in 200 lines,
+ * The log showed `pulling from …/tasks/972500000009` 53 times in 200 lines,
  * each answering with all 121 tasks. The callers are all legitimate — mount,
  * and every return to the foreground — so rather than hunt for whichever one
  * fires most, the pull itself refuses to repeat work. A task typed in WhatsApp

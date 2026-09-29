@@ -93,6 +93,39 @@ export function classifyShape(task: Task): ShapeVerdict {
 export const isTimeBound = (task: Task): boolean =>
   classifyShape(task).shape === 'time-bound';
 
+/**
+ * A STANDING task: work that stays on the list until it is ticked.
+ *
+ * Koral, 2026-09-22: "flexible tasks like 'להגיש קורות חיים' or 'create lean
+ * canvas' supposed to go into the tasks. be there until they are signed with
+ * V, no need to reschedule every day."
+ *
+ * The date on one of these is the day it was WRITTEN DOWN, not a day anybody
+ * agreed to. But `getOverdueTasks` is pure `date < today`, so the morning
+ * after she typed it, "submit CV" appeared in the missed card being asked
+ * "did you do this? move it? let it go?" — the same three questions, every
+ * morning, forever. That is rule 6: the question has to fit the thing. You
+ * cannot be late for a piece of work nobody scheduled.
+ *
+ * Two things take a task OUT of this set, and both are agreements rather than
+ * intentions:
+ *
+ *   a DEADLINE — passing one is a real miss, and must still be reported;
+ *   an hour she PINNED (`isFixed` with a `fixedTime`) — "הופעה בערב 21:00"
+ *   happened at 21:00 whether or not she went, and "did you go?" is exactly
+ *   the right question the next morning. A `scheduledTime` does not count:
+ *   that is Lumi's guess at where to park the work, not a commitment.
+ *
+ * So this is deliberately narrow — flexible, pending, and nothing on it that
+ * anybody agreed to.
+ */
+export const isStandingTask = (task: Task): boolean =>
+  classifyShape(task).shape === 'flexible'
+  && task.status === 'pending'
+  && !task.deadline
+  && !task.deadlineTime
+  && !(task.isFixed && task.fixedTime);
+
 export const isFlexibleTask = (task: Task): boolean =>
   classifyShape(task).shape === 'flexible';
 

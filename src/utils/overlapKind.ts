@@ -145,6 +145,17 @@ function coversMoment(task: Task, minute: number): boolean {
 }
 
 /**
+ * A task that is no longer going to happen: done, or moved to another day.
+ *
+ * Exported because every consumer of classifyOverlap wants the same answer —
+ * the timeline, resolveClashes and the day warnings all used to count a
+ * finished task as a live commitment.
+ */
+export function isSettled(t: Task): boolean {
+  return t.status === 'complete' || t.status === 'moved';
+}
+
+/**
  * Classify one collision.
  *
  * `travelMinutes` is the real route between the two places when the caller
@@ -154,6 +165,19 @@ export function classifyOverlap(
   a: Task, b: Task, travelMinutes?: number,
 ): OverlapVerdict | null {
   if (!startOf(a) || !startOf(b)) return null;
+  // Something already done is not in anyone's way.
+  //
+  // Koral, 2026-09-22: a wedding she had ticked off was still generating
+  // "⚠️ 'the exam' runs past 17:58, when you have to leave for 'חתונה של חני
+  // ודני'" on today's timeline — a departure warning for a journey she was
+  // never going to make, pushing real work around to protect it.
+  //
+  // `moved` is here for the same reason: the row is a tombstone pointing at a
+  // copy on another day, and the copy is the one that can clash.
+  //
+  // This is rule 6 in spirit — the question has to fit the thing. You cannot
+  // be late leaving for a wedding you have already been to.
+  if (isSettled(a) || isSettled(b)) return null;
   const overlap = overlapMinutesOf(a, b);
   if (overlap <= 0) return null;
 

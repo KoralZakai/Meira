@@ -23,7 +23,7 @@ from typing import Optional
 import httpx
 from datetime import date
 from openai import AsyncOpenAI, APIConnectionError, APITimeoutError
-from react_loop import ChatOpenAI, tool, ToolMessage, AIMessage, create_react_agent
+from react_loop import ChatOpenAI, tool, ToolMessage, AIMessage, AgentCallError, create_react_agent
 
 import agents_store
 import categorize
@@ -39,12 +39,17 @@ import geo
 import user_profile
 import user_memory
 import supabase_tasks
+import task_rescue
 import task_store
 import reminders
 from mbti import personality_prompt
 from judge_service import get_guidelines
 import personality_handoff
 import reply_consistency
+import known_places
+import routine_match
+import task_extract
+import travel_prefs
 
 
 _RAW_TOOL_CALL_RE = re.compile(r'\{"name":\s*"\w+",\s*"arguments"', re.DOTALL)
@@ -350,11 +355,41 @@ def _get_retry_llm(model: Optional[str] = None) -> ChatOpenAI:
     return _retry_llm_by_model[name]
 
 
-def _make_tools(phone: str, content: str, wa_phone: Optional[str] = None) -> list:
+def _here_origin(here: Optional[dict]) -> Optional[str]:
+    """The app's live fix as a routable "lat,lng" — or None when there is none."""
+    if not isinstance(here, dict):
+        return None
+    try:
+        lat, lng = float(here["lat"]), float(here["lng"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not (-90 <= lat <= 90 and -180 <= lng <= 180) or (lat == 0 and lng == 0):
+        return None
+    return f"{lat:.5f},{lng:.5f}"
+
+
+def _make_tools(phone: str, content: str, wa_phone: Optional[str] = None,
+                here: Optional[dict] = None) -> list:
     """Return @tool functions with phone + content captured for this request.
     `wa_phone` is the user's REAL WhatsApp number (phone may be a DB user id) —
-    needed as the owner/notification address for scheduled outgoing messages."""
+    needed as the owner/notification address for scheduled outgoing messages.
+    `here` is the fix the app sent with this turn ({lat, lng, label}), if any."""
     owner_phone = wa_phone or phone
+    here_origin = _here_origin(here)
+    here_label = str((here or {}).get("label") or "").strip() if here_origin else ""
+    # ONE key for what she has taught us about places and travel. The WhatsApp
+    # door keys by her number; here `phone` may be a DB user id, so a place
+    # learned through one door was invisible through the other.
+    memory_key = wa_phone or phone
+
+    def _recall_place(text: str) -> Optional[dict]:
+        """Her place for this activity — under the shared key first, then the
+        id key anything from this door was stored under before."""
+        for key in dict.fromkeys(k for k in (memory_key, phone) if k):
+            hit = known_places.resolve(key, text)
+            if hit:
+                return hit
+        return None
 
     @tool
     async def infer_task_details(
@@ -370,9 +405,83 @@ def _make_tools(phone: str, content: str, wa_phone: Optional[str] = None) -> lis
 
         location: pass the PLACE NAME / company / venue as the user said it ('MER
         Group', 'נביוס', 'Azrieli Sarona') — NOT a street you guessed. The real
-        address is looked up automatically; a guessed street lands in the wrong city."""
+        address is looked up automatically; a guessed street lands in the wrong city.
+        Leave location and fixed_time EMPTY when she did not say them: her routines and
+        the places she has been before fill them in (result.recalled says from where)."""
+        from tz import today_il
+        text = task_text or content
+        prof = user_profile.get_profile(phone) if phone else {}
+        on_date = date or today_il().isoformat()
+        recalled: dict = {}
+        # HER WEEK ALREADY SAYS. "קיקבוקס" is a line in her routines with an
+        # hour and an address; the task used to be created with neither, and
+        # the next message asked her where the gym is. See routine_match.
+        routine = None
+        try:
+            routine = routine_match.find(text, routine_match.notes_of(prof), on_date)
+        except Exception as exc:  # noqa: BLE001 — a routine is a hint, never a blocker
+            logger.warning("routine match skipped: %s", exc)
+        parsed = task_extract.parse_clock_time(text)
+        if fixed_time and parsed and fixed_time != parsed and routine_match.same_hour_of_day(fixed_time, parsed):
+            # Same hour, other half of the day: her words decide ("ב 6 בערב"
+            # is 18:00 whatever the model filled in).
+            fixed_time = parsed
+        said = fixed_time or parsed
+        routine_minutes = None
+        if routine and routine.get("time_applies") and (
+                not said or routine_match.same_hour_of_day(said, routine.get("time"))):
+            # "ב 8 וחצי" + a routine at 20:30 → 20:30. Twelve-hour agreement is
+            # enough; a different hour is her decision and wins.
+            fixed_time = routine["time"]
+            routine_minutes = routine.get("minutes")
+            recalled["time"] = {"from": "routine", "value": fixed_time,
+                                "end": routine.get("end")}
+        elif not fixed_time and said:
+            fixed_time = said
+        day_minutes = None
+        if not fixed_time and task_extract.day_long(text):
+            # "מילואים ב 8 באוקטובר": a day on base, not a 30-minute task at no
+            # hour — and an hour is what gets it a route, a wake alarm and a
+            # leave-home reminder. Said back as a default, so she can correct it.
+            fixed_time, day_minutes = task_extract.DAY_LONG_START, task_extract.DAY_LONG_MINUTES
+            recalled["time"] = {"from": "whole_day", "value": fixed_time, "end": "16:00"}
+        known = None
+        place_name: Optional[str] = None
+        said_place = bool(location)
+        if location:
+            # "Space Gym, יגאל אלון 94" is a NAME and an ADDRESS. Geocoding the
+            # two as one string is how the gym's name got glued to its street;
+            # the street is what is looked up, the name is what the card shows.
+            street = routine_match.address_in(location)
+            if street:
+                place_name = routine_match.name_before(location, street)
+                location = routine_match.complete_address(street, (prof or {}).get("homeAddress"))
+        else:
+            # A remembered place for an APPOINTMENT (something with an hour),
+            # or for an activity that only ever happens at its place — a
+            # workout is at the gym whether or not she said when. Untimed
+            # "עבודה על המצגת" is still not a trip to the office.
+            try:
+                if fixed_time or known_places.place_bound(text):
+                    known = _recall_place(text)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("known place recall skipped: %s", exc)
+            if known:
+                location = known["address"]
+                place_name = known.get("name")
+                recalled["location"] = {"from": "known_place", "value": location,
+                                        **({"name": place_name} if place_name else {})}
+            elif routine and routine.get("address"):
+                location = routine_match.complete_address(
+                    routine["address"], (prof or {}).get("homeAddress"))
+                place_name = routine.get("name")
+                recalled["location"] = {"from": "routine", "value": location,
+                                        **({"name": place_name} if place_name else {})}
         resolved = location
         place_coords: dict = {}
+        if known and known.get("lat") is not None and known.get("lng") is not None:
+            place_coords = {"lat": known["lat"], "lng": known["lng"],
+                            "displayName": place_name or text}
         if location:
             try:
                 place = await geo.find_place(location)
@@ -394,10 +503,20 @@ def _make_tools(phone: str, content: str, wa_phone: Optional[str] = None) -> lis
                             # authoritative for routing and unrecognisable on a
                             # card: "11א, Kaufmann Street" is not a yoga studio
                             # she has ever heard of.
-                            "displayName": place.get("name") or location,
+                            "displayName": place_name or place.get("name") or location,
                         }
             except Exception:  # noqa: BLE001 — never fail task capture on a lookup
                 pass
+        if said_place and place_coords and resolved:
+            # LEARN IT HERE TOO. Only the WhatsApp door ever wrote a place down,
+            # so "אימון ביגאל אלון 94" told to the app was forgotten by the next
+            # message — "I've written it a million times". Learned only once
+            # Places resolved it, never from a guess that found nothing.
+            try:
+                known_places.remember(memory_key, text, resolved, place_coords.get("lat"),
+                                      place_coords.get("lng"), name=place_name)
+            except Exception as exc:  # noqa: BLE001 — learning never blocks a task
+                logger.warning("place not learned for %r: %s", text[:40], exc)
 
         # The label is a lookup, not a language problem. categorize.merge lets
         # the keyword table win whenever it matched (Hebrew and English alike)
@@ -405,7 +524,6 @@ def _make_tools(phone: str, content: str, wa_phone: Optional[str] = None) -> lis
         # about — so "ראיון" can no longer come back as 'leisure' because the
         # model was in a hurry, and the 3h study floor is applied by the same
         # code that builds the day rather than by a sentence in the prompt.
-        text = task_text or content
         labelled = categorize.merge(text, {
             "category": category,
             "priority": priority,
@@ -414,6 +532,41 @@ def _make_tools(phone: str, content: str, wa_phone: Optional[str] = None) -> lis
         if day_schedule.is_study({"text": text, "category": labelled["category"]}):
             labelled["duration_minutes"] = max(labelled["duration_minutes"],
                                                day_schedule.MIN_STUDY_BLOCK_MINUTES)
+        # HER RANGE WINS. "אימון מ 18:00 עד 20:00" was saved 18:00–19:00: the
+        # gym routine's hour (or the table's 60) overrode the two hours she
+        # said. The range is read from the task text, or else from her whole
+        # message — the model often passes task_text as just "אימון".
+        ranged = next((r for r in task_extract.ranges_in(text) + task_extract.ranges_in(content)
+                       if fixed_time and r["start"] == fixed_time), None)
+        if ranged:
+            labelled["duration_minutes"] = ranged["minutes"]
+        elif routine_minutes:
+            labelled["duration_minutes"] = routine_minutes
+        elif day_minutes:
+            labelled["duration_minutes"] = day_minutes
+        if recalled:
+            logger.warning("task %r filled from memory: %s", text[:40],
+                           {k: v.get("from") for k, v in recalled.items()})
+        # THE CONSEQUENCE, IN THE RESULT. A tool that saves reserve duty on a
+        # day with two interviews and says nothing leaves the collision for her
+        # to find. The agent reads what the tool returns — so the tool returns
+        # what this does to her day, and rule (c) makes the agent say it.
+        collisions: list = []
+        if fixed_time:
+            try:
+                candidate = {"fixed_time": fixed_time, "duration_minutes": labelled["duration_minutes"]}
+                for row in await task_store.fetch_task_rows(phone, on_date, on_date):
+                    if str(row.get("status") or "pending") in ("complete", "cancelled", "deleted", "moved"):
+                        continue
+                    if not _clashes.start_of(row) or task_rescue.already_planned([row], {**candidate, "text": text, "date": on_date}):
+                        continue
+                    overlap = _clashes.overlap_minutes(candidate, row)
+                    if overlap > 0:
+                        collisions.append({"with": row.get("text"), "id": row.get("id"),
+                                           "at": _clashes.start_of(row), "overlap_minutes": overlap})
+            except Exception as exc:  # noqa: BLE001 — say it could not check, don't claim a free day
+                logger.warning("clash check in infer_task_details failed: %s", exc)
+                collisions = [{"unchecked": str(exc)[:120]}]
         return {
             "text": text,
             "category": labelled["category"],
@@ -425,6 +578,10 @@ def _make_tools(phone: str, content: str, wa_phone: Optional[str] = None) -> lis
             # "unknown", which the app can act on. A zeroed one cannot be told
             # apart from a real coordinate, which is the bug this closes.
             **({"place": place_coords} if place_coords else {}),
+            # Said out loud in the reply, in a few words — a silent recall is a
+            # guess she cannot correct.
+            **({"recalled": recalled} if recalled else {}),
+            **({"clashes": collisions} if collisions else {}),
             "date": date,
         }
 
@@ -474,46 +631,70 @@ def _make_tools(phone: str, content: str, wa_phone: Optional[str] = None) -> lis
         task_date: YYYY-MM-DD of the appointment — REQUIRED. Only say 'leave now' if task_date is TODAY.
         For future dates return the plan info calmly, never with urgency.
 
-        START POINT — NEVER assume the user leaves from home:
-        - start_address: pass it if the user named where they'll leave FROM ('from the office').
-        - from_current=true: user shared their live location / said they're already out.
-        - start_confirmed=true: ONLY after the user explicitly confirmed 'from home' (or
-          you asked and they answered). If none of the three, this tool refuses and tells
-          you to ask 'from home, or somewhere else? (you can share a location 📍)'.
+        START POINT — decided by the tool, NEVER asked:
+        - start_address: pass it only if the user named where they'll leave FROM ('from the office').
+        - Otherwise: a trip TODAY starts where she is right now (the app sends her live
+          position); a trip on another day starts at home. The result says which in
+          plan.startKind ('named' | 'here' | 'home') — mention it in a few words, never ask.
 
-        TRANSPORT — offer the default, never silently decide:
-        - transport: 'bus' | 'train' | 'car' | 'walk' | 'bike'. Pass it when the user
-          said how they travel THIS trip.
-        - Public transport (bus/train): the plan comes back with plan.alternatives —
-          BOTH the bus and the train option, each with travelMinutes + leaveBy.
-          The main plan is the fastest one.
-        - If omitted, their profile default is used and the result is tagged
-          usedDefaultTransport=true → you MUST tell the user which mode you assumed and
-          ask if they're going a different way this time."""
+        TRANSPORT — decided by the tool, NEVER asked when known:
+        - transport: 'bus' | 'train' | 'car' | 'walk' | 'bike'. Pass it only when the user
+          said how they travel THIS trip. It is remembered for this place and this kind
+          of activity, so next time nobody asks.
+        - If omitted: how she went to this place (or this kind of place) before, else
+          her profile mode. plan.usedDefaultTransport=true → name the mode in a few words
+          ('🚲 by bike, as usual'). Do NOT ask whether she is going differently.
+        - Public transport (bus/train): plan.alternatives holds BOTH the bus and the
+          train option, each with travelMinutes + leaveBy. The main plan is the fastest."""
+        from tz import today_il
         prof = user_profile.get_profile(phone)
         home = prof.get("homeAddress")
         current = prof.get("currentAddress")
-        use_current = bool(from_current and current) or (not home and current and not start_address)
-        start = start_address or (current if use_current else None)
-        if not start and not home:
+        today = today_il().isoformat()
+        is_today = (not task_date) or task_date == today
+        # Where the trip starts. She asked, 2026-09-28: "she is supposed to know
+        # where I am all the time and calculate from where I am onward — not ask".
+        # The app sends its live fix with every turn; this tool used to ignore it
+        # and REFUSE until she confirmed "from home", so every located task began
+        # with "where are you leaving from?".
+        if start_address:
+            start, start_kind = start_address, "named"
+        elif (from_current or is_today) and here_origin:
+            start, start_kind = here_origin, "here"
+        elif from_current and current:
+            start, start_kind = current, "here"
+        elif home:
+            start, start_kind = None, "home"
+        elif here_origin or current:
+            start, start_kind = here_origin or current, "here"
+        else:
             return {
                 "ok": False,
                 "need": "start",
-                "message": "I have no start point yet — ask the user to share their location 📍 or say where they're leaving from.",
-            }
-        # Home is only a DEFAULT. Refuse until the user confirmed it (or named a start).
-        if not start and not start_confirmed:
-            return {
-                "ok": False,
-                "need": "start_confirmation",
-                "message": (
-                    f"Don't assume they leave from home ({home}). Ask ONE short question: "
-                    "'Leaving from home, or somewhere else? You can also share your location 📍' "
-                    "— then call again with start_confirmed=true or start_address."
-                ),
+                "message": "No home address and no live position — ask ONCE where they leave from, "
+                           "and save it with save_profile(home_address=…) if it is home.",
             }
         used_default_transport = transport is None
-        resolved_transport = transport or prof.get("transportType")
+        if transport:
+            # She said it. Remember it for this place AND this kind of place, so
+            # "קיקבוקס" next week is not "how are you getting there?" again.
+            try:
+                travel_prefs.remember(memory_key, transport, destination,
+                                      categorize.merge(content, {}).get("category"))
+            except Exception:  # noqa: BLE001 — learning never blocks a route
+                logger.debug("travel pref not recorded for %s", destination)
+            resolved_transport = transport
+        else:
+            learned_mode = None
+            try:
+                kind = categorize.merge(content, {}).get("category")
+                for key in dict.fromkeys(k for k in (memory_key, phone) if k):
+                    learned_mode = travel_prefs.preferred(key, destination, kind)
+                    if learned_mode:
+                        break
+            except Exception:  # noqa: BLE001
+                learned_mode = None
+            resolved_transport = learned_mode or prof.get("transportType")
         if not resolved_transport:
             return {
                 "ok": False,
@@ -531,11 +712,13 @@ def _make_tools(phone: str, content: str, wa_phone: Optional[str] = None) -> lis
         )
         if isinstance(result.get("plan"), dict):
             result["plan"]["usedDefaultTransport"] = used_default_transport
+            result["plan"]["transport"] = resolved_transport
+            result["plan"]["startKind"] = start_kind
+            if start_kind == "here" and here_label:
+                result["plan"]["startLabel"] = here_label
         # Tag whether this is today so the agent doesn't say "leave now" for future tasks.
         # Israel-local "today" — the server clock is UTC, so a naive date.today()
         # lags by up to 3h right after Israel midnight (same bug class as reminders.py).
-        from tz import today_il
-        today = today_il().isoformat()
         result["is_today"] = (task_date == today) if task_date else False
         result["task_date"] = task_date or today
         # Carry the appointment DATE onto the plan so reminders fire on the right
@@ -780,7 +963,7 @@ def _make_tools(phone: str, content: str, wa_phone: Optional[str] = None) -> lis
             return {
                 "ok": True, "date": date, "verdict": verdict, "conflicts": reasons,
                 "busy": busy, "free_windows": free, "travel": travel,
-                "routines_note": prof.get("routinesNotes") or None,
+                "routines_note": routine_match.notes_of(prof) or None,
                 "asked_for": {"start": start_time, "end": _hhmm(end_m), "place": place},
             }
 
@@ -793,7 +976,7 @@ def _make_tools(phone: str, content: str, wa_phone: Optional[str] = None) -> lis
             "verdict": "fits" if options else "no_window",
             "conflicts": [], "busy": busy,
             "free_windows": options or free, "travel": travel,
-            "routines_note": prof.get("routinesNotes") or None,
+            "routines_note": routine_match.notes_of(prof) or None,
             "asked_for": {"minutes": minutes, "place": place},
         }
 
@@ -1015,6 +1198,47 @@ def _make_tools(phone: str, content: str, wa_phone: Optional[str] = None) -> lis
                 "lat": place.get("lat"), "lng": place.get("lng")}
 
     @tool
+    async def remember_place(activity: str, place: str) -> dict:
+        """She told you WHERE something she does happens: 'החדר כושר שלי בהרצל 10',
+        'FitLab, הרצל 10', 'my dentist is in Ramat Gan'. Call it the moment she
+        says it — even with no task in the message — and never ask it again: every later
+        task of that activity gets this place by itself (infer_task_details → recalled).
+
+        activity: what she does there, in her words ('חדר כושר', 'אימון', 'יוגה', 'dentist').
+        place: the name and/or address exactly as she said it ('FitLab, הרצל 10').
+
+        Returns {ok, address, name}. ok:false means it was NOT saved — say so."""
+        activity = str(activity or "").strip()
+        place = str(place or "").strip()
+        if not activity or not place:
+            return {"ok": False, "error": "need_activity_and_place"}
+        prof = user_profile.get_profile(phone) if phone else {}
+        # Name and address travel separately: the street is geocoded, the name
+        # is what the card shows ("FitLab", not "FitLab הרצל 10" as a street).
+        street = routine_match.address_in(place)
+        name = routine_match.name_before(place, street) if street else None
+        query = routine_match.complete_address(street, (prof or {}).get("homeAddress")) if street else place
+        address, lat, lng = query, None, None
+        try:
+            found = await geo.find_place(query)
+            if found and found.get("formatted"):
+                address, lat, lng = found["formatted"], found.get("lat"), found.get("lng")
+                if not street:
+                    name = found.get("name") or place
+        except Exception as exc:  # noqa: BLE001 — an unplaced address is still worth keeping
+            logger.warning("remember_place lookup failed for %r: %s", place[:40], exc)
+        try:
+            known_places.remember(memory_key, activity, address, lat, lng, name=name)
+            # The words she used for the place itself find it too: "Space Gym".
+            if name and known_places.activity_key(name) != known_places.activity_key(activity):
+                known_places.remember(memory_key, name, address, lat, lng, name=name)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("remember_place failed: %s", exc)
+            return {"ok": False, "error": "not_saved"}
+        return {"ok": True, "activity": activity, "address": address,
+                **({"name": name} if name else {}), "placed": lat is not None}
+
+    @tool
     async def create_agent(
         name: Optional[str] = None,
         soul: Optional[str] = None,
@@ -1093,7 +1317,7 @@ def _make_tools(phone: str, content: str, wa_phone: Optional[str] = None) -> lis
 
     return [infer_task_details, save_profile, plan_departure, build_day_schedule, find_clashes, get_my_tasks,
             find_task, update_task, check_availability, calculate_date, schedule_message, set_reminder,
-            list_reminders, web_search, read_page, place_live_info, find_place,
+            list_reminders, web_search, read_page, place_live_info, find_place, remember_place,
             save_memory, create_agent,
             list_my_agents, update_my_agent, delete_my_agent, send_app_link]
 
@@ -1193,19 +1417,35 @@ _STATIC_RULES = (
         "NEW details (time, place, prep) instead of creating. Not sure? Ask ONE short "
         "question: 'Same interview as the one tomorrow, or a new one?' — never "
         "silently create a near-duplicate.\n"
+        "UNDERSTAND → ACT → SAY. Every turn, in this order:\n"
+        " a) UNDERSTAND: read her message IN the conversation. What is she asking you "
+        "to DO — add, move, cancel, answer, find? Is it a reply to your last question "
+        "(then it changes THAT task, it is not a new one)? A title is the thing itself "
+        "('שיחת זום עם דותן'), never her request ('תוסיפי לי…'). Hours said in words or "
+        "without am/pm are read against NOW ('ב5' at 14:00 = 17:00).\n"
+        " b) ACT: one tool call per thing — infer_task_details to add, find_task + "
+        "update_task to change. Nothing is done until a tool did it.\n"
+        " c) SAY: only what the tools returned. If a result carries `clashes`, say "
+        "them and propose which one moves — never bury a collision.\n"
         "FULL-DAY PLANNING — when ONE message lists SEVERAL appointments "
         "('tomorrow: interview 11:30, home assignment, 18:00 Nebius, 19:30 מפגש "
         "בהתחייה 14'):\n"
         "1) calculate_date once, then infer_task_details for EACH item separately — "
         "every appointment becomes its OWN task with its date.\n"
-        "2) Reply first with the whole day in order, one line per item, category "
-        "emoji as its color + time range (estimate sensible durations: interview "
-        "≈2h; fit flexible work between fixed items):\n"
+        "2) THEN show the day — the SAVED day, never one you composed. Call "
+        "build_day_schedule(date) after the saves and read back ITS lines, one per item, "
+        "category emoji + time range:\n"
         "   🎯 11:30–13:30 ראיון\n   💼 14:00–17:30 מטלת בית\n"
-        "   🤝 18:00–19:30 Nebius\n   🌊 19:50–22:00 מידברן, התחייה 14\n"
-        "3) Then ask ONE question at a time, appointment by appointment, for every "
-        "missing detail: where is it ('איפה הראיון? אולי כתוב ביומן/במייל 📅')? how "
-        "will you get there (🚌/🚆/🚗/🚲)? from where?\n"
+        "A line you did not save does not exist: a schedule written from your own head "
+        "looks exactly like a saved one, and she plans her day on it.\n"
+        "3) SAVE EVERY ITEM IN THIS TURN — never hold one back waiting for an answer. "
+        "An item with no hour is a flexible task and is saved as one: never ask WHEN "
+        "to do it. Where / how / from where: infer_task_details and plan_departure "
+        "fill them (routines, remembered places, her live position, her transport). "
+        "Only a TIMED appointment whose place is still unknown after that gets ONE "
+        "question, at the END, after the plan: 'איפה החדר כושר? אזכור לפעם הבאה 📍'. "
+        "When she answers → remember_place, then plan it. Two options for one item "
+        "('ב6 עד 7 או ב7 עד 8') → take the first and say it can move.\n"
         "   NEVER RE-ASK WHAT WAS GIVEN: if the message already contains a place or "
         "address (a street, a company/venue name, a city), pass it to "
         "infer_task_details(location=…) and confirm it back — do NOT ask 'where is "
@@ -1227,8 +1467,8 @@ _STATIC_RULES = (
         "FOCUS TASK — BE FULLY ENGAGED. An interview / exam / deadline / anything the "
         "user marks as important for today or tomorrow is THE focus task:\n"
         "- Repeat back its date + hour so it's locked ('Interview tomorrow 10:00 ✓').\n"
-        "- If it has a place and time, OFFER the route now: 'Want me to plan the trip? "
-        "🚌' — then plan_departure for ITS date, so wake/leave reminders are set.\n"
+        "- If it has a place and time, PLAN the route now — plan_departure for ITS date, "
+        "so wake/leave reminders are set — and say the leave time. Don't offer; do.\n"
         "- On later messages that day, ASK how it's going ('How's the interview prep? "
         "💪') and add ONE short encouragement — still max 1-2 sentences total.\n"
         "- Words like 'today'/'מחר'/'tomorrow' in the task ALWAYS resolve to the "
@@ -1282,14 +1522,15 @@ _STATIC_RULES = (
         "at: the user pastes a job description → you tailor their CV to it, draft "
         "a cover letter, and prep interview questions.\n"
         "\n"
-        "BE SHORT. WhatsApp style. The schedule lines + ONE question — nothing more. "
+        "BE SHORT. WhatsApp style. The schedule lines + at most ONE question — usually none. "
         "No paragraphs, no explaining your reasoning, no long sentences.\n"
         "\n"
         "ACT FIRST — DON'T INTERROGATE. Your value is ANSWERS, not questions. If you "
         "have enough to plan, DO IT NOW and show the result. Use what's already known "
         "(shared location, tasks, times, the modes they named). NEVER reply with only "
         "questions when the user gave you a task. Ask for AT MOST one truly-missing "
-        "essential (destination, arrival time, or where they're leaving from), and ask it AFTER giving whatever "
+        "essential (destination or arrival time — never where she leaves from or how she "
+        "travels: plan_departure knows both), and ask it AFTER giving whatever "
         "you can. If they said 'bus or bike, check both' — call plan_departure for EACH "
         "mode and compare them; don't ask which one. A geocoded address that resolves "
         "is good enough — only re-confirm if it's genuinely ambiguous.\n"
@@ -1354,8 +1595,21 @@ _STATIC_RULES = (
         "For future dates say calmly: 'On Tuesday July 1st, leave by 10:20 🚌'.\n"
         "- PREPARATION urgency is ALWAYS allowed for important future tasks: job interview, exam, deadline → proactively say "
         "'Interview on Tuesday — start preparing now! Want a study plan? 📚'. The closer the date, the more urgent.\n"
-        "- ALWAYS verify dates with the user: repeat back the full date + weekday ('That's Tuesday July 1st at 11:00 — correct? ✓').\n"
-        "- plan_departure: NEVER assume transport. If transportType is unknown, ask the user first ('Bus, car, walk, or bike? 🚌').\n"
+        "- ALWAYS say the date back: the full date + weekday ('Tuesday July 1st, 11:00 ✓') — a statement she can correct, never a 'correct?' question.\n"
+        "- WHERE SHE DOES THINGS: the moment she says where an activity happens ('החדר כושר "
+        "בהרצל 10', 'FitLab') → remember_place. Never ask where an activity is when "
+        "infer_task_details returned a location or result.recalled.location — say it back "
+        "instead ('📍 FitLab').\n"
+        "- AN ANSWER IS NOT A TASK: when she replies to your question ('לפני האימון', 'כן', "
+        "'ב-5'), apply it to the task you asked about (update_task) — never create a new task "
+        "from the reply.\n"
+        "- plan_departure chooses the START (today: where she is now; another day: home) and the "
+        "TRANSPORT (how she went there before, else her profile mode) by itself. NEVER ask 'where are "
+        "you leaving from?' or 'how are you getting there?' — ask only if the tool returns need=start "
+        "or need=transport.\n"
+        "- infer_task_details fills hour and place from her routines and from places she has been "
+        "(result.recalled). A task named after one of her routines already HAS its hour and "
+        "address — never ask for them; say them back in a few words ('19:00, הרצל 10 ✓').\n"
         "- 'Can I fit X on <day>?' / 'יש לי זמן ל…?' is a QUESTION, not a new task: call "
         "check_availability (after calculate_date) and answer from what it returns. Give the "
         "verdict AND its reason — a clash, not enough travel time between the appointment "
@@ -1379,16 +1633,15 @@ _STATIC_RULES = (
         "previous block's end).\n"
         "5. LOCATED FIXED TASK (address + time) — THIS IS THE MOST IMPORTANT THING, "
         "BE ACCURATE:\n"
-        "   a. You need 3 things: where they START, where they ARRIVE "
-        "(destination), and HOW they travel. NEVER assume the start is home — ask "
-        "'Leaving from home, or somewhere else? 📍' unless they already said so this "
-        "conversation (the tool refuses until confirmed: pass start_confirmed=true "
-        "only after they answer, or start_address if they named another place).\n"
-        "   b. TRANSPORT: their profile mode is only a DEFAULT. If the plan comes "
-        "back with usedDefaultTransport=true, say which mode you assumed and ask in "
-        "the same message: 'I planned by bus 🚌 (your usual) — going a different way "
-        "this time?'. If they answer with another mode, call plan_departure again "
-        "with transport set.\n"
+        "   a. START is the tool's job, not a question. Pass start_address only if she "
+        "named where she leaves from; otherwise the tool starts today's trips at her live "
+        "position and other days' at home, and says which in plan.startKind. Name it in "
+        "two or three words ('מהמיקום שלך' / 'מהבית') — never ask.\n"
+        "   b. TRANSPORT: if she did not name one, the tool uses the mode she used for this "
+        "place before, else her profile mode. When usedDefaultTransport=true, name it in "
+        "a few words ('🚲 באופניים, כרגיל') — do NOT ask whether she goes differently; "
+        "she will say so. If she names a mode, call plan_departure again with transport "
+        "set — it is remembered for next time.\n"
         "   c. ROUTE FACTS COME ONLY FROM THE TOOL — NEVER FROM YOU. "
         "plan.routeText (and alternatives[].routeText) is the EXACT route from live "
         "Google data: real stations, real line numbers, real departure times. PASTE "
@@ -1572,8 +1825,12 @@ def _is_recursion(exc: Exception) -> bool:
     return "graphrecursion" in type(exc).__name__.lower() or "recursion" in str(exc).lower()
 
 
-async def handle_whatsapp_message(content: str, user: dict, learned: Optional[dict]) -> dict:
-    """Run the ReAct agent and return {'type', 'text', 'task'?, 'departures'}."""
+async def handle_whatsapp_message(content: str, user: dict, learned: Optional[dict],
+                                  here: Optional[dict] = None) -> dict:
+    """Run the ReAct agent and return {'type', 'text', 'task'?, 'departures'}.
+
+    `here` is the live fix the app sent with this turn ({lat, lng, label}); the
+    route tools start today's trips there instead of asking where she is."""
     phone = str(user.get("id") or user.get("whatsapp_phone") or "")
 
     if phone and user_profile.missing_fields(phone):
@@ -1600,36 +1857,45 @@ async def handle_whatsapp_message(content: str, user: dict, learned: Optional[di
     system_prompt = _system_prompt(user, learned, profile, missing,
                                    memory_block=mem_block,
                                    guidelines=get_guidelines())
-    tools = _make_tools(phone, content, wa_phone=str(user.get("whatsapp_phone") or "") or None)
+    tools = _make_tools(phone, content, wa_phone=str(user.get("whatsapp_phone") or "") or None,
+                        here=here)
     hist = _sanitize_history(conversation.get_history(phone)) if phone else []
     # No checkpointer — turn history lives in conversation.py, distilled memory in user_memory.py
     # Tier is chosen per turn: the system prompt is ~18 KB of static rules, so
     # a long conversation is what pushes a turn up a tier, not the message.
     turn_model = model_router.pick("chat", prompt_chars=len(system_prompt) + len(content))
-    agent = create_react_agent(_get_llm(turn_model), tools, prompt=system_prompt)
+    # Transient failures are retried INSIDE the loop, one model call at a time
+    # (react_loop._complete). This used to be a loop of four whole-turn reruns:
+    # every blip re-sent the prompt and the history from zero and called every
+    # tool again — the same task inferred twice, a reminder set twice, and a
+    # reply that took four times as long. She saw it as Meira "reading
+    # everything again" each time something failed.
+    agent = create_react_agent(_get_llm(turn_model), tools, prompt=system_prompt,
+                               retry_if=_is_transient)
 
     last_exc = None
     result = None
-    for attempt in range(4):
-        try:
-            result = await agent.ainvoke(
-                {"messages": hist + [{"role": "user", "content": content}]},
-                config={"recursion_limit": 15},
-            )
-            break
-        except Exception as exc:  # noqa: BLE001
-            if _is_recursion(exc):
-                logger.warning("agent hit recursion limit — returning partial result")
-                # Use whatever the last result was, even if incomplete
-                result = getattr(exc, "state", None)
-                break
-            if not _is_transient(exc):
-                logger.error("Lumi agent error: %s", exc)
-                break
-            last_exc = exc
-            logger.warning("transient error (try %d/4): %s", attempt + 1, exc)
-            import asyncio
-            await asyncio.sleep(0.8 * (attempt + 1))
+    try:
+        result = await agent.ainvoke(
+            {"messages": hist + [{"role": "user", "content": content}]},
+            config={"recursion_limit": 15},
+        )
+    except Exception as exc:  # noqa: BLE001
+        partial = getattr(exc, "state", None)
+        if _is_recursion(exc):
+            logger.warning("agent hit recursion limit — returning partial result")
+            result = partial
+        elif isinstance(exc, AgentCallError) and partial and partial.get("messages"):
+            # The model failed for good AFTER some tools ran. Keep what they
+            # did (a task inferred is still a task) rather than dropping it and
+            # telling her nothing was saved; the answer is re-asked below from
+            # the same point.
+            logger.warning("model call failed mid-turn after %d step(s) — keeping them: %s",
+                           len(partial["messages"]), exc.cause)
+            result = partial
+        else:
+            last_exc = getattr(exc, "cause", exc)
+            logger.error("Lumi agent error: %s", last_exc)
 
     if result is None:
         if last_exc:
@@ -1793,12 +2059,17 @@ async def handle_whatsapp_message(content: str, user: dict, learned: Optional[di
         # usually transient (this is what produced "סליחה, אפשר לחזור על זה?").
         # Retry with DIFFERENT sampling (temp + repetition penalties): identical
         # params mostly reproduce the same Qwen garbage loop.
+        #
+        # CONTINUED, not restarted: the retry picks up the same wire — prompt,
+        # history, and every tool result this turn already earned — and only
+        # the answer is asked for again. Restarting from the user's message
+        # ran every tool a second time.
         try:
-            retry_agent = create_react_agent(_get_retry_llm(turn_model), tools, prompt=system_prompt)
-            retry = await retry_agent.ainvoke(
-                {"messages": hist + [{"role": "user", "content": content}]},
-                config={"recursion_limit": 15},
-            )
+            retry_agent = create_react_agent(_get_retry_llm(turn_model), tools,
+                                             prompt=system_prompt, retry_if=_is_transient)
+            resume = ({"wire": result["wire"]} if result.get("wire")
+                      else {"messages": hist + [{"role": "user", "content": content}]})
+            retry = await retry_agent.ainvoke(resume, config={"recursion_limit": 6})
             for msg in retry["messages"]:
                 if isinstance(msg, AIMessage) and isinstance(msg.content, str) and msg.content:
                     final_text = msg.content

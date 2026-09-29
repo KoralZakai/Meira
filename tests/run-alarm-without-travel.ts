@@ -21,7 +21,7 @@
  */
 import {
   plannedAlarmTime, decideAlarmState, wakeChipFor, wakeInputs, getReadyTimeFor,
-  alarmMomentOf, isWithinAlarmReach,
+  alarmMomentOf, isWithinAlarmReach, dayWakeOwner, earliestWakeOf,
 } from '../src/utils/alarmPlan';
 import { Task, UserProfile } from '../src/types/index';
 
@@ -194,6 +194,87 @@ function main() {
   check('a task with an explicit alarmAt never needed the routine anyway',
     alarmMomentOf(task({ alarmAt: '06:00', date: '2099-01-02' } as any),
       Date.parse('2099-01-01T12:00:00Z')) !== null);
+
+  // ── A morning has ONE beginning ─────────────────────────────────────────
+  //
+  // Koral, 2026-09-22: "when adding a task before another task the clock alarm
+  // should change to an earlier". decideAlarmState judges one task, and
+  // markAlarmStates applied it to each task on its own — so a day with an
+  // 08:00 class and a 10:00 appointment planned TWO alarms, 07:20 and 09:20,
+  // and the phone rang twice. Adding something earlier than everything else
+  // did not move the morning; it added another ring to it.
+  console.log('\n5. One alarm per day, owned by whatever starts first');
+
+  const day = '2099-03-04';
+  const at8 = task({ id: 'class', fixedTime: '08:00', date: day });
+  const at10 = task({ id: 'appt', fixedTime: '10:00', date: day });
+
+  check('each task on its own still wants a wake-up',
+    decideAlarmState(at8, undefined, ROUTINE) === 'planned'
+    && decideAlarmState(at10, undefined, ROUTINE) === 'planned');
+  const owner = dayWakeOwner([at8, at10], { routineMinutes: ROUTINE });
+  check('but the day has one owner, and it is the earlier task',
+    owner?.taskId === 'class', String(owner?.taskId));
+  check('at the hour that task needs', owner?.at === '07:00', String(owner?.at));
+
+  // THE ASK: something earlier arrives, and the morning moves.
+  const at6 = task({ id: 'study', fixedTime: '06:30', date: day });
+  const moved = dayWakeOwner([at8, at10, at6], { routineMinutes: ROUTINE });
+  check('adding an earlier task moves the alarm to it',
+    moved?.taskId === 'study' && moved?.at === '05:30', `${moved?.taskId} @ ${moved?.at}`);
+  check('earliestWakeOf says the same thing in one value',
+    earliestWakeOf([at8, at10, at6], { routineMinutes: ROUTINE }) === '05:30');
+
+  // The superseded tasks draw NOTHING, not a 🔕 — she did not turn them off.
+  const earliest = earliestWakeOf([at8, at10, at6], { routineMinutes: ROUTINE });
+  check('the owner still draws its ⏰',
+    wakeChipFor(at6, { routineMinutes: ROUTINE }, { dayEarliestWake: earliest })?.at === '05:30');
+  check('a superseded task draws no chip at all',
+    wakeChipFor(at10, { routineMinutes: ROUTINE }, { dayEarliestWake: earliest }) === null);
+  check('and is not drawn as muted, which would read as "you turned this off"',
+    wakeChipFor(at10, { routineMinutes: ROUTINE }, { dayEarliestWake: earliest })?.muted !== true);
+  check('without the day in hand, nothing changes for existing callers',
+    wakeChipFor(at10, { routineMinutes: ROUTINE })?.at === '09:00',
+    String(wakeChipFor(at10, { routineMinutes: ROUTINE })?.at));
+
+  // Days do not borrow each other's mornings.
+  const otherDay = task({ id: 'far', fixedTime: '05:00', date: '2099-03-05' });
+  check('a task on ANOTHER day cannot own this one',
+    dayWakeOwner([at8, at10].filter((t) => t.date === day), { routineMinutes: ROUTINE })
+      ?.taskId === 'class',
+    'grouping is the caller\'s job, and it is done by date');
+  check('...and that other day has its own owner',
+    dayWakeOwner([otherDay], { routineMinutes: ROUTINE })?.taskId === 'far');
+
+  // A completed or afternoon-only day raises no alarm at all.
+  check('a done task does not own a morning',
+    dayWakeOwner([{ ...at6, status: 'complete' } as Task, at8], { routineMinutes: ROUTINE })
+      ?.taskId === 'class');
+  check('an afternoon-only day has no owner',
+    dayWakeOwner([task({ id: 'pm', fixedTime: '16:00', date: day })],
+      { routineMinutes: ROUTINE }) === null);
+
+  // Stable across syncs: two tasks needing the SAME hour must not swap owners,
+  // or the alarm is re-armed every fifteen minutes.
+  const twinA = task({ id: 'aaa', fixedTime: '08:00', date: day });
+  const twinB = task({ id: 'bbb', fixedTime: '08:00', date: day });
+  check('a tie is broken deterministically',
+    dayWakeOwner([twinA, twinB], { routineMinutes: ROUTINE })?.taskId
+    === dayWakeOwner([twinB, twinA], { routineMinutes: ROUTINE })?.taskId,
+    'order in, same owner out');
+
+  // 2026-09-28, the night before the Amazon phone interview: "I need an alarm
+  // clock". The morning-study block said "up early" at 09:00 and her profile
+  // has no routine length, so nothing was planned at all.
+  const study = task({ id: 'prep-0d-amz', fixedTime: '09:00', date: day }) as Task & { prepForTaskId?: string };
+  study.prepForTaskId = 'amz';
+  check('the interview-morning block wakes her with no routine on file',
+    plannedAlarmTime(study) === '08:30', String(plannedAlarmTime(study)));
+  check('...and owns that morning over the later interview',
+    dayWakeOwner([study, task({ id: 'amz', fixedTime: '11:00', date: day })], { usualWakeTime: '09:00' })
+      ?.taskId === 'prep-0d-amz');
+  check('any other task still gets no guessed alarm',
+    plannedAlarmTime(task({ id: 'plain', fixedTime: '09:00', date: day })) === undefined);
 
   console.log(`\n${failures === 0 ? '✅' : '❌'} ${checks - failures}/${checks} checks passed\n`);
   process.exit(failures === 0 ? 0 : 1);

@@ -1,3 +1,5 @@
+import type { RouteFailure } from '../utils/routeFailure';
+
 export type TaskCategory =
   | 'interview'    // ראיונות עבודה
   | 'course'       // קורס
@@ -34,6 +36,25 @@ export interface TransitLeg {
   stopName?: string;
   stopLat?: number;
   stopLng?: number;
+  /**
+   * The direction sign on the platform — Google's `transit_details.headsign`.
+   *
+   * Koral: "for trains it's important מספר רציף. if we check many optionals of
+   * train they are from other platform." Google's Directions API does not
+   * return a platform number anywhere in Israel, and inventing one would be
+   * the worst possible lie to tell someone running for a train. The direction
+   * is what the departure boards are actually organised by, and it is the
+   * thing that distinguishes two trains leaving the same station minutes
+   * apart, so it is what we show.
+   */
+  headsign?: string;
+  /**
+   * The literal platform, when a provider gives one. Google does not, for any
+   * Israeli station — the field exists so that the day one does, nothing has
+   * to be redesigned, and so that "we don't have it" is a readable state
+   * rather than an absent concept.
+   */
+  platform?: string;
 }
 
 export interface TransitPlan {
@@ -77,6 +98,18 @@ export interface TransitPlan {
   destLng?: number;
   source: 'google' | 'manual';
   /**
+   * Which version of the CHOOSING rules produced this plan.
+   *
+   * A stored route is refreshed only when it is old AND its departure is near
+   * — sensible for traffic, useless when the rules themselves change. On
+   * 2026-09-23 the ranker learned to leave a `must` half an hour of margin,
+   * and her interview that afternoon kept the plan chosen by the old rule:
+   * arriving 14:29 for 14:30, with the next recompute due at 10:39 the same
+   * morning. A plan chosen by rules we no longer believe in is stale whatever
+   * its age. See ROUTE_RULES_VERSION in services/GoogleSync.
+   */
+  rulesVersion?: number;
+  /**
    * The vehicle she asked for, recorded ONLY when the route could not honour
    * it. Google's `transit_mode` is a preference, not a filter: ask for rail on
    * a corridor with no train and it returns the bus anyway. Without this the
@@ -104,10 +137,28 @@ export interface TaskLocation {
    * records why, so the card can say so instead of showing a stale journey.
    */
   noRouteForMode?: TransportType;
+  /**
+   * WHY there is no route — Google's own verdict, not our guess.
+   *
+   * `noRouteForMode` above records only THAT a mode came back empty. It was
+   * rendered as "no route for the chosen way of getting there", which is a
+   * claim about transport, while her Google console showed the Directions API
+   * at a 99% error rate: every lookup rejected before any routing ran. The
+   * app had never received a route and was reporting there was no train.
+   *
+   * Set by GoogleSync from utils/routeFailure; undefined once a route lands.
+   */
+  routeFailure?: RouteFailure;
   transitPlan?: TransitPlan;
   missedBusHandled?: boolean;
   /** Per-task transport override; the profile's transportType is the fallback. */
   transportType?: TransportType;
+  /**
+   * Why the vehicle on this plan is not the one she asked for — e.g.
+   * "No train to Ra'anana — bus instead". Set by the rail-first ladder in
+   * utils/transitFallback; undefined when she got what she wanted.
+   */
+  modeNote?: string;
   /**
    * Where a two-mode journey changes over — "Hadera West". A real Israeli
    * trip is often train to a station and then a lift, and asking a single-mode

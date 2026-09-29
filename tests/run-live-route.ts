@@ -59,6 +59,16 @@ function main() {
   check('a completed trip is skipped',
     nextTrip([task({ id: 'z', status: 'complete', location: { address: 'A', lat: 1, lng: 1, confirmed: true } as any, fixedTime: '11:00' })], at9) === undefined);
 
+  // Koral, 28.9: a task that has STARTED and she has not left for — still the trip.
+  const loc = { address: 'Allenby 30', lat: 1, lng: 1, confirmed: true } as any;
+  const karaoke = task({ id: 'karaoke', location: loc, fixedTime: '08:45', durationMinutes: 120 });
+  check('a trip that started 15 min ago, not arrived, is still the trip',
+    nextTrip([karaoke, tasks[2]], at9)?.id === 'karaoke', nextTrip([karaoke, tasks[2]], at9)?.id);
+  check('…but not once she has arrived',
+    nextTrip([{ ...karaoke, verifiedArrival: true }, tasks[2]], at9)?.id === 'later');
+  check('…and not when it is too far gone (all-day thing started 2h ago)',
+    nextTrip([task({ id: 'conf', location: loc, fixedTime: '07:00', durationMinutes: 480 }), tasks[2]], at9)?.id === 'later');
+
   // ── 2. when to re-plan (the drift decision) ─────────────────────────────
   console.log('\n2. Re-plans only once she has actually moved');
   const home = { lat: 32.0853, lng: 34.7818 };       // assumed origin

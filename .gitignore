@@ -103,5 +103,5 @@ server/user_store.json
 server/pending_mirror.json
 server/judge_log.json
 
-# Firebase config is NOT published in the public mirror — supply your own.
-google-services.json
+# DB-designer prototype exports (random fill data, superseded by tests/fixtures/meira-sim/schema).
+database/

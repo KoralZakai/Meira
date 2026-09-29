@@ -42,8 +42,11 @@
  * match) and a yoga session lands wherever the last unrelated course was.
  */
 const CONCEPTS: Record<string, string[]> = {
+  // Kickboxing added 2026-09-28 in BOTH implementations (parity fixture).
   fitness: ['gym', 'workout', 'training', 'fitness', 'yoga', 'pilates',
-    'חדר כושר', 'כושר', 'אימון', 'אימונים', 'התעמלות', 'יוגה', 'פילאטיס'],
+    'kickbox', 'kickboxing', 'boxing', 'crossfit',
+    'חדר כושר', 'כושר', 'אימון', 'אימונים', 'התעמלות', 'יוגה', 'פילאטיס',
+    'קיקבוקס', 'קיק בוקס', 'איגרוף', 'אגרוף', 'קרוספיט'],
   pool: ['pool', 'swim', 'swimming', 'בריכה', 'שחייה'],
   work: ['work', 'office', 'עבודה', 'משרד'],
   doctor: ['doctor', 'clinic', 'dentist', 'רופא', 'מרפאה', 'שיניים', 'רופאה'],

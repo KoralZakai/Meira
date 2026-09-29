@@ -25,12 +25,54 @@
  */
 import { getSession } from './SupabaseAuthService';
 import { mergeExternalTasks } from './TaskStorage';
+import { loadProfile } from './UserProfileStorage';
+import { planArrivedTasks } from './ArrivedTaskPlanner';
 import { Task, TaskCategory, TaskPriority } from '../types/index';
+
+/** The app's transport names → the server's. */
+const SERVER_MODE: Record<string, string> = {
+  bicycle: 'bike', foot: 'walk', car: 'car', transit: 'bus',
+};
+
+/**
+ * What she set on the Profile screen, for the brain.
+ *
+ * The app keeps its profile on the phone and in Supabase; the agent reads its
+ * own store on the server, and nothing ever joined the two. So "🚲 bike" and
+ * "🔁 Routines: קיקבוקס 20:30-21:30 יגאל אלון 94" were on her screen and
+ * invisible to Meira — whose transport default was "car", and who therefore
+ * asked "how are you getting there?" and "where is the gym?". Sent with every
+ * turn: the conversation itself is the trigger, so the brain always has the
+ * profile she is looking at. The server takes only these four fields.
+ */
+async function profileForBrain(): Promise<Record<string, string> | undefined> {
+  try {
+    const p: any = await loadProfile();
+    if (!p) return undefined;
+    const out: Record<string, string> = {};
+    const mode = SERVER_MODE[String(p.transportMode ?? '')];
+    if (mode) out.transportType = mode;
+    for (const k of ['homeAddress', 'routinesNotes', 'hobbies'] as const) {
+      if (typeof p[k] === 'string' && p[k].trim()) out[k] = p[k].trim();
+    }
+    return Object.keys(out).length ? out : undefined;
+  } catch (e) {
+    console.warn('[LumiBrain] could not read the profile to send', e);
+    return undefined;
+  }
+}
 
 const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL || '';
 
-/** Long enough for a tool-using agent turn, short enough to fall back on. */
-const TIMEOUT_MS = 45_000;
+/**
+ * Long enough for a tool-using agent turn, short enough to fall back on.
+ *
+ * Was 45 s. On 2026-09-28 a four-item voice day took longer than that on the
+ * server, the phone gave up, and the server saved the tasks anyway — so the
+ * app said "nothing was saved" about tasks that were. Ninety seconds lets a
+ * real day through; the server keeps working past it either way.
+ */
+const TIMEOUT_MS = 90_000;
 
 export interface BrainReply {
   text: string;
@@ -43,7 +85,23 @@ export interface BrainReply {
 function mapTask(r: any): Task | null {
   if (!r || !r.text) return null;
   const fixedTime = r.fixed_time ? String(r.fixed_time).slice(0, 5) : undefined;
-  const location = r.location ?? undefined;
+  // KEEP WHERE THE SERVER PLACED IT. infer_task_details returns `place`
+  // ({lat, lng, displayName}) whenever Google found the address, and this
+  // mapper dropped it — so a chat task reached the phone as a bare string the
+  // app then had to geocode again on its next sweep, minutes later.
+  const coords = r.place && Number.isFinite(Number(r.place.lat)) && Number.isFinite(Number(r.place.lng))
+    && !(Number(r.place.lat) === 0 && Number(r.place.lng) === 0)
+    ? { lat: Number(r.place.lat), lng: Number(r.place.lng) }
+    : null;
+  const location = typeof r.location === 'string' && r.location.trim() && coords
+    ? {
+      address: r.location.trim(),
+      displayName: r.place.displayName ? String(r.place.displayName) : undefined,
+      lat: coords.lat,
+      lng: coords.lng,
+      confirmed: false,
+    }
+    : (r.location ?? undefined);
   const hasPlace = typeof location === 'string'
     ? Boolean(location.trim())
     : Boolean(location && (location.address || location.displayName));
@@ -95,7 +153,9 @@ export async function brainTurn(
   // Sent per turn, never stored, and only when a fix is already in hand — the
   // caller decides whether to ask the GPS, so a chat about nothing spatial
   // costs no location read.
-  opts: { here?: { lat: number; lng: number; label?: string } } = {},
+  // `mode: 'voice_plan'` — the app's mic. The server tells the model not to
+  // pin clock times, because the planner places them right after this turn.
+  opts: { here?: { lat: number; lng: number; label?: string }; mode?: 'voice_plan' } = {},
 ): Promise<BrainReply | null> {
   // Every one of these used to be a SILENT `return null`, and the caller turns
   // null into a locally-composed reply that looks exactly like a real answer.
@@ -124,6 +184,7 @@ export async function brainTurn(
     return null;   // signed out: the server cannot know who this is
   }
 
+  const profile = await profileForBrain();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
@@ -133,7 +194,12 @@ export async function brainTurn(
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify(opts.here ? { message, here: opts.here } : { message }),
+      body: JSON.stringify({
+        message,
+        ...(opts.here ? { here: opts.here } : {}),
+        ...(opts.mode ? { mode: opts.mode } : {}),
+        ...(profile ? { profile } : {}),
+      }),
       signal: controller.signal,
     });
     if (!res.ok) {
@@ -150,10 +216,15 @@ export async function brainTurn(
     // shared id, so a later pull cannot duplicate them.
     if (tasks.length) {
       await mergeExternalTasks(tasks).catch(() => {});
+      // Route them NOW — the reply is not held for Google, but the route no
+      // longer waits for some other screen's sweep. See ArrivedTaskPlanner.
+      planArrivedTasks(tasks).catch((e) => console.warn('[LumiBrain] routing new tasks failed', e));
     }
     return { text: String(body.text ?? ''), tasks, departures: body.departures ?? [] };
   } catch (e) {
-    console.warn('[LumiBrain] turn failed', e);
+    // Rule 1: our own timeout and a dead network are different fixes.
+    console.warn('[LumiBrain] turn failed',
+      controller.signal.aborted ? `— no answer in ${TIMEOUT_MS / 1000}s (the server may still save it)` : '', e);
     return null;
   } finally {
     clearTimeout(timer);

@@ -18,6 +18,9 @@ The exclusions are deliberate:
                         one fact. It is still per-user and still deleted with
                         the account (account_deletion._STORE_MODULES) — this
                         exclusion is about durability, not about privacy.
+  task_prep.json        the same kind of cache for any task (songs for karaoke,
+                        what to bring to a clinic): public pages, rebuildable,
+                        per-user, deleted with the account.
 """
 import os
 import re
@@ -47,6 +50,7 @@ EXCLUDED = {
     "supabase_tasks": "pending_mirror.json",   # the retry queue for a down DB
     "session": "active_session.json",          # 45-minute focus, rewritten per turn
     "meeting_brief": "meeting_briefs.json",    # rebuildable cache of public pages
+    "task_prep": "task_prep.json",             # same: cited prep from public pages
 }
 
 

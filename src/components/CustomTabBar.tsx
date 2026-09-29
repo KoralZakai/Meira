@@ -1,8 +1,26 @@
-/** CustomTabBar — the app's bottom/edge navigation bar. */
-import React from 'react';
-import { View, TouchableOpacity, StyleSheet, Text } from 'react-native';
+/**
+ * CustomTabBar — Today · [🎙️ | 💬] · Tasks · Trips.
+ *
+ * Design handoff "Calm Today" (2026-09-28). What changed and why:
+ *
+ * - The centre is the TalkControl split pill: 🎙️ opens the voice sheet, 💬
+ *   the chat. Chat used to hide behind a long-press on the mic.
+ * - Profile is no longer a tab. ☰ Menu opens the profile / settings as a
+ *   sheet over whatever screen she is on — it is not a place she goes.
+ * - Timeline was already merged into Today (the day chips moved into Today's
+ *   header; two tabs drawing one day is how they drift apart).
+ *
+ * Slots address routes by NAME, not by position: a routeIndex silently
+ * re-pointed every slot after an insertion ("Tasks" opened whatever sat at
+ * index 1). A name cannot drift when the navigator changes.
+ */
+import React, { useState } from 'react';
+import { View, Pressable, StyleSheet, Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BRAND, FONTS, SHADOWS } from '../constants/theme';
+import { BRAND, FONTS } from '../constants/theme';
+import VoiceSheet from './VoiceSheet';
+import TalkControl from './TalkControl';
+import { useAppLanguage } from '../hooks/useAppLanguage';
 
 interface TabBarProps {
   state: any;
@@ -10,73 +28,90 @@ interface TabBarProps {
   navigation: any;
 }
 
-// Visual slots: Today · Timeline · [orb] · Tasks · Trips · Profile
-// Stats used to sit in the Trips slot. It charted Math.random() bar heights,
-// while the routes that decide whether you arrive on time had no screen of
-// their own at all — they were buried inside individual task detail sheets.
-//
-// Slots address routes by NAME, not by position. They used to carry a
-// routeIndex, so inserting one screen into the navigator silently re-pointed
-// every slot after it: the "Tasks" button opened whatever now sat at index 1.
-// A name cannot drift when the navigator changes.
-const SLOTS: Array<{ route: string; icon: string; label: string } | null> = [
-  { route: 'Today', icon: '☀️', label: 'Today' },
-  null, // center orb
-  { route: 'Tasks', icon: '☑️', label: 'Tasks' },
-  { route: 'Trips', icon: '🗺️', label: 'Trips' },
-  // Profile moved to the avatar in the Today header — the corner every app
-  // puts the account in.
-  //
-  // Timeline was here. It rendered the same DayTimeline from the same storage
-  // as Today; the one thing it could do that Today could not was look at
-  // another date, so the day chips moved into Today's header and the tab went.
-  // Two tabs drawing the same day is how they drift apart.
+type Slot =
+  | { kind: 'route'; route: string; icon: string; en: string; he: string }
+  | { kind: 'talk' }
+  | { kind: 'menu'; icon: string; en: string; he: string };
+
+const SLOTS: Slot[] = [
+  { kind: 'route', route: 'Today', icon: '☀️', en: 'Today', he: 'היום' },
+  { kind: 'talk' },
+  { kind: 'route', route: 'Tasks', icon: '☑️', en: 'Tasks', he: 'משימות' },
+  { kind: 'route', route: 'Trips', icon: '🗺️', en: 'Trips', he: 'נסיעות' },
+  // ☰ Menu moved to the Today header, beside the profile (Koral, 28.9).
 ];
 
-export default function CustomTabBar({ state, descriptors, navigation }: TabBarProps) {
-  const insets = useSafeAreaInsets();
-  // A second infinite pulse used to live here, wrapping the orb — so the tab
-  // bar breathed on every screen in the app. Removed for the same reason.
+/** The bar's height above the safe area; 88 including it, per the spec. */
+const BAR_HEIGHT = 60;
 
-  const openChat = () => {
-    const parent = navigation.getParent?.();
-    (parent ?? navigation).navigate('CoachChat');
+export default function CustomTabBar({ state, navigation }: TabBarProps) {
+  const insets = useSafeAreaInsets();
+  const { he } = useAppLanguage();
+  const [voiceOpen, setVoiceOpen] = useState(false);
+
+  const root = () => navigation.getParent?.() ?? navigation;
+  const openChat = (initialText?: string) => {
+    root().navigate('CoachChat', initialText ? { initialText } : undefined);
+  };
+  const openMenu = () => root().navigate('SettingsMenu');
+
+  // After a voice plan the answer is the day, so land on Today to see it.
+  const closeVoice = (planned?: boolean) => {
+    setVoiceOpen(false);
+    if (!planned) return;
+    if (state.routes[state.index]?.name !== 'Today') navigation.navigate('Today');
   };
 
   return (
-    <View style={[styles.container, { paddingBottom: insets.bottom }]}>
-      {/* Was a raised Lumi orb. It is a chat button — so it looks like one now
-          rather than like a mascot that happens to be tappable. */}
-      <View style={styles.orbWrap}>
-        <TouchableOpacity onPress={openChat} activeOpacity={0.85} style={styles.chatBtn}>
-          <Text style={styles.chatIcon}>💬</Text>
-        </TouchableOpacity>
-      </View>
-
+    <View style={[styles.container, { paddingBottom: Math.max(insets.bottom, 28) }]}>
+      {voiceOpen && (
+        <VoiceSheet onClose={closeVoice} onTypeInstead={(text) => openChat(text)} />
+      )}
       <View style={styles.bar}>
-        {SLOTS.map((slot, idx) => {
-          if (!slot) {
-            return <View key="orb-gap" style={styles.centerGap} />;
+        {SLOTS.map((slot) => {
+          if (slot.kind === 'talk') {
+            return (
+              <View key="talk" style={styles.talkSlot}>
+                <View style={styles.talkRaise}>
+                  <TalkControl he={he} onVoice={() => setVoiceOpen(true)} onChat={() => openChat()} />
+                </View>
+              </View>
+            );
           }
-
+          if (slot.kind === 'menu') {
+            return (
+              <Pressable
+                key="menu"
+                onPress={openMenu}
+                style={({ pressed }) => [styles.tab, pressed && styles.pressed]}
+                accessibilityRole="button"
+                accessibilityLabel={he ? slot.he : slot.en}
+              >
+                <Text style={[styles.icon, styles.menuIcon, styles.inactive]}>{slot.icon}</Text>
+                <Text style={[styles.label, styles.inactive]}>{he ? slot.he : slot.en}</Text>
+              </Pressable>
+            );
+          }
           const routeIndex = state.routes.findIndex((r: { name: string }) => r.name === slot.route);
           const route = state.routes[routeIndex];
-          if (!route) return null;
-          const isFocused = state.index === routeIndex;
-
+          if (!route) return <View key={slot.route} style={styles.tab} />;
+          const focused = state.index === routeIndex;
           const onPress = () => {
-            const event = navigation.emit({ type: 'tabPress', target: route.key, preventDefault: false });
-            if (!isFocused && !event.defaultPrevented) navigation.navigate(route.name);
+            const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
+            if (!focused && !event.defaultPrevented) navigation.navigate(route.name);
           };
-
           return (
-            <TouchableOpacity key={slot.label} onPress={onPress} style={styles.tab} activeOpacity={0.7}>
-              <Text style={[styles.icon, { opacity: isFocused ? 1 : 0.4 }]}>{slot.icon}</Text>
-              <Text style={[styles.label, isFocused ? styles.labelActive : styles.labelInactive]}>
-                {slot.label}
-              </Text>
-              {isFocused && <View style={styles.activeDot} />}
-            </TouchableOpacity>
+            <Pressable
+              key={slot.route}
+              onPress={onPress}
+              style={({ pressed }) => [styles.tab, pressed && styles.pressed]}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: focused }}
+              accessibilityLabel={he ? slot.he : slot.en}
+            >
+              <Text style={[styles.icon, !focused && styles.inactive]}>{slot.icon}</Text>
+              <Text style={[styles.label, !focused && styles.inactive]}>{he ? slot.he : slot.en}</Text>
+            </Pressable>
           );
         })}
       </View>
@@ -89,41 +124,19 @@ const styles = StyleSheet.create({
     backgroundColor: BRAND.creamCard,
     borderTopWidth: 1,
     borderTopColor: BRAND.line,
-    ...SHADOWS.card,
-    shadowOffset: { width: 0, height: -4 },
   },
   bar: {
     flexDirection: 'row',
-    height: 60,
-    alignItems: 'flex-start',
-    paddingTop: 10,
-  },
-  tab: {
-    flex: 1,
+    height: BAR_HEIGHT,
     alignItems: 'center',
-    gap: 2,
   },
-  icon: { fontSize: 22 },
-  label: { fontSize: 10, fontFamily: FONTS.bodyBold },
-  labelActive: { color: BRAND.sunGold, fontFamily: FONTS.bodyHeavy },
-  labelInactive: { color: BRAND.inkFaint },
-  activeDot: {
-    width: 4, height: 4, borderRadius: 2,
-    backgroundColor: BRAND.sunGold,
-    marginTop: 2,
-  },
-  centerGap: { width: 72 },
-  chatBtn: {
-    width: 56, height: 56, borderRadius: 28,
-    backgroundColor: BRAND.sunGold,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  chatIcon: { fontSize: 24 },
-  orbWrap: {
-    position: 'absolute',
-    top: -30,
-    alignSelf: 'center',
-    zIndex: 10,
-    ...SHADOWS.orb,
-  },
+  tab: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 2, height: BAR_HEIGHT },
+  pressed: { opacity: 0.7 },
+  talkSlot: { width: 132, height: BAR_HEIGHT, alignItems: 'center' },
+  // Raised −32px above the bar, per the spec.
+  talkRaise: { position: 'absolute', top: -32 },
+  icon: { fontSize: 21 },
+  menuIcon: { color: BRAND.warmInk, fontSize: 22, lineHeight: 26 },
+  label: { fontSize: 10, fontFamily: FONTS.bodyHeavy, color: BRAND.warmInk },
+  inactive: { opacity: 0.5 },
 });

@@ -167,7 +167,23 @@ _seen_msg_ids_order: list[str] = []
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "model": config.LLM_MODEL}
+    """Liveness, and which models actually answer.
+
+    This used to print config.LLM_MODEL — a legacy single-model setting that no
+    chat call reads any more — so anyone checking the live server was told
+    "Qwen" while every turn ran on Nemotron through model_router. The tiers
+    below are the ones `model_router.pick` chooses from.
+
+    `extraction_override` is NEBIUS_MODEL_CHEAP: when set, task / profile /
+    email extraction use it INSTEAD of the small tier. Named here so a
+    non-Nemotron override cannot hide behind the tier list.
+    """
+    return {
+        "status": "ok",
+        "provider": "Nebius Token Factory",
+        "models": dict(model_router.MODELS),
+        "extraction_override": config.LLM_MODEL_CHEAP,
+    }
 
 
 def _jwt_role(token: str) -> str:
@@ -648,7 +664,8 @@ async def agent_chat(request: Request):
     mapped to the linked WhatsApp number so both channels are one person with
     one memory.
 
-    Body: {"message": "..."}   Header: Authorization: Bearer <supabase token>
+    Body: {"message": "...", "here"?: {lat,lng,label}, "mode"?: "voice_plan"}
+    Header: Authorization: Bearer <supabase token>
     Returns: {"text", "tasks", "departures"}
     """
     try:
@@ -697,6 +714,12 @@ async def agent_chat(request: Request):
             # Optional, per turn, never stored: {"lat","lng","label"}. The app
             # sends a fix it already holds so "from here" has a here.
             here=body.get("here") if isinstance(body.get("here"), dict) else None,
+            # "voice_plan": the app's mic — the planner places times after
+            # this turn, so the model must not pin them. Unknown modes ignored.
+            mode=body.get("mode") if body.get("mode") in ("voice_plan",) else None,
+            # What she set on the Profile screen (transport, home, routines).
+            # See agent_turn.sync_app_profile for what is accepted.
+            profile=body.get("profile") if isinstance(body.get("profile"), dict) else None,
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("agent_chat failed: %s", exc)
@@ -2295,6 +2318,8 @@ async def whatsapp_webhook(request: Request):
     from tz import now_il as _now_il_fn
     stamped = f"[נשלח עכשיו ב-{_now_il_fn().strftime('%H:%M')}] {content}"
 
+    # Read BEFORE the turn: afterwards the history's last reply is this one.
+    answering = agent_turn.meira_just_asked(str(user.get("id") or user.get("whatsapp_phone") or phone))
     response = await handle_whatsapp_message(stamped, user, learned)
 
     # Persist whatever the turn created. This lives in agent_turn so the app
@@ -2320,7 +2345,7 @@ async def whatsapp_webhook(request: Request):
     if not tasks_to_save and not (response.get("updates") or []):
         try:
             tasks_to_save, _rescue_note = await agent_turn.rescue_turn(
-                phone, content, channel="whatsapp")
+                phone, content, channel="whatsapp", answering=answering)
             if _rescue_note:
                 # Said in the same message, so the answer and what actually
                 # happened never arrive separately.

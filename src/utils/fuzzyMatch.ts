@@ -25,6 +25,14 @@ export const fuzzyScore = (a: string, b: string): number => {
  * Time tokens (11:30) and one-letter words are ignored. Used to detect that
  * two differently-worded tasks are the SAME task (dedupe/merge, not add).
  */
+// Hebrew glues ל/ב/ה/ו/מ/כ/ש onto the word: "לקריוקי" is "קריוקי", and the
+// same karaoke was saved twice because the two did not share a single word.
+// One prefix, only on a word long enough to survive it — the same rule as
+// server/task_intent._stem, which the server's duplicate check uses.
+const HE_PREFIXES = 'להבומכשו';
+const stemHe = (w: string): string =>
+  w.length > 3 && HE_PREFIXES.includes(w[0]) && /[֐-׿]/.test(w[1]) ? w.slice(1) : w;
+
 export const textSimilarity = (a: string, b: string): number => {
   const words = (s: string) =>
     new Set(
@@ -32,7 +40,8 @@ export const textSimilarity = (a: string, b: string): number => {
         .toLowerCase()
         .replace(/\d{1,2}:\d{2}/g, ' ')
         .split(/[^\p{L}\p{N}]+/u)
-        .filter((w) => w.length > 1),
+        .filter((w) => w.length > 1)
+        .map(stemHe),
     );
   const wa = words(a);
   const wb = words(b);

@@ -11,6 +11,8 @@
  *   extractProfile → POST /app/profile/extract  (onboarding answers → profile)
  *   parseCheckIn   → POST /app/checkin/parse    (check-in intent + updates)
  *   emailsToEvents → POST /app/email/events     (Gmail scan → appointments)
+ *   transcribeAudio → POST /app/stt             (recording → Whisper, typed failures)
+ *   planDay        → POST /app/schedule/build {mode: plan} (flexible tasks → free time)
  *
  * Both return null rather than throwing, exactly like LumiBrain: not signed in,
  * no server configured, offline or a server error all mean "use what the phone
@@ -243,6 +245,75 @@ export async function meetingBrief(
   return call<MeetingBriefResult>('/app/meeting/brief', { event, force }, BRIEF_TIMEOUT_MS);
 }
 
+export interface TaskPrepResult {
+  ok: boolean;
+  reason?: 'no_task' | 'search_not_configured' | 'plan_failed' | 'nothing_to_prepare'
+    | 'no_sources' | 'compose_failed' | 'nothing_cited';
+  kind?: 'songs' | 'questions' | 'checklist' | 'reading' | 'route_tips' | 'ideas' | 'other';
+  why?: string;
+  headline_he?: string;
+  headline_en?: string;
+  items_he?: string[];
+  items_en?: string[];
+  sources?: Array<{ n: number; title?: string; link?: string }>;
+  cached?: boolean;
+}
+
+/**
+ * What to prepare for ONE task — songs for karaoke, what to bring to a clinic —
+ * from live search, every item cited (server/task_prep.py). Only the task's own
+ * words go up; the server writes the search queries about the task, never her.
+ */
+export async function taskPrep(
+  task: { id: string; text: string; category?: string; date?: string; time?: string; location?: string },
+  force = false,
+): Promise<TaskPrepResult | null> {
+  return call<TaskPrepResult>('/app/task/prep', { task, force }, BRIEF_TIMEOUT_MS);
+}
+
+export interface ErrandCandidate {
+  place_id: string;
+  name: string;
+  address?: string;
+  lat: number;
+  lng: number;
+  rating?: number;
+  off_route_m: number;
+  pass_at: string;
+  date?: string;
+  trip?: string;
+  open_when_passing: boolean | null;
+  maps_url?: string;
+  /** Google's hours line for that day, e.g. "09:00–18:00". */
+  hours_today?: string;
+  /** 0 (free) … 4 (very expensive), when Google knows it. */
+  price_level?: number | null;
+  reviews?: number | null;
+  /** Meira's one pick, with the reasons ("open_when_passing", "rating 4.6", "120 m off route"). */
+  recommended?: boolean;
+  why?: string[];
+}
+
+export interface ErrandsResult {
+  ok: boolean;
+  reason?: 'no_task' | 'no_route' | 'places_not_configured' | 'understand_failed' | 'not_an_errand'
+    | 'nothing_on_route' | 'places_refused' | 'places_unreachable' | 'nothing_open_when_passing' | 'bad_request';
+  query?: string;
+  minutes?: number;
+  candidates?: ErrandCandidate[];
+  closed?: ErrandCandidate[];
+}
+
+export interface ErrandTrip { polyline: string; leave: string; arrive: string; date: string; label?: string }
+
+/**
+ * An errand with no place → places ON her planned routes, open when she passes
+ * (server/errands_along.py). Only the route lines and their times go up.
+ */
+export async function errandsAlong(text: string, trips: ErrandTrip[]): Promise<ErrandsResult | null> {
+  return call<ErrandsResult>('/app/errands/along', { task: { text }, trips }, BRIEF_TIMEOUT_MS);
+}
+
 /**
  * An address → coordinates, resolved by the SERVER's Maps key.
  *
@@ -263,4 +334,189 @@ export async function geocodeAddress(
   const body = await call<any>('/app/geocode', { address, bounds }, EXTRACT_TIMEOUT_MS);
   if (!body?.ok || typeof body.lat !== 'number' || typeof body.lng !== 'number') return null;
   return { lat: body.lat, lng: body.lng, formatted: body.formatted };
+}
+
+// Upload plus Whisper. Groq answers in about a second; the rest is a phone
+// uploading a few hundred KB over whatever signal it has.
+// Whisper plus a Hebrew re-check, on a machine that may be waking up: 30 s
+// timed out on her phone (28.9) while the server was merely slow.
+const STT_TIMEOUT_MS = 45_000;
+
+/**
+ * Why there is no transcript. Every value names a different fix, which is the
+ * point: the old recogniser answered all of these with an empty string.
+ */
+export type SttFailure =
+  | 'no_server'           // this build has no EXPO_PUBLIC_SERVER_URL
+  | 'signed_out'          // no session, so the server cannot know who is asking
+  | 'offline'             // the request never reached the server
+  | 'slow'                // it did, and no answer came in time
+  | 'no_speech'           // the recording reached Whisper and held no words
+  | 'stt_not_configured'  // the server has no STT key
+  | 'provider_failed'     // Groq refused or failed; one retry is reasonable
+  | 'rate_limited'
+  | 'too_large'
+  | 'server_error';
+
+export type SttResult =
+  | { ok: true; text: string }
+  | { ok: false; error: SttFailure; detail?: string };
+
+/**
+ * A recording → text, through the SAME Whisper the WhatsApp voice notes use.
+ *
+ * The app used Android's recogniser, locked to the UI language and cut off at
+ * the first pause. This sends the whole file with no language pinned, so a
+ * sentence that switches between Hebrew and English survives intact.
+ *
+ * `hint` is a short vocabulary list (her places, her upcoming task names) that
+ * biases how Whisper spells words it has never heard — "Ceva", not "Siva".
+ *
+ * Never throws, never returns an empty success.
+ */
+export async function transcribeAudio(uri: string, hint = ''): Promise<SttResult> {
+  if (!SERVER_URL) return { ok: false, error: 'no_server' };
+
+  let token: string | undefined;
+  try {
+    token = (await getSession())?.access_token;
+  } catch (e) {
+    console.warn('[LumiServer] /app/stt could not read the session', e);
+  }
+  if (!token) return { ok: false, error: 'signed_out' };
+
+  // A NEW form per attempt. The file part is a stream the first send reads to
+  // the end; the retry re-sent that same, spent stream and died with "Stream
+  // Closed" (28.9, twice) — so the retry could never succeed.
+  const makeForm = () => {
+    const form = new FormData();
+    // React Native uploads a local file from {uri, name, type}; the name's
+    // extension is what tells Whisper the container format.
+    form.append('file', { uri, name: 'voice.m4a', type: 'audio/mp4' } as any);
+    if (hint.trim()) form.append('hint', hint.trim().slice(0, 400));
+    return form;
+  };
+
+  const send = () => postForm(
+    `${SERVER_URL}/app/stt`, makeForm(), { Authorization: `Bearer ${token}` }, STT_TIMEOUT_MS,
+  );
+  try {
+    let answer: { status: number; body: any };
+    try {
+      answer = await send();
+    } catch (e) {
+      if (!(e instanceof UploadNetworkError)) throw e;
+      // The server sleeps when idle, and the first request after a nap can
+      // be dropped while it wakes — on her phone, 2026-09-28, the first
+      // recording failed after 6.6 s and the next one, a minute later,
+      // transcribed fine. That request woke it; one more try is enough.
+      console.warn('[LumiServer] /app/stt first try failed, retrying once', String(e));
+      await new Promise((r) => setTimeout(r, 1500));
+      answer = await send();
+    }
+    const { status, body } = answer;
+    const text = typeof body?.text === 'string' ? body.text.trim() : '';
+    if (status >= 200 && status < 300 && text) return { ok: true, text };
+
+    const known: SttFailure[] = [
+      'no_speech', 'stt_not_configured', 'provider_failed', 'rate_limited', 'too_large',
+    ];
+    const error: SttFailure = known.includes(body?.error)
+      ? body.error
+      : status === 401 ? 'signed_out' : 'server_error';
+    console.warn('[LumiServer] /app/stt said', status, error, body?.detail ?? '');
+    return { ok: false, error, detail: body?.detail ?? `HTTP ${status}` };
+  } catch (e) {
+    // Rule 1: 'offline' means the network, and only the network. Anything
+    // else thrown here is our own bug and must not read as "no connection".
+    const network = e instanceof UploadNetworkError;
+    // A timeout is not "no connection" — the phone was online and the server
+    // was slow. Different fix, different words (rule 3).
+    const slow = network && /timeout|no answer in/i.test(String((e as Error).message));
+    console.warn('[LumiServer] /app/stt failed', network ? (slow ? '(slow)' : '(network)') : '(NOT network)', e);
+    return { ok: false, error: slow ? 'slow' : network ? 'offline' : 'server_error', detail: String(e).slice(0, 120) };
+  }
+}
+
+/** The request never got an answer: no signal, or no answer in time. */
+class UploadNetworkError extends Error {}
+
+/**
+ * POST a multipart form through React Native's own networking.
+ *
+ * Koral, 2026-09-28: "I tried to record twice — it said no connection."
+ * The phone was on Wi-Fi. Expo 56 installs `expo/fetch` as the global
+ * `fetch`, and expo/fetch cannot send a React Native file part: `{ uri, name,
+ * type }` throws "Unsupported FormDataPart implementation" before one byte
+ * leaves the phone. The catch filed that under 'offline', so EVERY recording
+ * failed and said "No connection" (rule 1: one empty result, two meanings).
+ *
+ * XMLHttpRequest is still React Native's, and it streams a `uri` part from
+ * disk natively — the multipart boundary is set by the platform, so no
+ * Content-Type header is passed here.
+ */
+function postForm(
+  url: string,
+  form: FormData,
+  headers: Record<string, string>,
+  timeoutMs: number,
+): Promise<{ status: number; body: any }> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', url);
+    for (const [k, v] of Object.entries(headers)) xhr.setRequestHeader(k, v);
+    xhr.timeout = timeoutMs;
+    xhr.onload = () => {
+      let body: any = null;
+      try {
+        body = JSON.parse(xhr.responseText);
+      } catch {
+        body = null; // a non-JSON answer is classified by its status alone
+      }
+      resolve({ status: xhr.status, body });
+    };
+    // React Native leaves the native reason in responseText; keep it (rule 2).
+    xhr.onerror = () => reject(new UploadNetworkError(`network error: ${String(xhr.responseText || '').slice(0, 160)}`));
+    xhr.ontimeout = () => reject(new UploadNetworkError(`no answer in ${timeoutMs} ms`));
+    xhr.send(form as any);
+  });
+}
+
+export interface PlannedDay {
+  placed: Array<{ id: string; text: string; start: string; end: string; why: string; shortened_from?: number }>;
+  unplaced: Array<{ id: string; text: string; why: string; need: number; largest: number }>;
+  windows: Array<{ start: string; end: string }>;
+  summary: string;
+}
+
+/**
+ * Put the day's flexible tasks into time that is really free (day_planner).
+ *
+ * Unlike buildSchedule's sort, this knows about journeys: busy time runs from
+ * the leave time to the trip home, with a buffer either side, and nothing is
+ * placed past bedtime. What does not fit comes back in `unplaced` WITH its
+ * reason — it is never silently dropped. The phone sends what it holds (its
+ * view includes calendar imports and routes), so the answer is about the day
+ * on her screen. Null = the planner could not be reached.
+ */
+export async function planDay(
+  date: string,
+  tasks: Task[],
+  opts: { wakeTime?: string; sleepTime?: string; language?: string } = {},
+): Promise<PlannedDay | null> {
+  const body = await call<any>('/app/schedule/build', {
+    date,
+    tasks,
+    mode: 'plan',
+    wake_time: opts.wakeTime,
+    sleep_time: opts.sleepTime,
+    language: opts.language ?? 'he',
+  }, SCHEDULE_TIMEOUT_MS);
+  if (!body || !Array.isArray(body.placed)) return null;
+  return {
+    placed: body.placed,
+    unplaced: Array.isArray(body.unplaced) ? body.unplaced : [],
+    windows: Array.isArray(body.windows) ? body.windows : [],
+    summary: String(body.summary ?? ''),
+  };
 }

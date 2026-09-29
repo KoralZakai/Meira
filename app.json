@@ -89,7 +89,14 @@
           }
         }
       ],
-      "expo-font"
+      "expo-font",
+      "expo-background-task",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Allow Meira to record what you say, so it can turn it into tasks."
+        }
+      ]
     ],
     "scheme": [
       "lumi",

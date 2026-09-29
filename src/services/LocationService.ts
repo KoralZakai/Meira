@@ -30,6 +30,41 @@ export async function getCurrentLocation(): Promise<{ lat: number; lng: number }
   }
 }
 
+export type HereResult =
+  | { ok: true; lat: number; lng: number; fresh: boolean }
+  | { ok: false; error: 'denied' | 'unavailable'; detail?: string };
+
+/**
+ * Where she is, with the REASON when we cannot say.
+ *
+ * `getCurrentLocation` answers `null` for "she said no to location" and for
+ * "the GPS had no fix in time" alike, and those need different words on screen:
+ * one is a setting she can change, the other is a moment indoors. The voice
+ * planner plans from here, so it has to be able to say which one happened.
+ *
+ * Tries the OS's cached fix first (instant); a fresh fix only when there is
+ * none, bounded by `timeoutMs` so a slow radio cannot hold up her plan.
+ */
+export async function getHereDetailed(timeoutMs = 8000): Promise<HereResult> {
+  try {
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== 'granted') return { ok: false, error: 'denied' };
+    const cached = await Location.getLastKnownPositionAsync({ maxAge: 5 * 60 * 1000 });
+    if (cached) {
+      return { ok: true, lat: cached.coords.latitude, lng: cached.coords.longitude, fresh: false };
+    }
+    const fix = await Promise.race([
+      Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs)),
+    ]);
+    if (!fix) return { ok: false, error: 'unavailable', detail: `no GPS fix in ${timeoutMs / 1000}s` };
+    return { ok: true, lat: fix.coords.latitude, lng: fix.coords.longitude, fresh: true };
+  } catch (error) {
+    console.warn('[LocationService] getHereDetailed failed', error);
+    return { ok: false, error: 'unavailable', detail: String(error).slice(0, 120) };
+  }
+}
+
 /**
  * Where she is, cheaply — the fix the OS already has.
  *

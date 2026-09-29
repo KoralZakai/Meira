@@ -5,7 +5,7 @@
  * reach logcat: that is how the `.select('id')` regression was caught one
  * minute after install, and it is worth keeping. But the same channel has been
  * carrying things it should not — the live log showed `pulling from
- * …/tasks/972500000000`, task titles, addresses and Supabase error payloads.
+ * …/tasks/972500000009`, task titles, addresses and Supabase error payloads.
  * On a personal phone that is a diagnostic; on a stranger's phone, with their
  * data in it, it is an information leak, and Play's Data Safety declaration
  * asks about exactly this.

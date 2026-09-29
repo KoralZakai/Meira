@@ -55,8 +55,8 @@ def _digits(phone: str) -> str:
 def _same_phone(a: str, b: str) -> bool:
     """Are these the same number, written differently?
 
-    The queue is written with whatever form the webhook carried ("0500000000")
-    and flushed with whatever form the caller passed ("972500000000"). Strict
+    The queue is written with whatever form the webhook carried ("0500000009")
+    and flushed with whatever form the caller passed ("972500000009"). Strict
     equality made every such pair invisible to each other, so tasks queued
     while the phone was unlinked stayed queued forever while /link/verify
     happily answered {"linked": true, "flushed": 0} — a success with no effect,

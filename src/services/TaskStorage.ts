@@ -16,6 +16,7 @@ import { getUserId } from './SupabaseAuthService';
 import * as repo from './supabaseRepo';
 import { textSimilarity } from '../utils/fuzzyMatch';
 import { addMinutes } from '../utils/timeUtils';
+import { isStandingTask } from '../utils/taskShape';
 
 // Storage model (Step 3): AsyncStorage is an offline/read cache; Supabase is the
 // source of truth when a session exists. Every public function below keeps its
@@ -483,6 +484,186 @@ async function getDismissedIds(): Promise<string[]> {
   return readJSON<string[]>(DISMISSED_KEY, []);
 }
 
+/**
+ * The tombstones, readable from outside.
+ *
+ * This list can block an import FOREVER and says nothing while it does it:
+ * `mergeExternalTasks` skips a tombstoned id with a bare `continue`, so a
+ * calendar event that is on Google, fetched successfully, and correctly
+ * mapped still never becomes a task — and every diagnostic reports a healthy
+ * connection, because the connection IS healthy. Exposed so the Profile check
+ * can count how many of the events Google just returned are being dropped
+ * here, instead of that being invisible state. (CLAUDE.md, rule 1.)
+ */
+export async function getDismissedExternalIds(): Promise<string[]> {
+  return getDismissedIds();
+}
+
+/**
+ * Forget tombstones, so the next sync may import them again.
+ *
+ * Pass ids to lift specific ones; pass nothing to lift every tombstone whose
+ * id came from Google Calendar. Deliberately narrow by default: the WhatsApp
+ * tombstones are still doing their job, and clearing those would resurrect
+ * tasks she deleted on purpose.
+ */
+export async function clearDismissedExternalIds(ids?: string[]): Promise<number> {
+  const current = await getDismissedIds();
+  const drop = new Set(ids ?? current.filter((id) => id.startsWith('gcal-')));
+  if (!drop.size) return 0;
+  const kept = current.filter((id) => !drop.has(id));
+  await writeJSON(DISMISSED_KEY, kept);
+  return current.length - kept.length;
+}
+
+/**
+ * Same value? `===` is not enough here.
+ *
+ * `attendees` is an array and `location` is an object, so a reference compare
+ * says "different" every time even when the contents are identical. Seen in
+ * the wild immediately: every 15-minute sync logged
+ * `corrected "…interview with Ceva": attendees`, wrote the row and pushed it
+ * to the cloud, forever, over nothing. A reconcile that never converges is not
+ * a reconcile, it is a loop.
+ */
+function sameValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (a === null || b === null || a === undefined || b === undefined) return false;
+  if (typeof a !== 'object' || typeof b !== 'object') return false;
+  try { return JSON.stringify(a) === JSON.stringify(b); } catch { return false; }
+}
+
+/** What `reconcileExternalTask` did with one incoming row. */
+export type ReconcileOutcome =
+  | 'inserted'    // it was not here; it is now
+  | 'updated'     // it was here and wrong; the named fields were corrected
+  | 'unchanged'   // it was here and already right
+  | 'blocked'     // tombstoned: she deleted it in-app, so we do not resurrect it
+  | 'complete';   // she has already done it; Google does not get to reopen it
+
+/**
+ * Make the stored row match an external one, by id, whatever else is true.
+ *
+ * `mergeExternalTasks` is an ADD. Its first line is `if (ids.has(t.id)) continue`
+ * — an id it already holds means "nothing to do", and it returns without
+ * looking at the row. That is correct for an add and catastrophic as the only
+ * path, because it means an existing row is never compared against the thing
+ * it was imported FROM. A calendar row sitting on the wrong date, or one that
+ * lost its `source` stamp, is unreachable: the merge skips it (the id is
+ * known) and `refreshImportedTasks` skips it too (it only touches rows still
+ * marked `source: 'calendar'`). Both halves decline, nothing reports it, and
+ * the event is invisible forever.
+ *
+ * That is what happened to the Ceva interview: Google returned it, the app
+ * found it — "1 event(s) found" — and imported 0, on every sync, silently.
+ *
+ * This is the path that cannot be dodged. It writes the fields the external
+ * source OWNS (`owned`), including `date`, which nothing else has ever
+ * corrected, and it re-stamps provenance so the row is recognisable next time.
+ *
+ * Two things it will NOT do, both deliberate:
+ *   - resurrect a tombstoned row. She deleted it on purpose; that decision
+ *     outranks Google. Returns 'blocked' so a diagnostic can SAY so.
+ *   - reopen a completed task. Done is done.
+ */
+export async function reconcileExternalTask(
+  incoming: Task,
+  owned: Array<keyof Task | string> = [
+    'date', 'fixedTime', 'scheduledTime', 'durationMinutes', 'text',
+  ],
+  /**
+   * Fields the external source may also EMPTY.
+   *
+   * `owned` skips an incoming undefined, so a value that Google has since
+   * removed could never be taken off the row. That is not a hypothetical: the
+   * interview was stuck as category 'zoom' carrying a meetingUrl scraped from
+   * a Google MAPS link, and every sync left both in place — a task you travel
+   * to, that the app was certain you could attend from your sofa.
+   */
+  clearable: Array<keyof Task | string> = [],
+): Promise<{ outcome: ReconcileOutcome; changed: string[]; before?: Task }> {
+  const dismissed = new Set(await getDismissedIds());
+  if (dismissed.has(incoming.id)) return { outcome: 'blocked', changed: [] };
+
+  const result = await withTaskLock(async () => {
+    const tasks = await readJSON<Task[]>(TASKS_KEY, []);
+    // By id first. Failing that, by the event id the row was imported from —
+    // a row that was re-keyed at some point still knows where it came from.
+    const idx = tasks.findIndex(
+      (t) => t.id === incoming.id
+        || (incoming.calendarEventId && t.calendarEventId === incoming.calendarEventId),
+    );
+
+    if (idx === -1) {
+      // Straight in, id intact. NOT via addTask, which mints a fresh id and
+      // would break the idempotence the next sync depends on.
+      const { kept } = dedupeTasks([...tasks, incoming]);
+      await writeJSON(TASKS_KEY, kept);
+      await markCloudBehind(incoming.id);
+      return { outcome: 'inserted' as ReconcileOutcome, changed: ['*'], row: incoming };
+    }
+
+    const current = tasks[idx];
+    if (current.status === 'complete') {
+      return { outcome: 'complete' as ReconcileOutcome, changed: [], row: current };
+    }
+
+    const changed: string[] = [];
+    const next: Task = { ...current };
+    for (const key of owned) {
+      const k = key as keyof Task;
+      const value = (incoming as any)[k];
+      if (value === undefined || value === null || value === '') continue;
+      if (sameValue((current as any)[k], value)) continue;
+      (next as any)[k] = value;
+      changed.push(String(k));
+    }
+    for (const key of clearable) {
+      const k = key as keyof Task;
+      const value = (incoming as any)[k];
+      const blank = value === undefined || value === null || value === '';
+      const currentBlank = (current as any)[k] === undefined
+        || (current as any)[k] === null || (current as any)[k] === '';
+      if (!blank || currentBlank) continue;   // 'owned' above handles the set case
+      (next as any)[k] = undefined;
+      changed.push(String(k));
+    }
+    // Provenance, always. A row that lost its stamp is how it became
+    // unreachable in the first place.
+    if ((current as any).source !== 'calendar' && (incoming as any).source === 'calendar') {
+      (next as any).source = 'calendar';
+      changed.push('source');
+    }
+    if (incoming.calendarEventId && current.calendarEventId !== incoming.calendarEventId) {
+      next.calendarEventId = incoming.calendarEventId;
+      changed.push('calendarEventId');
+    }
+    if (!changed.length) {
+      return { outcome: 'unchanged' as ReconcileOutcome, changed: [], row: current };
+    }
+    tasks[idx] = next;
+    await writeJSON(TASKS_KEY, tasks);
+    await markCloudBehind(next.id);
+    return { outcome: 'updated' as ReconcileOutcome, changed, row: next, before: current };
+  });
+
+  const userId = await cloudUserId();
+  if (userId && (result.outcome === 'inserted' || result.outcome === 'updated')) {
+    try {
+      await repo.upsertTask(userId, result.row as Task);
+      await clearCloudBehind((result.row as Task).id);
+    } catch (err) {
+      // Local is saved and flagged local-ahead; the cloud can catch up.
+      console.warn('[TaskStorage] cloud upsert of a reconciled row failed', err);
+    }
+  }
+  return {
+    outcome: result.outcome,
+    changed: result.changed,
+    before: (result as any).before,
+  };
+}
+
 async function addDismissedId(id: string): Promise<void> {
   const ids = await getDismissedIds();
   if (!ids.includes(id)) {
@@ -498,13 +679,37 @@ async function addDismissedId(id: string): Promise<void> {
  * client half of the wa_→UUID migration). Non-destructive: never deletes
  * local tasks. Returns how many rows changed (added or re-keyed).
  */
-export async function mergeExternalTasks(incoming: Task[]): Promise<number> {
+export async function mergeExternalTasks(
+  incoming: Task[],
+  opts: MergeOptions = {},
+): Promise<number> {
   if (!incoming.length) return 0;
-  return withTaskLock(() => mergeExternalTasksUnlocked(incoming));
+  return withTaskLock(() => mergeExternalTasksUnlocked(incoming, opts));
+}
+
+export interface MergeOptions {
+  /**
+   * Allow an incoming task to be absorbed into an existing one that merely
+   * READS like it (textSimilarity >= 0.7).
+   *
+   * Default true, and wrong for anything whose id is derived rather than
+   * minted. Interview prep blocks are keyed `prep-<n>d-<interview id>`
+   * precisely so that running the rule every fifteen minutes produces the same
+   * blocks and never a third — and the fuzzy branch defeats that completely:
+   * "Final review for Ceva" is 0.7-similar to "Prepare for: … interview with
+   * Ceva", so the block was folded into that row, its id was never stored, and
+   * the next sync found it missing and made it again. Forever, four a sync,
+   * each pass overwriting the other task's text with whichever was longer —
+   * which is how "Final review for להתכונן לראיון…" got its title.
+   */
+  fuzzyMerge?: boolean;
 }
 
 /** The body of mergeExternalTasks. Assumes the caller holds the task lock. */
-async function mergeExternalTasksUnlocked(incoming: Task[]): Promise<number> {
+async function mergeExternalTasksUnlocked(
+  incoming: Task[],
+  opts: MergeOptions = {},
+): Promise<number> {
   const existing = await readJSON<Task[]>(TASKS_KEY, []);
   const dismissed = new Set(await getDismissedIds());
   const ids = new Set(existing.map((t) => t.id));
@@ -512,8 +717,19 @@ async function mergeExternalTasksUnlocked(incoming: Task[]): Promise<number> {
   const rekeyedOldIds: string[] = [];
   const enriched: Task[] = [];
   let changed = 0;
+  let blocked = 0;
+  let absorbed = 0;
   for (const t of incoming) {
-    if (ids.has(t.id) || dismissed.has(t.id)) continue;
+    if (ids.has(t.id)) continue;
+    if (dismissed.has(t.id)) {
+      // Rule 2: the skip may be silent to the merge, never to the log. This
+      // one line is the difference between "Google has nothing" and "we are
+      // refusing to import something Google handed us", which were the same
+      // observable state for as long as this tombstone list has existed.
+      console.warn('[TaskStorage] import blocked by tombstone', t.id, t.date, t.text);
+      blocked += 1;
+      continue;
+    }
     const legacyTwin = existing.find(
       (e) => e.id.startsWith('wa_') && e.text === t.text && e.date === t.date,
     );
@@ -526,10 +742,19 @@ async function mergeExternalTasksUnlocked(incoming: Task[]): Promise<number> {
     // Same task worded differently ("interview tomorrow in Ramat Gan" vs
     // "interview tomorrow, Ramat Gan, 11:30") → enrich the existing task with
     // the new details instead of adding a duplicate.
-    const similar = existing.find(
+    const similar = opts.fuzzyMerge === false ? undefined : existing.find(
       (e) => e.date === t.date && e.status !== 'complete' && textSimilarity(e.text, t.text) >= 0.7,
     );
     if (similar) {
+      // Rule 1 and rule 3: absorbing is not adding, and the count this
+      // function returns is read as "how many landed". It was counting these,
+      // so `created 4 interview prep block(s)` was printed every sync for four
+      // blocks that were never stored — a creation reported, a store
+      // unchanged, and nothing anywhere able to tell the two apart.
+      console.warn(
+        `[TaskStorage] "${t.text.slice(0, 40)}" (${t.id}) was absorbed into`
+        + ` "${similar.text.slice(0, 40)}" (${similar.id}) — its id is NOT in the store`,
+      );
       if (t.text.length > similar.text.length) similar.text = t.text; // more detailed wins
       if (t.fixedTime && !similar.fixedTime) {
         similar.fixedTime = t.fixedTime;
@@ -541,6 +766,7 @@ async function mergeExternalTasksUnlocked(incoming: Task[]): Promise<number> {
         similar.durationMinutes = t.durationMinutes;
       }
       enriched.push(similar);
+      absorbed += 1;
       changed += 1;
       continue;
     }
@@ -548,7 +774,19 @@ async function mergeExternalTasksUnlocked(incoming: Task[]): Promise<number> {
     ids.add(t.id);
     changed += 1;
   }
+  if (blocked) {
+    console.warn(
+      `[TaskStorage] ${blocked} external task(s) were dropped by the tombstone list. `
+      + 'Profile → Calendar check reports this; clearDismissedExternalIds() lifts it.',
+    );
+  }
   if (!changed) return 0;
+  if (absorbed) {
+    console.warn(
+      `[TaskStorage] ${absorbed} incoming task(s) were absorbed into similar rows. `
+      + 'A caller that keys on id will ask for them again next time.',
+    );
+  }
   const { kept } = dedupeTasks([...existing, ...toAdd]);
   const keptIds = new Set(kept.map((task) => task.id));
   await writeJSON(TASKS_KEY, kept);
@@ -1223,6 +1461,17 @@ export async function getOverdueTasks(today: string, now?: string): Promise<Task
   };
   return tasks
     .filter((task) => task.status === 'pending' && (task.date < today || elapsedToday(task)))
+    // Standing work is not overdue — it was never due.
+    //
+    // "להגיש קורות חיים" carries the date she typed it, not a date anybody
+    // agreed to, and this filter was pure `date < today`. So the morning
+    // after she wrote it down it appeared in the missed card being asked
+    // "did you do this? move it? let it go?" — the same three questions
+    // every morning, and the only way to stop them was to reschedule it by
+    // hand, daily. Rule 6: the question has to fit the thing. It belongs in
+    // the flexible list on today, which is where TodaySchedule now carries
+    // it, still holding its original date so rule 4 is kept.
+    .filter((task) => !isStandingTask(task))
     .sort((a, b) => (a.date > b.date ? -1 : a.date < b.date ? 1 : 0));
 }
 

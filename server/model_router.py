@@ -63,6 +63,7 @@ CONTEXT: dict[str, int] = {
 # Which tier each call site gets when money and tokens allow.
 DEFAULT_TIER: dict[str, str] = {
     "task_extract":    SMALL,
+    "understand":      MEDIUM,   # meaning, not keywords: the conversation → actions
     "profile_extract": SMALL,
     "email_events":    SMALL,
     "categorize":      SMALL,
@@ -70,6 +71,9 @@ DEFAULT_TIER: dict[str, str] = {
     "chat":            MEDIUM,
     "agent":           MEDIUM,
     "meeting_brief":   MEDIUM,
+    "task_prep_plan":  SMALL,    # is there anything worth preparing? which searches
+    "task_prep":       MEDIUM,   # cited prep items from the searches
+    "errand_understand": SMALL,  # is this an errand, and what to search on the map
     "research":        LARGE,
 }
 

@@ -27,7 +27,8 @@ import { Task, AppLanguage } from '../types';
 import { BRAND, FONTS, RADIUS, SHADOWS } from '../constants/theme';
 import { getCategoryMeta } from '../constants/categories';
 import { formatDuration, timeToMinutes, addMinutes, getTodayString } from '../utils/timeUtils';
-import { locationTextOf, taskHasJourney } from '../utils/dayPlanning';
+import { locationTextOf } from '../utils/dayPlanning';
+import { travelRowState } from '../utils/travelRowState';
 import { DayGap, findDayGaps } from '../utils/findGaps';
 import { nowInBlock, describeRemaining } from '../utils/timelineNow';
 import { Routine, constrainGaps } from '../utils/routines';
@@ -254,6 +255,9 @@ export default function DayTimeline({
   void trailing;   // buildTimelineRows takes the untagged gaps from `gaps` itself
 
   const pool = tasks.filter((t) => !taskTime(t) && t.status === 'pending');
+  // Two things running at 20:30 are both "active"; the clock is drawn once,
+  // on the first of them. Two red "20:…" pills read as two different nows.
+  const nowOwner = blocks.find((b) => b.active)?.task.id;
 
   return (
     <View style={styles.wrap}>
@@ -329,7 +333,22 @@ export default function DayTimeline({
                 not appear on the timeline at all. It was visible on the
                 Leave-now screen the whole time, which is what made it look
                 like a styling problem rather than a missing render. */}
-            {group.filter((b) => taskHasJourney(b.task)).map((b) => (
+            {/* `travelRowState !== 'none'`, not `taskHasJourney`.
+                taskHasJourney is true only once a route EXISTS
+                (leaveHomeBy || transitPlan). So a task with a real address and
+                no route yet rendered nothing at all — and TimelineTravelLeg is
+                the one component that knows how to say "I have a place and no
+                hour", "no route by that vehicle" or "not planned yet — tap to
+                work it out", with the action that fixes each. The component
+                that explains the absence was mounted only when there was no
+                absence.
+
+                That is why Wednesday showed the interview with its address and
+                no leave-home row and no reason: whether the route had failed,
+                was still pending, or had never been attempted, the screen drew
+                the same nothing. Let the row decide what it says; it already
+                returns null for a task with genuinely nowhere to go. */}
+            {group.filter((b) => travelRowState(b.task) !== 'none').map((b) => (
               <TimelineTravelLeg
                 key={`leg-${b.task.id}`}
                 task={b.task}
@@ -382,7 +401,7 @@ export default function DayTimeline({
                 >
                   {bStart}
                 </Text>
-                {b.active && now ? (
+                {b.active && now && b.task.id === nowOwner ? (
                   // Clamped into the middle band. At top:0% or top:100% this
                   // pill — ~40px of solid red in a 40px-wide rail — landed
                   // exactly on the start or end time and swallowed it whole.
@@ -391,7 +410,7 @@ export default function DayTimeline({
                       top: `${Math.min(74, Math.max(26, Math.round(b.progress * 100)))}%`,
                     }]}
                   >
-                    <Text style={styles.nowPillText} numberOfLines={1}>{now}</Text>
+                    <Text style={styles.nowPillText} numberOfLines={1} allowFontScaling={false}>{now}</Text>
                   </View>
                 ) : null}
                 <Text
@@ -493,7 +512,7 @@ export default function DayTimeline({
                 })}
 
                 {/* The moment, on the block it falls inside. */}
-                {b.active ? (
+                {b.active && b.task.id === nowOwner ? (
                   <View style={[styles.nowLine, { top: `${Math.round(b.progress * 100)}%` }]} pointerEvents="none">
                     <NowPulse />
                   </View>
@@ -653,7 +672,7 @@ const styles = StyleSheet.create({
   blockRow: { flexDirection: 'row', gap: 10, marginBottom: BLOCK_GAP_PX },
   blockCols: { flex: 1, flexDirection: 'row', gap: 7, position: 'relative' },
   nowPill: {
-    position: 'absolute', right: 0, marginTop: -9,
+    position: 'absolute', right: 0, marginTop: -9, minWidth: 40, alignItems: 'center',
     backgroundColor: BRAND.danger, borderRadius: RADIUS.pill,
     paddingHorizontal: 6, paddingVertical: 2,
   },

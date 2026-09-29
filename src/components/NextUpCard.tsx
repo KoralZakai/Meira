@@ -32,6 +32,11 @@ interface Props {
    * explicit alarmAt or an already-routed wakeUpBy can be drawn.
    */
   profile?: UserProfile | null;
+  /**
+   * The day's single wake hour. A task that wants a LATER one is superseded,
+   * not muted, so it draws no ⏰ at all — see utils/alarmPlan.dayWakeOwner.
+   */
+  dayEarliestWake?: string;
   /** Tap the ⏰ row: turn the alarm off, back on, or move it. */
   onAlarmPress?: (task: Task) => void;
 }
@@ -62,7 +67,7 @@ function dayLabel(date: string, he: boolean): string {
 }
 
 export default function NextUpCard({
-  task, language, onPress, onStart, profile, onAlarmPress,
+  task, language, onPress, onStart, profile, onAlarmPress, dayEarliestWake,
 }: Props) {
   const he = language === 'he';
   const l = loc(task);
@@ -77,7 +82,7 @@ export default function NextUpCard({
   // sources: a task with an explicit "wake me at 7" showed nothing, and so did
   // every task on a day whose routes had not been computed yet — i.e. tomorrow,
   // most of the time. The alarm still rang. The card just did not say so.
-  const wake = wakeChipFor(task, wakeInputs(profile));
+  const wake = wakeChipFor(task, wakeInputs(profile), { dayEarliestWake });
   // A route's wake time that is NOT a wake-from-sleep moment (13:00 for a 14:00
   // class) is still worth showing — but as "get ready", never as an alarm.
   const getReady = getReadyTimeFor(task, wakeInputs(profile));
@@ -85,10 +90,19 @@ export default function NextUpCard({
   type Step = { key: string; icon: string; label: string; time: string; kind?: 'wake' };
   const steps: Step[] = [];
   if (wake) {
+    // When the wake time IS the route's, it is not merely when she opens her
+    // eyes — it is when getting ready starts, and the door is 40 minutes
+    // later. The trip card says exactly that now, and two cards describing
+    // one instant differently is how she ends up trusting neither.
+    const isGetReady = Boolean(l?.leaveHomeBy && l?.wakeUpBy && wake.at === l.wakeUpBy);
     steps.push({
       key: 'wake',
-      icon: wake.muted ? '🔕' : '⏰',
-      label: wake.muted ? (he ? 'כבוי' : 'alarm off') : (he ? 'להתעורר' : 'wake up'),
+      icon: wake.muted ? '🔕' : isGetReady ? '⏰🚿' : '⏰',
+      label: wake.muted
+        ? (he ? 'כבוי' : 'alarm off')
+        : isGetReady
+          ? (he ? 'להתארגן' : 'get ready')
+          : (he ? 'להתעורר' : 'wake up'),
       time: wake.at,
       kind: 'wake',
     });

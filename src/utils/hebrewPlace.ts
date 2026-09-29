@@ -67,6 +67,10 @@ const NON_PLACE_WORDS = [
 const ADDRESS_LEADS = ['רחוב', 'רח', 'שדרות', 'שד', 'כתובת', 'סניף'];
 
 const HEB = /[֐-׿]/;
+/** Things that happen AT a place, so "ב + a name" after them is one. */
+const APPOINTMENT = /ראיון|פגישה|תור(?![֐-׿])|רופא|מרפאה|הרצאה|כנס/;
+/** An hour said ("ב10", "14:30"): something that happens somewhere, at a time. */
+const SAID_HOUR = /\d{1,2}:\d{2}|(?<![֐-׿])ב-?\s?\d{1,2}(?![\d./])/;
 /** A token that starts a time phrase, so the address stops before it. */
 const TIME_TOKEN = /^(?:ב-?\d{1,2}(?::\d{2})?|\d{1,2}:\d{2}|ב|בשעה|בערב|בבוקר|בלילה|בצהריים|מחר|מחרתיים|היום|עד|ל)$/;
 
@@ -80,13 +84,20 @@ export interface HebrewPlace {
 const clean = (w: string) => w.replace(/^ב-?/, '').replace(/[.,;:!?]+$/, '');
 
 /** Does this read like an address rather than a fragment of a sentence? */
-function looksLikeAddress(candidate: string, hadLead: boolean): boolean {
+function looksLikeAddress(candidate: string, hadLead: boolean, appointment = false): boolean {
   if (hadLead) return true;
   const words = candidate.split(/\s+/).filter(Boolean);
   if (!words.length) return false;
   // "יגאל אלון 94" — a house number is the strongest signal there is.
   if (/^\d{1,4}$/.test(words[words.length - 1])) return words.length <= 5;
   // "ספייס ג'ים" — a short proper name, with no leftover sentence around it.
+  // Hebrew has no capitals, so "ב + a short word" alone proved nothing: "לסדר
+  // באגים" became a trip to "אגים" and "בלו״ז" a place called "לו״ז". A name
+  // must carry a mark of one — Latin letters or a geresh (a loan word) — or
+  // come in a sentence that happens somewhere: an appointment ("ראיון ב-10:00
+  // בסבא") or a stated hour ("לחתום אבטלה בנהריה ב10"). Mirrors task_extract.
+  // The rest is left to the server's model and Places, and to known places.
+  if (!appointment && !/[A-Za-z'׳]/.test(candidate)) return false;
   return words.length <= 2
     && !words.some((w) => TIME_WORDS.includes(clean(w)) || NON_PLACE_WORDS.includes(clean(w)));
 }
@@ -102,6 +113,7 @@ export function extractHebrewPlaceParts(text: string): HebrewPlace {
   if (!text || !HEB.test(text)) return empty;
 
   const tokens = text.split(/\s+/).filter(Boolean);
+  const somewhere = APPOINTMENT.test(text) || SAID_HOUR.test(text);
   let activity: string | null = null;
 
   for (let i = 0; i < tokens.length; i++) {
@@ -128,7 +140,7 @@ export function extractHebrewPlaceParts(text: string): HebrewPlace {
       parts.push(t);
     }
     const candidate = parts.join(' ').trim();
-    if (candidate.length >= 2 && looksLikeAddress(candidate, hadLead)) {
+    if (candidate.length >= 2 && looksLikeAddress(candidate, hadLead, somewhere)) {
       return { place: candidate, activity };
     }
   }

@@ -106,6 +106,51 @@ class ScheduleBuild(unittest.TestCase):
         self.assertIn("tasks", en)
 
 
+class SchedulePlanMode(unittest.TestCase):
+    """mode "plan": the gap-aware planner behind the app's voice flow."""
+
+    DAY = [
+        {"id": "gcal-ceva-2", "text": "Ceva — second interview", "category": "interview",
+         "priority": "must", "fixed_time": "14:30", "duration_minutes": 60,
+         "location": {"address": "Airport City", "leaveHomeBy": "13:40", "travelMinutes": 45}},
+        {"id": "t-meira", "text": "Work on Meira", "category": "work", "priority": "must",
+         "duration_minutes": 180},
+        {"id": "t-prep", "text": "Study for the Ceva interview", "category": "interview",
+         "priority": "must", "duration_minutes": 90, "prepForTaskId": "gcal-ceva-2"},
+        {"id": "t-huge", "text": "Repaint the flat", "priority": "need_to", "duration_minutes": 900},
+    ]
+
+    def _plan(self, **extra):
+        with _signed_in():
+            return client.post("/app/schedule/build", headers=AUTH, json={
+                "date": A_FUTURE_DAY, "tasks": self.DAY, "mode": "plan",
+                "wake_time": "07:30", "sleep_time": "23:00", **extra}).json()
+
+    def test_places_around_the_journey_and_returns_what_did_not_fit(self):
+        body = self._plan(language="en")
+        self.assertEqual(body["source"], "planner")
+        placed = {p["id"]: p for p in body["placed"]}
+        self.assertEqual(set(placed), {"t-meira", "t-prep"})
+        self.assertLessEqual(placed["t-prep"]["end"], "13:30")
+        self.assertEqual([u["id"] for u in body["unplaced"]], ["t-huge"])
+        self.assertEqual(body["unplaced"][0]["why"], "no_window")
+        self.assertIn("didn't fit", body["summary"])
+
+    def test_tasks_carry_their_new_slot_and_nothing_is_dropped(self):
+        body = self._plan()
+        slots = {t["id"]: t.get("scheduled_time") for t in body["tasks"]}
+        self.assertEqual(len(body["tasks"]), 4)
+        self.assertEqual(slots["t-meira"], body["placed"][0]["start"])
+        self.assertIsNone(slots["t-huge"])
+
+    def test_default_mode_is_still_the_sort(self):
+        with _signed_in():
+            body = client.post("/app/schedule/build", headers=AUTH,
+                               json={"date": A_FUTURE_DAY, "tasks": DRAFT}).json()
+        self.assertEqual(body["source"], "deterministic")
+        self.assertNotIn("placed", body)
+
+
 class ScheduleBuildToday(unittest.TestCase):
     def test_today_starts_the_cursor_at_now_not_at_wake_time(self):
         """Asked for TODAY, the builder must not schedule into the past — the

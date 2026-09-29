@@ -76,7 +76,7 @@ class ResolveTests(unittest.TestCase):
         self._p.stop()
         self._tmp.cleanup()
 
-    PHONE = "972500000000"
+    PHONE = "972500000009"
 
     def test_the_exact_scenario_she_described(self):
         # Written once, in Hebrew, with an address…
@@ -112,8 +112,8 @@ class ResolveTests(unittest.TestCase):
         self.assertIsNone(kp.resolve("972501234567", "yoga class"))
 
     def test_local_and_international_phone_are_one_person(self):
-        kp.remember("0500000000", "אימון בחדר כושר", "יגאל אלון 94")
-        self.assertEqual(kp.resolve("972500000000", "yoga class")["address"], "יגאל אלון 94")
+        kp.remember("0500000009", "אימון בחדר כושר", "יגאל אלון 94")
+        self.assertEqual(kp.resolve("972500000009", "yoga class")["address"], "יגאל אלון 94")
 
     def test_a_blank_address_is_not_learned(self):
         kp.remember(self.PHONE, "yoga class", "")

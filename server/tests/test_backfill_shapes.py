@@ -47,20 +47,20 @@ def test_conversation_turns_use_content_not_text():
 
 def test_a_known_place_is_named_by_its_key():
     _with_store("known_places.json", {
-        "500000000": {"@work": {"address": "יגאל אלון 94", "lat": 32.07,
+        "500000009": {"@work": {"address": "יגאל אלון 94", "lat": 32.07,
                                 "lng": 34.79, "count": 3, "words": []}},
     })
     assert asyncio.run(bf._places(dry=True)) == 1
 
 
 def test_a_place_with_no_address_is_not_a_place():
-    _with_store("known_places.json", {"500000000": {"@nowhere": {"count": 1}}})
+    _with_store("known_places.json", {"500000009": {"@nowhere": {"count": 1}}})
     assert asyncio.run(bf._places(dry=True)) == 0
 
 
 def test_travel_prefs_are_two_levels_deep_and_hold_counts():
     _with_store("travel_prefs.json", {
-        "500000000": {
+        "500000009": {
             "places": {"space gym": {"bus": 3, "car": 1}, "work": {"car": 2}},
             "categories": {"gym": {"bus": 4}, "work": {"car": 2}},
         },
@@ -70,7 +70,7 @@ def test_travel_prefs_are_two_levels_deep_and_hold_counts():
 
 def test_the_winning_travel_mode_is_the_most_used_one():
     _with_store("travel_prefs.json", {
-        "500000000": {"places": {"space gym": {"bus": 5, "car": 1}}},
+        "500000009": {"places": {"space gym": {"bus": 5, "car": 1}}},
     })
     captured = {}
 
@@ -135,7 +135,7 @@ def test_rerunning_cannot_duplicate_conversation_turns():
 
 def test_rerunning_cannot_duplicate_sessions():
     _with_store("sessions.json", {
-        "500000000": {"whatsapp": {"id": "whatsapp-abc123", "turns": 4}},
+        "500000009": {"whatsapp": {"id": "whatsapp-abc123", "turns": 4}},
     })
     seen = []
 

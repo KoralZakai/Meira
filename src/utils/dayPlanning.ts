@@ -59,6 +59,31 @@ export const taskHasJourney = (t?: Task): boolean => {
 
 export const timeOf = (t: Task): string | undefined => t.fixedTime || t.scheduledTime;
 
+/**
+ * The gold "next important" pill's task: the first timed task that has not
+ * started yet, from today through `days` days. Complete and moved rows never
+ * qualify. Pure, so tests/run-next-upcoming.ts can pin it.
+ */
+export function pickNextUpcoming(all: Task[], now: number, today: string, days = 7): Task | null {
+  const [ty, tm, td] = today.split('-').map(Number);
+  const lastDay = new Date(ty, tm - 1, td + days - 1);
+  const last = `${lastDay.getFullYear()}-${String(lastDay.getMonth() + 1).padStart(2, '0')}-${String(lastDay.getDate()).padStart(2, '0')}`;
+  let best: { task: Task; when: number } | null = null;
+  for (const t of all) {
+    if (t.status === 'complete' || t.status === 'moved') continue;
+    if (!t.date || t.date < today || t.date > last) continue;
+    const time = timeOf(t);
+    if (!time) continue;
+    const [h, m] = time.split(':').map(Number);
+    const [y, mo, d] = t.date.split('-').map(Number);
+    if ([h, m, y, mo, d].some((n) => !Number.isFinite(n))) continue;
+    const when = new Date(y, mo - 1, d, h, m).getTime();
+    if (when <= now) continue;
+    if (!best || when < best.when) best = { task: t, when };
+  }
+  return best?.task ?? null;
+}
+
 /** Tasks that have a clock time, earliest first. */
 export function sortTimed(tasks: Task[]): Task[] {
   return tasks.filter((t) => timeOf(t)).sort((a, b) => (timeOf(a)! < timeOf(b)! ? -1 : 1));

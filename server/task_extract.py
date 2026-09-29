@@ -74,27 +74,249 @@ _SYSTEM = (
 # handles. No \b anywhere near the Hebrew: it does not match Hebrew letters, and
 # that is how an earlier number parser quietly became dead code.
 _EXPLICIT_TIME = re.compile(r"(\d{1,2}):(\d{2})")
-_BARE_TIME = re.compile(r"(?:\bat\b|בשעה|ב-|ב(?=\d))\s*(\d{1,2})(?!\d|:)", re.IGNORECASE)
-_EVENING = re.compile(r"\bpm\b|tonight|evening|בערב|בלילה", re.IGNORECASE)
-_MORNING = re.compile(r"\bam\b|morning|בבוקר", re.IGNORECASE)
+# "ב 8" with a space is how a phone keyboard writes it, and it matched nothing.
+# The ב must START a word, or "רחוב 8" would read as eight o'clock.
+_BARE_TIME = re.compile(r"(?:\bat\b|בשעה|(?<![\u0590-\u05FF])ו?ב-?\s?(?=\d))\s*(\d{1,2})(?!\d|:)",
+                        re.IGNORECASE)
+# And a number followed by a month is a DAY: "מילואים ב 8 באוקטובר" was read as
+# eight in the morning. Applied on top of the match, see _bare_hour.
+_DAY_OF_MONTH_AFTER = re.compile(rf"(?:{_tz.MONTH_WORD_AFTER})", re.IGNORECASE)
+
+# Things that take the working day when no hour is given. "מילואים ב 8 באוקטובר"
+# is a day on base — she said "from the morning until the afternoon" — not a
+# 30-minute task at some hour.
+_DAY_LONG = re.compile(r"מילואים|miluim|reserve duty|יום גיבוש|יום עיון", re.IGNORECASE)
+DAY_LONG_START, DAY_LONG_MINUTES = "08:00", 8 * 60
+
+
+def day_long(text: str) -> bool:
+    """Does this, with no hour said, take the working day (08:00–16:00)?"""
+    return bool(_DAY_LONG.search(text or ""))
+
+
+def _bare_hour(text: str):
+    """The first "ב 8" / "at 8" that is an HOUR — not the 8 of "8 באוקטובר"."""
+    for m in _BARE_TIME.finditer(text or ""):
+        if not _DAY_OF_MONTH_AFTER.match(text, m.end()):
+            return m
+    return None
+
+
+# "ב 8 וחצי", "ב-7 ורבע", "ברבע ל-9" — how an hour is actually said in Hebrew.
+# Without these, "קיקבוקס ב 8 וחצי" became a task with no hour at all: the bare
+# number matched nothing because a word, not ":30", followed it.
+_HALF = re.compile(r"^\s*(?:ו)?חצי")
+_QUARTER_PAST = re.compile(r"^\s*(?:ו)?רבע")
+_QUARTER_TO = re.compile(r"(?:ב)?רבע\s*ל-?\s*(\d{1,2})(?!\d|:)")
+
+
+_PM = re.compile(r"(?<![a-z])(?:pm|p\.m\.)(?![a-z])|evening|בערב|אחה[\"״]?צ|אחר\s*הצהריים|בצהריים",
+                 re.IGNORECASE)
+_NIGHT = re.compile(r"בלילה|tonight", re.IGNORECASE)
+_AM = re.compile(r"(?<![a-z])(?:am|a\.m\.)(?![a-z])|morning|בבוקר", re.IGNORECASE)
+
+
+def _meridiem(text: str) -> str:
+    """'pm' | 'night' | 'am' | '' — which half of the day a phrase names.
+
+    'night' is its own answer: "11 בלילה" is 23:00 but "1 בלילה" is 01:00, and
+    folding בלילה into "evening" put a 1 a.m. call at 13:00. Mirrors
+    meridiemOf in src/utils/timeParser.ts."""
+    if _PM.search(text or ""):
+        return "pm"
+    if _NIGHT.search(text or ""):
+        return "night"
+    if _AM.search(text or ""):
+        return "am"
+    return ""
+
+
+def _to_24h(hour: int, mer: str, bare: bool = True) -> int:
+    """A spoken hour → 24h. With no marker, a BARE 1–6 is the afternoon: "אימון
+    ב6 עד 7" is 18:00. It was 06:00 here and 18:00 on the phone — one sentence,
+    two different hours depending on which door she used."""
+    if mer == "pm":
+        return hour + 12 if hour < 12 else hour
+    if mer == "night":
+        return hour + 12 if 6 <= hour < 12 else (0 if hour == 12 else hour)
+    if mer == "am":
+        return 0 if hour == 12 else hour
+    return hour + 12 if bare and 1 <= hour <= 6 else hour
+
+
+# SPOKEN HOURS. Whisper writes what she SAID: "שיחה עם דותן משתיים עד שתיים
+# וחצי". Every parser below reads digits, so on 28.9 that call had no hour, the
+# rescue saw no time, and nothing was saved — while Meira's reply drew a lovely
+# day around it. The words become digits first, then the digit parsers run.
+# An hour word counts only where an hour is meant: after ב/מ/ל/עד/בשעה, or
+# followed by וחצי/ורבע/בערב… — "שלוש משימות" and "לשלוש שעות" stay words.
+_HOUR_WORDS_HE = {
+    "אחת עשרה": 11, "אחד עשרה": 11, "שתים עשרה": 12, "שתיים עשרה": 12,
+    "אחת": 1, "שתיים": 2, "שתים": 2, "שלוש": 3, "ארבע": 4, "חמש": 5, "שש": 6,
+    "שבע": 7, "שמונה": 8, "תשע": 9, "עשר": 10,
+}
+_MINUTES_HE = {"חצי": 30, "רבע": 15, "עשרה": 10, "עשרים": 20, "חמישה": 5,
+               "עשרים וחמישה": 25, "שלושים": 30, "ארבעים": 40, "ארבעים וחמישה": 45,
+               "חמישים": 50}
+_TO_HE = {"רבע": 15, "עשרה": 10, "חמישה": 5, "עשרים": 20}
+_HOUR_WORDS_EN = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
+                  "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12}
+_MINUTES_EN = {"o'clock": 0, "fifteen": 15, "thirty": 30, "forty five": 45,
+               "forty-five": 45}
+
+
+def _alt(words) -> str:
+    return "|".join(sorted(map(re.escape, words), key=len, reverse=True))
+
+
+_NOT_AN_HOUR_AFTER = (r"(?!\s*(?:שעות|שעה|דקות|ימים|שבועות|חודשים|פעמים|אנשים|משימות"
+                      r"|hours?|minutes?|mins?|days?|weeks?|times|people|of|points?|more)(?![a-z]))"
+                      # "באחת הפגישות" is in one of the meetings, not at one.
+                      r"(?!\s+(?:ה(?!ערב|בוקר|צהריים|לילה)|מה|מהן|מהם)[֐-׿])")
+_SPOKEN_HE = re.compile(
+    r"(?<![֐-׿])(?P<pre>ו?(?:(?:בשעה|השעה|עד|בין)\s+(?:ה-?)?|[במל]-?))?"
+    r"(?P<h>" + _alt(_HOUR_WORDS_HE) + r")(?![֐-׿])"
+    r"(?:(?P<plus>\s+ו(?:" + _alt(_MINUTES_HE) + r"))(?![֐-׿])"
+    r"|(?P<minus>\s+פחות\s+(?:" + _alt(_TO_HE) + r"))(?![֐-׿]))?"
+    + _NOT_AN_HOUR_AFTER)
+_SPOKEN_HE_MARKER = re.compile(r"\s*(?:בערב|בבוקר|בלילה|בצהריים|אחה[\"״]?צ|אחר הצהריים)")
+_SPOKEN_EN = re.compile(
+    r"(?P<pre>\b(?:at|from|to|until|till|between|by)\s+)?"
+    r"(?P<half>half\s+past\s+|quarter\s+past\s+|quarter\s+to\s+)?"
+    r"\b(?P<h>" + _alt(_HOUR_WORDS_EN) + r")\b"
+    r"(?P<plus>\s+(?:" + _alt(_MINUTES_EN) + r"))?" + _NOT_AN_HOUR_AFTER,
+    re.IGNORECASE)
+_SPOKEN_EN_MARKER = re.compile(r"\s*(?:am|pm|a\.m\.|p\.m\.|in the (?:morning|evening|afternoon)|tonight)\b",
+                               re.IGNORECASE)
+
+
+def _said(pre: str, hour: int, minute: int, marked: Optional[re.Match]) -> str:
+    hour = _to_24h(hour, _meridiem(marked.group(0)) if marked else "", bare=True)
+    return f"{pre}{hour}" + (f":{minute:02d}" if minute else "")
+
+
+def spoken_hours(text: str) -> str:
+    """Hours said in words → digits, only where an hour is meant.
+
+    "משתיים עד שתיים וחצי" → "מ14 עד 14:30"; "בשמונה בערב" → "ב20 בערב";
+    "ברבע לשלוש" → "ב14:45"; "from two to half past two" → "from 14 to 14:30".
+    The hour comes out on the 24-hour clock by the same rule as a typed one
+    (_to_24h: bare 1–6 is the afternoon), because "14:45" read later has no
+    way to know it was said as "רבע לשלוש". Idempotent; a no-op on text with no
+    hour words, so every parser can call it on whatever it was given."""
+    def he(m: re.Match) -> str:
+        pre, word = m.group("pre") or "", m.group("h")
+        plus, minus = m.group("plus"), m.group("minus")
+        marked = _SPOKEN_HE_MARKER.match(m.string, m.end())
+        if not (pre or plus or minus or marked):
+            return m.group(0)
+        hour, minute = _HOUR_WORDS_HE[word], 0
+        if plus:
+            minute = _MINUTES_HE[plus.strip()[1:]]
+        elif minus:
+            hour, minute = (hour - 2) % 12 + 1, 60 - _TO_HE[minus.split()[-1]]
+        return _said(pre, hour, minute, marked)
+
+    def en(m: re.Match) -> str:
+        pre, half, word, plus = (m.group("pre") or ""), m.group("half"), m.group("h"), m.group("plus")
+        marked = _SPOKEN_EN_MARKER.match(m.string, m.end())
+        if not (pre or half or plus or marked):
+            return m.group(0)
+        hour, minute = _HOUR_WORDS_EN[word.lower()], 0
+        if half:
+            kind = half.lower().split()[0]
+            if kind == "half":
+                minute = 30
+            elif "to" in half.lower().split():
+                hour, minute = (hour - 2) % 12 + 1, 45
+            else:
+                minute = 15
+        elif plus:
+            minute = _MINUTES_EN[" ".join(plus.lower().split())]
+        return _said(pre, hour, minute, marked)
+
+    text = text or ""
+    # "רבע לשלוש" is a quarter to THREE: the hour belongs to the word after ל.
+    text = re.sub(r"(?<![֐-׿])(?P<pre>[במ]-?)?(?P<q>רבע|עשרה|חמישה|עשרים)\s+ל(?P<h>"
+                  + _alt(_HOUR_WORDS_HE) + r")(?![֐-׿])",
+                  lambda m: _said(m.group("pre") or "", (_HOUR_WORDS_HE[m.group("h")] - 2) % 12 + 1,
+                                  60 - _TO_HE[m.group("q")],
+                                  _SPOKEN_HE_MARKER.match(m.string, m.end())), text)
+    text = _SPOKEN_HE.sub(he, text)
+    return _SPOKEN_EN.sub(en, text)
+
+
+_MER = r"(am|pm|a\.m\.|p\.m\.|בערב|בבוקר|בלילה|בצהריים|אחה[\"״]?צ)?"
+_TIME_RANGE = re.compile(
+    r"(from\s+|between\s+|(?<![֐-׿])(?:ב|בשעה|מ)-?\s*|בין\s+)?"
+    r"(\d{1,2})(?::(\d{2}))?\s*" + _MER + r"\s*"
+    r"(?:-|–|—|to|until|till|and|עד|ל-?)\s*(\d{1,2})(?::(\d{2}))?(?!\d)\s*" + _MER +
+    r"(?!\s*(?:שעות|דקות|ימים|שבועות|hours?|mins?|minutes?|days?|weeks?))",
+    re.IGNORECASE)
+
+
+def parse_time_range(text: str) -> Optional[dict]:
+    """"ב 6 בערב עד 8 בערב" → {start: '18:00', end: '20:00', minutes: 120}, or None.
+
+    Only a CLOCK range: one side needs minutes, a day-half marker, or a
+    preposition in front ("ב6 עד 7") — "2-3 שעות" is a length and "רחוב 8-10"
+    is an address. Mirrors the range branch of parseTimeExpression."""
+    m = _TIME_RANGE.search(spoken_hours(text))
+    return _range_of(m) if m else None
+
+
+def ranges_in(text: str) -> list:
+    """Every clock range in `text`, in order — one message can hold several."""
+    return [r for r in map(_range_of, _TIME_RANGE.finditer(spoken_hours(text))) if r]
+
+
+def _range_of(m: re.Match) -> Optional[dict]:
+    prep, sh, sm, smer, eh, em, emer = m.groups()
+    smer, emer = _meridiem(smer or ""), _meridiem(emer or "")
+    if not (prep or sm is not None or em is not None or smer or emer):
+        return None
+    start_h = _to_24h(int(sh), smer or emer)
+    end_h = _to_24h(int(eh), emer or smer)
+    if not emer and not smer and start_h >= 12 and end_h < 12:
+        end_h += 12      # the end is in the same half of the day as the start
+    start_m, end_m = int(sm or 0), int(em or 0)
+    if start_h > 23 or end_h > 23 or start_m > 59 or end_m > 59:
+        return None
+    minutes = end_h * 60 + end_m - (start_h * 60 + start_m)
+    if minutes <= 0:
+        minutes += 24 * 60
+    return {"start": f"{start_h:02d}:{start_m:02d}", "end": f"{end_h:02d}:{end_m:02d}",
+            "minutes": minutes}
 
 
 def parse_clock_time(text: str) -> Optional[str]:
     """The clock time stated in `text` as HH:MM, or None. Hebrew and English."""
-    text = text or ""
+    text = spoken_hours(text)
+    ranged = parse_time_range(text)
+    if ranged:
+        return ranged["start"]
     explicit = _EXPLICIT_TIME.search(text)
-    bare = _BARE_TIME.search(text)
+    bare = _bare_hour(text)
+    quarter_to = _QUARTER_TO.search(text)
     if explicit and (not bare or explicit.start() <= bare.start()):
         hour, minute = int(explicit.group(1)), int(explicit.group(2))
         return f"{hour:02d}:{minute:02d}" if hour <= 23 and minute <= 59 else None
-    if not bare:
+    minute = 0
+    if quarter_to and (not bare or quarter_to.start() <= bare.start()):
+        hour, minute = int(quarter_to.group(1)) - 1, 45
+    elif bare:
+        hour = int(bare.group(1))
+        tail = text[bare.end():]
+        if _HALF.match(tail):
+            minute = 30
+        elif _QUARTER_PAST.match(tail):
+            minute = 15
+    else:
         return None
-    hour = int(bare.group(1))
-    if hour > 23:
+    if not 0 <= hour <= 23:
         return None
-    if hour < 12 and _EVENING.search(text) and not _MORNING.search(text):
-        hour += 12
-    return f"{hour:02d}:00"
+    hour = _to_24h(hour, _meridiem(text), bare=True)
+    return f"{hour:02d}:{minute:02d}"
 
 
 def _get_client() -> AsyncOpenAI:
@@ -131,8 +353,16 @@ def _resolve_date(expression: Optional[str], text: str, today: _date) -> str:
 _TIME_WORDS_HE = (
     "בוקר", "צהריים", "צהריהם", "ערב", "לילה", "שעה", "חצות", "דקות", "שעות",
 )
-# ב + at least two Hebrew letters, optionally hyphenated, not a time word.
-_PLACE_HE = re.compile(r"\bב-?([\u0590-\u05FF]{2,}(?:\s+[\u0590-\u05FF]{2,}){0,2})")
+# A Hebrew place must LOOK like one. "ב + any word" was the rule, and it read
+# "לסדר באגים" as a trip to "אגים", "בלו״ז" as a place called "לו״ז" and
+# "באחת הפגישות" as an address. Now: a street with a house number ("ביגאל אלון
+# 94") or an address word ("ברחוב…") always; a bare name ("בנהריה", "בתל אביב")
+# only in a sentence that is an appointment or names an hour — something that
+# happens somewhere. Mirrors src/utils/hebrewPlace.ts.
+_PLACE_HE = re.compile(r"(?<![\u0590-\u05FF])ב-?([\u0590-\u05FF\"״'׳]{2,}(?:\s+[\u0590-\u05FF\"״'׳]{2,}){0,2})"
+                       r"(?:\s+(\d{1,4})(?![\d:]))?")
+_ADDRESS_LEAD_HE = ("רחוב", "רח׳", "שדרות", "שד׳", "כתובת")
+_APPOINTMENT_HE = re.compile(r"ראיון|פגישה|תור(?![\u0590-\u05FF])|רופא|מרפאה|הרצאה|כנס")
 _PLACE_EN = re.compile(r"\b(?:in|at)\s+([A-Z][\w'\-]*(?:\s+[A-Z][\w'\-]*){0,2})")
 
 
@@ -140,9 +370,14 @@ def extract_place(text: str) -> Optional[str]:
     """The place named in a sentence, or None. Deterministic; no model."""
     if not text:
         return None
+    somewhere = bool(_APPOINTMENT_HE.search(text) or parse_clock_time(text))
     for match in _PLACE_HE.finditer(text):
         candidate = match.group(1).strip()
         head = candidate.split()[0]
+        if match.group(2):
+            candidate = f"{candidate} {match.group(2)}"
+        elif head not in _ADDRESS_LEAD_HE and not somewhere:
+            continue
         if head in _TIME_WORDS_HE:
             continue
         # "בבוקר" splits to "בוקר" after the prefix; also skip bare weekdays.

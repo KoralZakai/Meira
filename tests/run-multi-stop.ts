@@ -17,7 +17,7 @@
  * Run:  npx tsx tests/run-multi-stop.ts
  */
 import { timeToMinutes, minutesToTime } from '../src/utils/timeUtils';
-import { needsWakeAlarm } from '../src/utils/alertPlan';
+import { planTransitAlerts, needsWakeAlarm } from '../src/utils/alertPlan';
 
 let failures = 0;
 let checks = 0;
@@ -82,6 +82,50 @@ function main() {
     `chained ${legs[2].minutes} min vs ${travelBetween('home', 'Dizengoff 50')} min from home`);
 
   // ── the wake alarm belongs to the first trip only ────────────────────────
+  // ── every departure is prepared for, only the first one WAKES her ────────
+  //
+  // Koral, 2026-09-17, watching her phone: "why now for the next event was
+  // there no notification to get ready?" Exactly one notification had fired for
+  // an 18:30 appointment — "in an hour" — and nothing told her to start moving.
+  //
+  // planTransitAlerts read the prep time from `wakeUpBy` alone, which
+  // GoogleSync sets for the FIRST trip and leaves undefined for the rest. So a
+  // later trip got no prep alert at all: planFixedTimeAlerts suppresses its own
+  // because a leave time exists, and this one had nothing to work from.
+  console.log('\n1b. Every departure gets a prep alert; only the first one WAKES her');
+  const laterPlan = {
+    totalDurationMinutes: 25, leaveHomeAt: '17:45', arriveAt: '18:10',
+    firstBusDeparture: '17:50', firstBusStop: 'x', walkToStopMinutes: 5,
+    legs: [{ type: 'bus', from: 'a', to: 'b', durationMinutes: 20,
+      departureTime: '17:50', arrivalTime: '18:10' }],
+    source: 'google', fetchedAt: Date.now(),
+  } as any;
+  const laterTask = {
+    id: 'evening', text: 'שיעור', category: 'class', priority: 'need_to',
+    isFixed: true, fixedTime: '18:30', durationMinutes: 60, date: '2026-09-18',
+    status: 'pending', createdAt: 0, historicalDurations: [],
+    // No wakeUpBy — exactly what GoogleSync stores for a later trip.
+    location: { address: 'somewhere', lat: 32.07, lng: 34.79, confirmed: true,
+      transitPlan: laterPlan, leaveHomeBy: '17:45' },
+  } as any;
+  const laterAlerts = planTransitAlerts(laterTask, laterPlan, 'he', USUAL_WAKE) as any[];
+  const laterKinds = laterAlerts.map((a) => a.kind);
+  check('a later trip IS told when to start getting ready',
+    laterKinds.includes('get_ready'), laterKinds.join(', ') || '(nothing)');
+  check('...shortly before the leave time, not a morning routine before it',
+    laterAlerts.find((a) => a.kind === 'get_ready')?.at === '17:35',
+    String(laterAlerts.find((a) => a.kind === 'get_ready')?.at));
+  check('...and it is NEVER a wake alarm — she is already up',
+    !laterKinds.includes('wake_up'), laterKinds.join(', '));
+  check('...not even when the later trip is in the MORNING',
+    !(planTransitAlerts(
+      { ...laterTask, fixedTime: '09:30' },
+      { ...laterPlan, leaveHomeAt: '08:45', arriveAt: '09:10' },
+      'he', USUAL_WAKE,
+    ) as any[]).some((a) => a.kind === 'wake_up'),
+    'the every-morning alarm rule does not override "you cannot be woken twice"');
+  check('the leave alert is still there', laterKinds.includes('leave_home'));
+
   console.log('\n2. Only the first trip of the day can carry a wake alarm');
   const firstWake = minutesToTime(timeToMinutes(legs[0].leave) - ROUTINE);
   console.log(`     first trip: leave ${legs[0].leave} → be up by ${firstWake}`);

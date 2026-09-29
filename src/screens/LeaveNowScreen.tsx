@@ -13,6 +13,9 @@ import { getCategoryMeta } from '../constants/categories';
 import { Task, UserProfile, AppLanguage } from '../types';
 import { timeToMinutes } from '../utils/timeUtils';
 import {
+  minutesUntilDeparture, isLate, formatCountdown, countdownLabel,
+} from '../utils/leaveCountdown';
+import {
   buildWayThere, asLocation, effectiveTransport, taskStart, toChainProfile,
 } from '../utils/buildTravelChain';
 import {
@@ -75,10 +78,14 @@ export default function LeaveNowScreen({ navigation, route }: Props) {
   );
   // Countdown to the "leave home" (highlight) step.
   const leaveStep = steps.find((s) => s.kind === 'highlight');
-  const minutesLeft = leaveStep
-    ? timeToMinutes(leaveStep.time) - (now.getHours() * 60 + now.getMinutes())
-    : 0;
-  const late = minutesLeft < 0;
+  // Counted against the task's DATE, not just the clock.
+  //
+  // This was `timeToMinutes(leaveStep.time) - minutes-since-midnight`, which
+  // threw the calendar away: tomorrow's 13:18 departure, seen at 16:03 today,
+  // rendered as a red "LATE BY 165 min" over a route arriving 13 minutes
+  // early. Every future trip read as already missed.
+  const minutesLeft = minutesUntilDeparture(liveTask.date, leaveStep?.time, now);
+  const late = isLate(minutesLeft);
 
   /**
    * "✓ יצאתי" — confirm the departure.
@@ -203,10 +210,17 @@ export default function LeaveNowScreen({ navigation, route }: Props) {
         {/* countdown */}
         <View style={[styles.countdown, late && styles.countdownLate]}>
           <Text style={styles.countdownLabel}>
-            {late ? (he ? 'איחור' : 'LATE BY') : (he ? 'לצאת בעוד' : 'LEAVE IN')}
+            {countdownLabel(minutesLeft, language)}
           </Text>
           <Text style={styles.countdownValue}>
-            {Math.abs(minutesLeft)} <Text style={styles.countdownUnit}>min</Text>
+            {minutesLeft === null ? '—' : formatCountdown(minutesLeft, language).value}
+            {minutesLeft === null ? null : (
+              // "165 min" is fine for the next hour and meaningless for
+              // tomorrow. Hours and days once the number stops being felt.
+              <Text style={styles.countdownUnit}>
+                {' '}{formatCountdown(minutesLeft, language).unit}
+              </Text>
+            )}
           </Text>
         </View>
 

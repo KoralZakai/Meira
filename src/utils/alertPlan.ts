@@ -17,6 +17,7 @@
  * tests/run-week-schedule.ts.
  */
 import { briefAlertBody } from './briefDigest';
+import { OUTING_PREP_MINUTES } from './yieldToFixed';
 import { Task, TransitPlan, AppLanguage } from '../types/index';
 import { timeToMinutes, minutesToTime, subtractMinutes } from './timeUtils';
 import { DAY, DAY_BEFORE_HOUR, LeadTimeSources, describeLead, resolveLeadMinutes } from './leadTime';
@@ -185,10 +186,38 @@ export function planTransitAlerts(
 ): PlannedAlert[] {
   const he = lang === 'he';
   const out: PlannedAlert[] = [];
-  const prepAt = typeof task.location === 'object' ? task.location?.wakeUpBy : undefined;
+  const loc = typeof task.location === 'object' ? task.location : undefined;
+  // EVERY departure needs getting ready for, not only the first of the day.
+  //
+  // `wakeUpBy` is the only source this ever had, and GoogleSync sets it for the
+  // FIRST trip of a day and deliberately leaves it undefined for the rest — a
+  // "⏰ wake up!" at 16:40 for the gym is nonsense, and that part is right.
+  // But the consequence was that a later trip got no prep alert AT ALL:
+  // planFixedTimeAlerts suppresses its own because a leave time exists, and
+  // this one had nothing to work from. So an 18:30 appointment that was not
+  // the day's first journey was told "in an hour" and "in 15 minutes" and
+  // never "start getting ready".
+  //
+  // Koral, 2026-09-17, watching her own phone: "why now for the next event was
+  // there no notification to get ready?" Found by reading the posted
+  // notifications on the device — exactly one had fired.
+  //
+  // It is the same shape as the bug fixed the day before (the prep window
+  // existed only for journeys); this is the half left behind — it existed only
+  // for the FIRST journey.
+  //
+  // A later trip prepares from its leave time, and is NEVER an alarm however
+  // early it is: she is already up, she made the first trip. That invariant is
+  // older than her new every-morning alarm rule and survives it — see
+  // tests/run-multi-stop.
+  const laterTripPrep = !loc?.wakeUpBy && plan.leaveHomeAt
+    ? subtractMinutes(plan.leaveHomeAt, OUTING_PREP_MINUTES)
+    : undefined;
+  const prepAt = loc?.wakeUpBy ?? laterTripPrep;
   // Same moment, two different meanings: an alarm that wakes you, or a nudge to
-  // start getting ready. needsWakeAlarm decides which one this is.
-  const isAlarm = needsWakeAlarm(prepAt, usualWakeTime);
+  // start getting ready. needsWakeAlarm decides which one this is — unless this
+  // is a later trip, which is a nudge by construction.
+  const isAlarm = !laterTripPrep && needsWakeAlarm(prepAt, usualWakeTime);
   const ride = plan.legs.find((l) => l.type !== 'walk');
   const rideCount = plan.legs.filter((l) => l.type !== 'walk').length;
   // Door-to-door minutes + transfers: the number the user compares to Google.

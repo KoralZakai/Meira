@@ -14,7 +14,7 @@
  */
 import { addrOf } from '../src/utils/dayPlanning';
 import {
-  isMeetingLink, extractMeetingUrl, meetingProvider, isRemoteTask,
+  isMeetingLink, extractMeetingUrl, meetingUrlFromEvent, meetingProvider, isRemoteTask,
 } from '../src/utils/meetingLink';
 import { Task } from '../src/types/index';
 
@@ -73,6 +73,31 @@ function main() {
     String(extractMeetingUrl(undefined, 'Join here: https://meet.google.com/abc-defg-hij, see you!')));
   check('www. gets a scheme', extractMeetingUrl('www.zoom.us/j/1') === 'https://www.zoom.us/j/1');
   check('nothing when there is no URL', extractMeetingUrl('Yigal Alon 94') === undefined);
+
+  // ── the Ceva interview: a MAP link is not a meeting link ────────────────
+  // A Comeet invitation has no location field and puts the address in the
+  // body beside a Google Maps link. Taking the first URL made that map the
+  // 'meeting link', which made the event category 'zoom' and isRemoteTask
+  // true — and a remote task has no departure, so an in-person interview in
+  // Ra'anana lost its route, its leave-home time and its timeline leg.
+  const CEVA_BODY = 'Please arrive at the reception at HaPnina 7, Ra\'anana, building D  \n'
+    + '[ ](https://www.google.com/maps/place/7+HaPnina+Street%2C+Ra%27anana)  \n'
+    + 'reply to [Interview.diary@ceva-dsp.com](http://mailto:Interview.diary@ceva-dsp.com)';
+  check('a Google Maps link is NOT a meeting link',
+    meetingUrlFromEvent(undefined, CEVA_BODY) === undefined,
+    String(meetingUrlFromEvent(undefined, CEVA_BODY)));
+  check('a mailto: in the body is not a meeting link',
+    meetingUrlFromEvent(undefined, 'write to http://mailto:a@b.com') === undefined);
+  check('a real Zoom link in the body is still found',
+    meetingUrlFromEvent(undefined, CEVA_BODY + ' join https://zoom.us/j/42')
+      === 'https://zoom.us/j/42');
+  check('a map link FIRST does not hide a Zoom link after it',
+    meetingUrlFromEvent(undefined, 'https://maps.google.com/?q=x then https://zoom.us/j/7')
+      === 'https://zoom.us/j/7');
+  check('an unknown host in the LOCATION field still counts as a call',
+    meetingUrlFromEvent('https://vc.acme.io/room/9') === 'https://vc.acme.io/room/9');
+  check('an unknown host in PROSE does not', 
+    meetingUrlFromEvent(undefined, 'see https://acme.io/careers for more') === undefined);
 
   console.log('\n5. Naming the provider');
   check('zoom.us → Zoom', meetingProvider('https://us02web.zoom.us/j/1') === 'Zoom');

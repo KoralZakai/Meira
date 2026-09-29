@@ -28,7 +28,7 @@ import {
 } from '../utils/liveReplanDecision';
 import { profileFromPoint } from './RoutePlanner';
 import { rankDepartureOptions, DepartureOption } from '../utils/departureOptions';
-import { addMinutes } from '../utils/timeUtils';
+import { addMinutes, timeToMinutes } from '../utils/timeUtils';
 import { normalizeProfile } from '../utils/profileShape';
 import { locOf, addrOf, timeOf } from '../utils/dayPlanning';
 import { GoogleService } from './GoogleService';
@@ -45,6 +45,8 @@ import {
  * re-renders constantly, and a cooldown living in component state would reset
  * itself exactly when she is late and the loop is busiest.
  */
+/** Trips already told "times updated" this session (see replanFromNextDeparture). */
+const notifiedLate = new Set<string>();
 const lastLiveReplanAt = new Map<string, number>();
 
 export interface LiveReplanResult {
@@ -128,7 +130,15 @@ export async function replanFromNextDeparture(
 
   const message = describeNextDeparture(plan, trip.fixedTime, he);
 
-  if (opts.notify && oldLeave !== plan.leaveHomeAt) {
+  // Still home and late, the loop re-plans every few minutes and "leave now"
+  // is a new minute each time. Tell her once, and again only when the ARRIVAL
+  // really moves (10+ min) — not a buzz every five minutes for the same news.
+  const oldArrive = locOf(trip)?.transitPlan?.arriveAt;
+  const arrivalShift = oldArrive && /^\d{1,2}:\d{2}$/.test(oldArrive)
+    ? Math.abs(timeToMinutes(plan.arriveAt) - timeToMinutes(oldArrive)) : Infinity;
+  const worthSaying = !notifiedLate.has(trip.id) || arrivalShift >= 10;
+  if (opts.notify && oldLeave !== plan.leaveHomeAt && worthSaying) {
+    notifiedLate.add(trip.id);
     await sendImmediate(
       he ? '🚏 הזמנים השתנו' : '🚏 Times updated', message,
       { taskId: trip.id, type: 'missed-departure' },

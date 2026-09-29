@@ -11,7 +11,8 @@
  */
 import {
   rankDepartureOptions, changesLabel, slackLabel, vehicleLabel, optionSignature,
-  boardLabel, departureUncatchable, minutesToDecide, urgencyLabel,
+  boardLabel, departureUncatchable, minutesToDecide, urgencyLabel, platformLabel,
+  superlativeLabel, awardSuperlatives,
 } from '../src/utils/departureOptions';
 import { TransitPlan } from '../src/types/index';
 
@@ -28,13 +29,24 @@ function train(leave: string, arrive: string, line = 'המכבים', rides = 1):
   const legs: any[] = [
     { type: 'walk', from: 'home', to: 'stop', durationMinutes: 6, departureTime: leave, arrivalTime: leave },
   ];
+  const mins = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
+  const hhmm = (m: number) =>
+    `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  // Chain the rides through the window instead of stacking them all on the
+  // same two clock times. The old fixture gave every ride identical departure
+  // and arrival, which is a shape Google cannot return and which
+  // utils/planIntegrity now correctly refuses as out-of-order — a fixture that
+  // could not exist was hiding behind an assertion about labels.
+  const each = Math.max(1, Math.floor((mins(arrive) - mins(leave)) / rides));
   for (let i = 0; i < rides; i += 1) {
+    const dep = mins(leave) + i * each;
     legs.push({
-      type: 'train', from: 'a', to: 'b', durationMinutes: 30,
-      departureTime: leave, arrivalTime: arrive, lineNumber: i === 0 ? line : `${line}-${i}`,
+      type: 'train', from: 'a', to: 'b', durationMinutes: each,
+      departureTime: hhmm(dep),
+      arrivalTime: i === rides - 1 ? arrive : hhmm(dep + each),
+      lineNumber: i === 0 ? line : `${line}-${i}`,
     });
   }
-  const mins = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
   return {
     totalDurationMinutes: mins(arrive) - mins(leave),
     leaveHomeAt: leave,
@@ -197,6 +209,114 @@ function main() {
   check('with room to spare it does not', !urgencyLabel(decide, '08:30', true).includes('🏃'),
     urgencyLabel(decide, '08:30', true));
   check('at the deadline it says leave now', urgencyLabel(decide, '08:40', true) === '🏃 צאי עכשיו');
+
+  console.log('\n12. Which of the trains out of this station');
+  /*
+   * "also for trains it's important מספר רציף. if we check many optionals of
+   * train they are from other platform."
+   *
+   * Google's Directions API returns no platform number for any Israeli
+   * station. Inventing one is the worst possible lie to tell someone running
+   * for a train, so it is never invented — the DIRECTION goes there instead,
+   * which is how the departure boards are actually organised and what
+   * separates two trains leaving the same station minutes apart.
+   */
+  const withDirection = rankDepartureOptions(
+    [{ ...train('08:20', '09:10'), legs: train('08:20', '09:10').legs.map((l) =>
+      (l.type === 'train' ? { ...l, headsign: 'בנימינה' } : l)) } as TransitPlan],
+    { appointment: '09:30' },
+  )[0];
+  check('the direction is carried onto the option',
+    withDirection.boardDirection === 'בנימינה', withDirection.boardDirection);
+  check('and read as "towards", not as a platform',
+    platformLabel(withDirection, true) === 'לכיוון בנימינה', platformLabel(withDirection, true));
+  check('in English too', platformLabel(withDirection, false) === 'towards בנימינה');
+  check('it reaches the line she actually reads',
+    boardLabel(withDirection, true).includes('לכיוון בנימינה'), boardLabel(withDirection, true));
+
+  // A real platform, the day a provider gives one, outranks the direction.
+  const withPlatform = rankDepartureOptions(
+    [{ ...train('08:20', '09:10'), legs: train('08:20', '09:10').legs.map((l) =>
+      (l.type === 'train' ? { ...l, headsign: 'בנימינה', platform: '3' } : l)) } as TransitPlan],
+    { appointment: '09:30' },
+  )[0];
+  check('a real platform number wins when there is one',
+    platformLabel(withPlatform, true) === 'רציף 3', platformLabel(withPlatform, true));
+
+  // And when we have neither, we say neither.
+  const plain = rankDepartureOptions([train('08:20', '09:10')], { appointment: '09:30' })[0];
+  check('no platform and no direction means an empty label, never a guess',
+    platformLabel(plain, true) === '', JSON.stringify(platformLabel(plain, true)));
+  check('and the board line still reads fine without it',
+    boardLabel(plain, true).includes('08:20') && !boardLabel(plain, true).includes('רציף'),
+    boardLabel(plain, true));
+
+  // ── The pair of numbers she can actually check ──────────────────────────
+  //
+  // Koral looked up rail.co.il, read back "13:15-14:01, 13:20-13:58,
+  // 13:30-14:16" and asked why none of them were offered. All three WERE. The
+  // card's headline times are door to door — they include the walk at each end
+  // — so her 13:15→14:01 train appears there as 13:03→14:02, and the one pair
+  // she could verify against was the pair we never printed.
+  const checkable = rankDepartureOptions([train('13:03', '14:02')], { appointment: '14:30' })[0];
+  check('the vehicle\'s own two times are printed, as a pair, as a timetable prints them',
+    boardLabel(checkable, true).includes('13:03–14:02'), boardLabel(checkable, true));
+  check('and the door-to-door times are still their own separate thing',
+    checkable.departAt === '13:03' && checkable.arriveAt === '14:02');
+
+  // ── "score the options and offer the best way" ──────────────────────────
+  //
+  // Her three axes, verbatim: "fastest route, Earliest arrival, latest
+  // departure". They disagree with each other on purpose, which is the point —
+  // the ranker picks one and the list says what each of the others is best at.
+  const scored = rankDepartureOptions(
+    [
+      train('13:03', '14:02'),   // 59 min
+      train('13:09', '13:59'),   // 50 min — fastest AND earliest arrival
+      train('13:18', '14:17'),   // 59 min — latest departure
+    ],
+    { appointment: '14:30', max: 5 },
+  );
+  check('three options, in timetable order', scored.length === 3, `${scored.length}`);
+  check('the fastest is named', scored[1].superlatives.includes('fastest'), scored[1].arriveAt);
+  check('so is the earliest arrival', scored[1].superlatives.includes('earliest'));
+  check('and the latest departure, which is a different option',
+    scored[2].superlatives.includes('latest') && !scored[2].superlatives.includes('fastest'));
+  check('an option that wins nothing claims nothing',
+    scored[0].superlatives.length === 0, superlativeLabel(scored[0], true));
+  for (const [he, want] of [[true, 'הכי מהירה'], [false, 'fastest']] as const) {
+    check(`[${he ? 'he' : 'en'}] and it is said in her language`,
+      superlativeLabel(scored[1], he).includes(want), superlativeLabel(scored[1], he));
+  }
+
+  // A superlative on an option that misses the appointment is worse than none:
+  // "earliest arrival" over something arriving after the interview started.
+  const withLate = rankDepartureOptions(
+    [train('13:09', '13:59'), train('14:20', '15:10')],
+    { appointment: '14:30', max: 5 },
+  );
+  check('a late option is never crowned',
+    withLate[1].late && withLate[1].superlatives.length === 0);
+  check('...and the on-time one keeps every award it earned',
+    withLate[0].superlatives.length === 3, superlativeLabel(withLate[0], false));
+
+  // When NOTHING arrives in time the axes are all she has left, so they apply.
+  const allLate = rankDepartureOptions(
+    [train('14:40', '15:20'), train('15:00', '15:55')],
+    { appointment: '14:30', max: 5 },
+  );
+  check('when every option is late they are still scored against each other',
+    allLate[0].superlatives.includes('fastest') && allLate[1].superlatives.includes('latest'),
+    `${superlativeLabel(allLate[0], false)} | ${superlativeLabel(allLate[1], false)}`);
+
+  // Ties are shared, not broken by position — two trains arriving the same
+  // minute are both the earliest, and crowning one invents a difference.
+  const tied = awardSuperlatives([
+    { ...scored[1], arriveAt: '13:59', durationMinutes: 50 },
+    { ...scored[0], arriveAt: '13:59', durationMinutes: 50 },
+  ]);
+  check('a tie is shared',
+    tied[0].superlatives.includes('earliest') && tied[1].superlatives.includes('earliest'));
 
   console.log(`\n${failures ? '✗' : '✓'} ${checks - failures}/${checks} checks passed\n`);
   process.exit(failures ? 1 : 0);

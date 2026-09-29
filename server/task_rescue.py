@@ -35,16 +35,44 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import date as _date
 from typing import Optional
 
+import categorize
+import task_extract
+import task_intent
 import tz as _tz
 
 logger = logging.getLogger(__name__)
 
-_TIME_RE = re.compile(r"\b([01]?\d|2[0-3]):([0-5]\d)\b")
-# "ב-16:00" / "at 16:00" / "16:00" — the time and its preposition, removed from
-# the title so the task reads "לדבר עם יניר", not "לדבר עם יניר מחר ב 16:00".
-_TIME_PHRASE_RE = re.compile(r"\s*(?:ב-?|בשעה|at|@)?\s*\b(?:[01]?\d|2[0-3]):[0-5]\d\b")
+# "ב-16:00" / "at 16:00" / "16:00" / "ב 6 בערב עד 8 בערב" / "ב 8 וחצי" — the
+# time and its preposition, removed from the title so the task reads "אימון",
+# not "אימון ב 6 בערב עד 8 בערב". A bare number needs a preposition in front:
+# the 30 of "באלנבי 30" is a house, not half past.
+_HALF_DAY = r"(?:\s*(?:בערב|בבוקר|בלילה|בצהריים|אחה[\"״]?צ|am|pm))?"
+_ONE_TIME = (r"(?:(?:(?<![֐-׿])(?:ב|מ)-?\s*|בשעה\s*|\bat\s+|\bfrom\s+|@\s*)\d{1,2}(?::\d{2})?"
+             r"|\b\d{1,2}:\d{2}\b)"
+             r"(?:\s*ו?(?:חצי|רבע))?" + _HALF_DAY)
+_TIME_PHRASE_RE = re.compile(
+    r"\s*" + _ONE_TIME
+    + r"(?:\s*(?:-|–|עד|to|until)\s*(?:ה-?|ל-?)?\d{1,2}(?::\d{2})?(?:\s*ו?(?:חצי|רבע))?" + _HALF_DAY + r")?",
+    re.IGNORECASE)
+# How a second item in the same message starts. "אחר כך קריוקי" is the task
+# "קריוקי"; "או ב 7 עד 8" is an ALTERNATIVE hour for the one before, never a task.
+_LEAD_RE = re.compile(r"^\s*(?:אחר כך|אחרי זה|ואז|וגם|then|and then|and)\s+", re.IGNORECASE)
+_ALTERNATIVE_RE = re.compile(r"^\s*(?:או|or)\b", re.IGNORECASE)
+# "לפני האימון ולפני הקריוקי" says WHERE something goes, relative to things she
+# already has. It was saved as a flexible task of its own.
+_PLACEMENT_RE = re.compile(r"(?:^|\s)ו?(?:לפני|אחרי|before|after)\s+(?:the\s+|my\s+)?\S+",
+                           re.IGNORECASE)
+
+
+def only_placement(text: str) -> bool:
+    """Is this nothing but "before X / after Y"? Then it places a task, it is not one.
+    "אחרי זה קריוקי" still has a task left over ("קריוקי") and is not this."""
+    if not _PLACEMENT_RE.search(text or ""):
+        return False
+    return not _PLACEMENT_RE.sub(" ", text or "").strip(" ,.;")
 # Anything that means "this is for me to do", in either language.
 _INTENT_RE = re.compile(
     r"לדבר|לפגוש|פגישה|תור|להתקשר|שיחה|לקבוע|תזכיר|תזכורת|ללכת|לנסוע|להגיע|אימון|שיעור"
@@ -60,18 +88,44 @@ _QUESTION_RE = re.compile(r"^\s*(?:מה|מתי|איפה|למה|האם|כמה|מ�
 
 
 def clock_time(text: str) -> Optional[str]:
-    """The first HH:MM in the message, zero-padded, or None."""
-    m = _TIME_RE.search(text or "")
-    return f"{int(m.group(1)):02d}:{m.group(2)}" if m else None
+    """The hour the message names, zero-padded, or None.
+
+    task_extract's parser, not a private HH:MM regex: "אימון ב 6 בערב עד 8
+    בערב" had no colon, so the rescue saved it with no hour at all — and an
+    undated, hourless task is a "flexible" one, which is exactly how it showed
+    up on her Today screen."""
+    return task_extract.parse_clock_time(text or "")
+
+
+# The REQUEST around the task: "תוסיפי לי שיחה עם דותן" was saved as a task
+# called exactly that. The thing is "שיחה עם דותן"; the rest is her asking.
+_REQUEST_RE = re.compile(
+    r"^\s*(?:(?:תוסיפי|תוסיף|הוסיפי|תרשמי|תרשום|רשמי|שימי|תשימי|תכניסי|הכניסי|תקבעי|קבעי|"
+    r"תזכירי|תזכיר)\s+(?:לי\s+)?(?:את\s+)?|(?:please\s+)?(?:add|put|schedule|remind me(?:\s+about)?)\s+)",
+    re.IGNORECASE)
+_REQUEST_TAIL_RE = re.compile(r"[,.]?\s*(?:שימי|תשימי|תכניסי|תוסיפי)\s+(?:לי\s+)?(?:את\s+)?(?:זה\s+)?"
+                              r"(?:בלו[\"״]?ז|ביומן)\s*$|\s+(?:to|in|on) my (?:schedule|calendar|day)\s*$",
+                              re.IGNORECASE)
 
 
 def title_from(text: str) -> str:
     """The message as a task title: its time and date words taken out."""
-    out = _TIME_PHRASE_RE.sub("", text or "")
+    out = _REQUEST_TAIL_RE.sub("", _REQUEST_RE.sub("", text or ""))
+    out = _LEAD_RE.sub("", _TIME_PHRASE_RE.sub("", out))
     out = re.sub(_tz.REL_DATE_RE, "", out)
     # Leftover prepositions once their object is gone.
     out = re.sub(r"\s+(ב|ל|את)\s*$", "", out.strip())
-    return re.sub(r"\s{2,}", " ", out).strip(" ,.-")
+    return re.sub(r"\s{2,}", " ", out).strip(" ,.:-")
+
+
+def clauses(content: str) -> list:
+    """The separate things one message asks for, in order, alternatives dropped.
+
+    "אימון ב 6 בערב עד 8 בערב\\nאחר כך קריוקי באלנבי 30" is two tasks. The rescue
+    saved it as ONE task titled with both lines and neither hour. "או ב 7 עד 8"
+    is the other option for the workout, not a third thing to do."""
+    parts = task_intent.split_clauses(content or "") or [content or ""]
+    return [p for p in parts if not _ALTERNATIVE_RE.match(p)] or [content or ""]
 
 
 def looks_like_a_task(text: str) -> bool:
@@ -89,7 +143,12 @@ def looks_like_a_task(text: str) -> bool:
         return False
     if _QUESTION_RE.search(text):
         return False
-    return bool(_INTENT_RE.search(text))
+    if only_placement(text):
+        return False
+    # A word the category table knows ("קריוקי", "ללמוד") or a stated hour is
+    # as much an instruction as "פגישה" — "קריוקי באלנבי 30" was dropped.
+    return bool(_INTENT_RE.search(text) or categorize.infer(text)["matched"]
+                or task_extract.parse_clock_time(text))
 
 
 def already_there(tasks: list, title: str, date_iso: str) -> bool:
@@ -106,13 +165,15 @@ def already_there(tasks: list, title: str, date_iso: str) -> bool:
     return False
 
 
-def rescue(content: str, existing: list) -> Optional[dict]:
+def rescue(content: str, existing: list, default_date: Optional[str] = None) -> Optional[dict]:
     """The task this message asked for, when nothing else saved it. Or None.
 
     Returns a task dict in the same shape infer_task_details produces, so every
     downstream step — memory, the Supabase mirror, provenance, the app — handles
     it identically to one the model created.
     """
+    # Hours said in words become digits first, so the title loses them too.
+    content = task_extract.spoken_hours(content)
     if not looks_like_a_task(content):
         return None
     time_hhmm = clock_time(content)
@@ -125,6 +186,12 @@ def rescue(content: str, existing: list) -> Optional[dict]:
     # dumped on today, where it would be "late" by the evening for no reason.
     matches = re.findall(_tz.REL_DATE_RE, content or "")
     target = _tz.resolve_date(matches[0]) if matches else None
+    if target is None and default_date:
+        target = _date.fromisoformat(default_date)   # the day named above this line
+    if target is None and time_hhmm:
+        # "אימון ב 6 בערב" names an hour and no day: today. Undated AND timed
+        # made it a "flexible task, no fixed hour" — the hour she said, dropped.
+        target = _tz.today_il()
     date_iso = target.isoformat() if target else None
 
     if date_iso and already_there(existing, title, date_iso):
@@ -133,11 +200,14 @@ def rescue(content: str, existing: list) -> Optional[dict]:
     logger.warning(
         "task rescue: the model saved nothing for %r — creating %r (date=%s time=%s)",
         content[:60], title, date_iso, time_hhmm)
+    labelled = categorize.merge(title, {})
+    ranged = task_extract.parse_time_range(content or "")
     task = {
         "text": title,
-        "category": "general",
-        "priority": "need_to",
-        "duration_minutes": 30,
+        "category": labelled["category"],
+        "priority": labelled["priority"],
+        # "עד 8 בערב" is the length she gave; the table's default is a guess.
+        "duration_minutes": ranged["minutes"] if ranged else labelled["duration_minutes"],
         "rescued": True,
     }
     if date_iso:
@@ -243,6 +313,44 @@ def same_activity(a: str, b: str) -> bool:
         return bool(ka) and ka == kb
     except Exception:  # noqa: BLE001 — the map is an optimisation, never a requirement
         return False
+
+
+def _minutes(hhmm) -> Optional[int]:
+    try:
+        h, m = str(hhmm)[:5].split(":")
+        return int(h) * 60 + int(m)
+    except (TypeError, ValueError):
+        return None
+
+
+def already_planned(existing: list, task: dict) -> Optional[dict]:
+    """The task she already has that THIS one repeats, or None.
+
+    Koral, 2026-09-28: "the karaoke shows twice — if I said it and it is
+    already on the schedule, it does not need to be there twice." She said
+    "ואחר כך הקריוקי" about the "קריוקי באלנבי 30" already on her day, and the
+    turn created "לקריוקי" beside it: the model was told to find_task first and
+    did not, and nothing in code checked.
+
+    Same day, open, the words line up once Hebrew's glued prefixes are off
+    ("לקריוקי" is "קריוקי"), and no two different hours — "אימון בוקר" and
+    "אימון ערב" stay two workouts."""
+    date = str(task.get("date") or "")[:10]
+    mine = task_intent._tokens(task.get("text", ""))
+    if not date or not mine:
+        return None
+    at = _minutes(task.get("fixed_time"))
+    for t in existing or []:
+        if str(t.get("date") or "")[:10] != date or t.get("status") in ("complete", "moved"):
+            continue
+        theirs = task_intent._tokens(t.get("text", ""))
+        if not theirs or len(mine & theirs) / min(len(mine), len(theirs)) < 0.7:
+            continue
+        other = _minutes(t.get("fixed_time"))
+        if at is not None and other is not None and abs(at - other) > 90:
+            continue
+        return t
+    return None
 
 
 def changed_fields(existing_task: dict, new_task: dict) -> dict:

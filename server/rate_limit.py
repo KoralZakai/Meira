@@ -104,6 +104,9 @@ def reset() -> None:
 
 # One signed-in account, talking to the brain.
 CHAT_LIMIT, CHAT_WINDOW_S = 30, 60.0
+# One signed-in account, speaking into the app. Each call is a Whisper request
+# billed by audio length; twenty a minute is already someone holding the mic.
+STT_LIMIT, STT_WINDOW_S = 20, 60.0
 # One phone number, over WhatsApp.
 WHATSAPP_LIMIT, WHATSAPP_WINDOW_S = 30, 60.0
 # The whole webhook, whoever is calling. The per-number limit does nothing

@@ -42,47 +42,47 @@ class UserStoreTests(unittest.TestCase):
 
     # ── phone normalization (moved here with the module) ──
     def test_normalize_strips_punctuation(self):
-        self.assertEqual(user_store._normalize_phone("+972-50-000-0000"), "972500000000")
+        self.assertEqual(user_store._normalize_phone("+972-50-000-0009"), "972500000009")
 
     def test_normalize_empty(self):
         self.assertEqual(user_store._normalize_phone(""), "")
 
     # ── users ──
     def test_unknown_phone_is_none(self):
-        self.assertIsNone(run(user_store.DatabaseService.get_user_by_whatsapp("972500000000")))
+        self.assertIsNone(run(user_store.DatabaseService.get_user_by_whatsapp("972500000009")))
 
     def test_create_then_read_back(self):
-        created = run(user_store.DatabaseService.create_user_from_whatsapp("972500000000"))
-        found = run(user_store.DatabaseService.get_user_by_whatsapp("+972 50 000 0000"))
+        created = run(user_store.DatabaseService.create_user_from_whatsapp("972500000009"))
+        found = run(user_store.DatabaseService.get_user_by_whatsapp("+972 50 000 0009"))
         self.assertEqual(found["id"], created["id"])
 
     def test_id_is_stable_across_recreate(self):
-        a = run(user_store.DatabaseService.create_user_from_whatsapp("972500000000"))
-        b = run(user_store.DatabaseService.create_user_from_whatsapp("972500000000"))
+        a = run(user_store.DatabaseService.create_user_from_whatsapp("972500000009"))
+        b = run(user_store.DatabaseService.create_user_from_whatsapp("972500000009"))
         self.assertEqual(a["id"], b["id"])
 
     def test_recreate_keeps_push_token(self):
-        run(user_store.DatabaseService.create_user_from_whatsapp("972500000000"))
-        run(user_store.DatabaseService.set_push_token_by_phone("972500000000", "ExponentPushToken[x]"))
-        run(user_store.DatabaseService.create_user_from_whatsapp("972500000000"))
+        run(user_store.DatabaseService.create_user_from_whatsapp("972500000009"))
+        run(user_store.DatabaseService.set_push_token_by_phone("972500000009", "ExponentPushToken[x]"))
+        run(user_store.DatabaseService.create_user_from_whatsapp("972500000009"))
         self.assertEqual(
-            run(user_store.DatabaseService.get_push_token_by_phone("972500000000")),
+            run(user_store.DatabaseService.get_push_token_by_phone("972500000009")),
             "ExponentPushToken[x]")
 
     def test_get_user_by_id(self):
-        created = run(user_store.DatabaseService.create_user_from_whatsapp("972500000000"))
+        created = run(user_store.DatabaseService.create_user_from_whatsapp("972500000009"))
         self.assertEqual(
             run(user_store.DatabaseService.get_user_by_id(created["id"]))["whatsapp_phone"],
-            "972500000000")
+            "972500000009")
 
     # ── push token: the failure this module exists to fix ──
     def test_push_token_saved_and_returned(self):
-        run(user_store.DatabaseService.create_user_from_whatsapp("972500000000"))
+        run(user_store.DatabaseService.create_user_from_whatsapp("972500000009"))
         ok = run(user_store.DatabaseService.set_push_token_by_phone(
-            "972500000000", "ExponentPushToken[abc]"))
+            "972500000009", "ExponentPushToken[abc]"))
         self.assertTrue(ok)
         self.assertEqual(
-            run(user_store.DatabaseService.get_push_token_by_phone("972500000000")),
+            run(user_store.DatabaseService.get_push_token_by_phone("972500000009")),
             "ExponentPushToken[abc]")
 
     def test_push_token_for_unknown_phone_reports_false(self):
@@ -90,36 +90,36 @@ class UserStoreTests(unittest.TestCase):
             "972500000000", "ExponentPushToken[abc]")))
 
     def test_push_token_missing_is_none(self):
-        run(user_store.DatabaseService.create_user_from_whatsapp("972500000000"))
-        self.assertIsNone(run(user_store.DatabaseService.get_push_token_by_phone("972500000000")))
+        run(user_store.DatabaseService.create_user_from_whatsapp("972500000009"))
+        self.assertIsNone(run(user_store.DatabaseService.get_push_token_by_phone("972500000009")))
 
     def test_push_token_survives_a_restart(self):
-        run(user_store.DatabaseService.create_user_from_whatsapp("972500000000"))
-        run(user_store.DatabaseService.set_push_token_by_phone("972500000000", "ExponentPushToken[z]"))
+        run(user_store.DatabaseService.create_user_from_whatsapp("972500000009"))
+        run(user_store.DatabaseService.set_push_token_by_phone("972500000009", "ExponentPushToken[z]"))
         with open(user_store._PATH, encoding="utf-8") as f:      # what a new process would read
             on_disk = json.load(f)
-        self.assertEqual(on_disk["users"]["972500000000"]["push_token"], "ExponentPushToken[z]")
+        self.assertEqual(on_disk["users"]["972500000009"]["push_token"], "ExponentPushToken[z]")
 
     # ── mbti ──
     def test_set_mbti(self):
-        created = run(user_store.DatabaseService.create_user_from_whatsapp("972500000000"))
+        created = run(user_store.DatabaseService.create_user_from_whatsapp("972500000009"))
         run(user_store.DatabaseService.set_mbti(created["id"], "INFJ", 0.8))
         again = run(user_store.DatabaseService.get_user_by_id(created["id"]))
         self.assertEqual((again["mbti_type"], again["mbti_confidence"]), ("INFJ", 0.8))
 
     # ── messages: idempotent on the Meta message id (webhook retries 4x) ──
     def test_message_is_idempotent(self):
-        u = run(user_store.DatabaseService.create_user_from_whatsapp("972500000000"))
+        u = run(user_store.DatabaseService.create_user_from_whatsapp("972500000009"))
         for _ in range(4):
             run(user_store.DatabaseService.save_incoming_message(
-                u["id"], "wamid.1", "972500000000", "שלום"))
+                u["id"], "wamid.1", "972500000009", "שלום"))
         self.assertEqual(len(user_store._load()["messages"]), 1)
 
     def test_messages_are_capped(self):
-        u = run(user_store.DatabaseService.create_user_from_whatsapp("972500000000"))
+        u = run(user_store.DatabaseService.create_user_from_whatsapp("972500000009"))
         for i in range(user_store._MAX_MESSAGES + 25):
             run(user_store.DatabaseService.save_incoming_message(
-                u["id"], f"wamid.{i}", "972500000000", "x"))
+                u["id"], f"wamid.{i}", "972500000009", "x"))
         self.assertLessEqual(len(user_store._load()["messages"]), user_store._MAX_MESSAGES)
 
     # ── personality signals ──
@@ -165,7 +165,7 @@ class UserStoreTests(unittest.TestCase):
         self.assertEqual(user_store._load()["users"], {})
 
     def test_write_is_atomic(self):
-        run(user_store.DatabaseService.create_user_from_whatsapp("972500000000"))
+        run(user_store.DatabaseService.create_user_from_whatsapp("972500000009"))
         self.assertFalse(os.path.exists(user_store._PATH + ".tmp"))
 
 
@@ -188,19 +188,19 @@ class SupabaseIdentityTests(unittest.TestCase):
         async def _uid(_phone):
             return "auth-uuid-1"
         user_store._supabase_user_id = _uid
-        created = run(user_store.DatabaseService.create_user_from_whatsapp("972500000000"))
+        created = run(user_store.DatabaseService.create_user_from_whatsapp("972500000009"))
         self.assertEqual(created["id"], "auth-uuid-1")
 
     def test_linking_later_adopts_the_auth_id(self):
         async def _none(_phone):
             return None
         user_store._supabase_user_id = _none
-        first = run(user_store.DatabaseService.create_user_from_whatsapp("972500000000"))
+        first = run(user_store.DatabaseService.create_user_from_whatsapp("972500000009"))
 
         async def _uid(_phone):
             return "auth-uuid-1"
         user_store._supabase_user_id = _uid          # she links the app afterwards
-        found = run(user_store.DatabaseService.get_user_by_whatsapp("972500000000"))
+        found = run(user_store.DatabaseService.get_user_by_whatsapp("972500000009"))
         self.assertNotEqual(first["id"], found["id"])
         self.assertEqual(found["id"], "auth-uuid-1")
 
@@ -235,23 +235,23 @@ class PushRegisterRecoveryTests(unittest.TestCase):
     def test_unknown_phone_is_rejected_before_the_supabase_check(self):
         """The bare setter stays strict — the recovery lives in the endpoint."""
         self.assertFalse(run(user_store.DatabaseService.set_push_token_by_phone(
-            "972500000000", "ExponentPushToken[a]")))
+            "972500000009", "ExponentPushToken[a]")))
 
     def test_creating_the_record_then_setting_the_token_succeeds(self):
         """What the endpoint now does when Supabase confirms the number."""
         async def _uid(_phone):
             return "auth-uuid-1"
         user_store._supabase_user_id = _uid
-        run(user_store.DatabaseService.create_user_from_whatsapp("972500000000"))
+        run(user_store.DatabaseService.create_user_from_whatsapp("972500000009"))
         self.assertTrue(run(user_store.DatabaseService.set_push_token_by_phone(
-            "972500000000", "ExponentPushToken[a]")))
+            "972500000009", "ExponentPushToken[a]")))
         self.assertEqual(
-            run(user_store.DatabaseService.get_push_token_by_phone("972500000000")),
+            run(user_store.DatabaseService.get_push_token_by_phone("972500000009")),
             "ExponentPushToken[a]")
 
     def test_the_created_record_carries_the_auth_id(self):
         async def _uid(_phone):
             return "auth-uuid-1"
         user_store._supabase_user_id = _uid
-        created = run(user_store.DatabaseService.create_user_from_whatsapp("972500000000"))
+        created = run(user_store.DatabaseService.create_user_from_whatsapp("972500000009"))
         self.assertEqual(created["id"], "auth-uuid-1")

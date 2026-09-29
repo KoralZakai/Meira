@@ -28,6 +28,7 @@
  * Pure, so tests/run-travel-row.ts covers every branch with no device.
  */
 import { Task, TaskLocation } from '../types/index';
+import { RouteFailure, describeRouteFailure } from './routeFailure';
 
 export type TravelRowState = 'route' | 'pending' | 'no-time' | 'unroutable' | 'none';
 
@@ -57,8 +58,14 @@ export function travelRowState(task: Task): TravelRowState {
   if (!task.fixedTime && !task.scheduledTime) return 'no-time';
 
   if ((loc as { noRouteForMode?: string } | undefined)?.noRouteForMode) return 'unroutable';
+  if (loc?.routeFailure) return 'unroutable';
 
   return 'pending';
+}
+
+/** The recorded reason the last lookup produced nothing, if there is one. */
+export function routeFailureOf(task: Task): RouteFailure | undefined {
+  return locOf(task)?.routeFailure;
 }
 
 /**
@@ -71,8 +78,18 @@ export function travelRowState(task: Task): TravelRowState {
  * usable screen.
  */
 export function describeTravelRow(
-  state: TravelRowState, he: boolean,
+  state: TravelRowState, he: boolean, failure?: RouteFailure,
 ): { text: string; action?: string } | null {
+  // A recorded reason ALWAYS wins over the generic sentence.
+  //
+  // "🚫 No route for the chosen way of getting there" is a claim about buses
+  // and trains. Her Google console showed the Directions API at a 99% error
+  // rate over 107 calls — so for every one of those, the sentence on screen
+  // was about the only cause that had not happened. When we know, we say.
+  if (failure && (state === 'unroutable' || state === 'pending')) {
+    const d = describeRouteFailure(failure, he ? 'he' : 'en');
+    return { text: d.text, action: d.action };
+  }
   switch (state) {
     case 'no-time':
       return he

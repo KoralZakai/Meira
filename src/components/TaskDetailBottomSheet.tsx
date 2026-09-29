@@ -25,6 +25,9 @@ import { GoogleService } from '../services/GoogleService';
 import { loadProfile } from '../services/UserProfileStorage';
 import { moveTasksToDate } from '../services/TaskStorage';
 import RouteMap from './RouteMap';
+import { untilAfterFromChange, rangeMinutes } from '../utils/timeRange';
+import OnYourWayCard from './OnYourWayCard';
+import { TaskPrepSection } from './TaskPrepCard';
 
 const TRANSPORTS: Array<{ key: TransportType; icon: string; en: string; he: string }> = [
   { key: 'bus', icon: '🚌', en: 'Bus', he: 'אוטובוס' },
@@ -286,8 +289,10 @@ export default function TaskDetailBottomSheet({
     if (!selected || !field) return;
     const hhmm = `${pad(selected.getHours())}:${pad(selected.getMinutes())}`;
     if (field === 'from') {
-      const end = toTime || addMinutesToTime(hhmm, task.durationMinutes || 30);
-      commit({ fixedTime: hhmm, scheduledTime: hhmm, isFixed: true, endTime: end, durationMinutes: minutesBetween(hhmm, end) });
+      // Moving the start moves the whole block (utils/timeRange). It kept the
+      // old end, so 14:00–15:00 moved to 16:00 became 16:00–15:00.
+      const end = untilAfterFromChange(fromTime || undefined, toTime || undefined, hhmm, task.durationMinutes || 60);
+      commit({ fixedTime: hhmm, scheduledTime: hhmm, isFixed: true, endTime: end, durationMinutes: rangeMinutes(hhmm, end) });
     } else {
       const start = fromTime || hhmm;
       commit({
@@ -714,6 +719,15 @@ export default function TaskDetailBottomSheet({
                   </>
                 )}
               </View>
+
+              {/* What Meira prepared for this task (songs, what to bring…). */}
+              {task.status === 'pending' && <TaskPrepSection task={task} he={isHe} />}
+
+              {/* An errand with no place: places on her planned routes, open
+                  when she passes (Koral, 29.9 — "fix my coffee machine"). */}
+              {editable && !locationLabel && task.status === 'pending' && (
+                <OnYourWayCard task={task} he={isHe} onPlan={commit} />
+              )}
 
               {/* Transport + route — located tasks only */}
               {objLocation?.lat != null && (

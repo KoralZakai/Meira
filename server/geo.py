@@ -62,6 +62,9 @@ def _next_occurrence(hhmm: str) -> int:
     return int(when.timestamp())
 
 
+_COORDS_RE = re.compile(r"^(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)$")
+
+
 async def geocode(address: str, bounds: Optional[str] = None) -> Optional[dict]:
     """Resolve an address to {formatted, lat, lng, place_id, partial}. None if not found.
 
@@ -69,7 +72,18 @@ async def geocode(address: str, bounds: Optional[str] = None) -> Optional[dict]:
     Google still returns a distant match when that is the only one. The phone
     passes a box around her home so a bare street name lands in her own city.
     """
-    if not config.GOOGLE_MAPS_API_KEY or not address:
+    if not address:
+        return None
+    # A live fix ("32.07312,34.79201") is already a position — the app sends
+    # one with every chat turn. Asking Google to geocode it costs a call and
+    # can only move it.
+    coords = _COORDS_RE.match(str(address).strip())
+    if coords:
+        lat, lng = float(coords.group(1)), float(coords.group(2))
+        if -90 <= lat <= 90 and -180 <= lng <= 180:
+            return {"formatted": f"{lat:.5f},{lng:.5f}", "lat": lat, "lng": lng,
+                    "place_id": None, "partial": False}
+    if not config.GOOGLE_MAPS_API_KEY:
         return None
     params = {"address": address, "key": config.GOOGLE_MAPS_API_KEY}
     # Bias toward Israel so 'Trompeldor 20' doesn't land in another country.

@@ -47,7 +47,7 @@ def _digits(phone: str) -> str:
 
 def _key(phone: str) -> str:
     """Last 9 digits — the same rule supabase_tasks uses, so a preference
-    learned from '0500000000' is found again under '972500000000'."""
+    learned from '0500000009' is found again under '972500000009'."""
     d = _digits(phone)
     return d[-9:] if len(d) >= 9 else d
 

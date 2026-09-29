@@ -7,6 +7,7 @@ Dependencies: imported by every other server module (lumi_agent, geo, reminders,
 user_store, whatsapp_service, main…) — keep it side-effect free except
 load_dotenv().
 """
+import logging
 import os
 
 from dotenv import load_dotenv
@@ -36,7 +37,7 @@ WHATSAPP_GRAPH_VERSION = _get("WHATSAPP_GRAPH_VERSION", "v21.0")
 # mandatory before then; it would reject every message we currently receive.
 WHATSAPP_APP_SECRET = _get("WHATSAPP_APP_SECRET")
 
-# ─── LLM (Nebius / Qwen by default) ───
+# ─── LLM (Nebius Token Factory, NVIDIA Nemotron) ───
 # Reuse the same Nebius creds as the app. EXPO_PUBLIC_* are accepted as a
 # fallback so a single .env can power both the app and this server.
 LLM_API_KEY = _get("NEBIUS_API_KEY") or _get("EXPO_PUBLIC_NEBIUS_API_KEY")
@@ -45,14 +46,19 @@ LLM_ENDPOINT = (
     or _get("EXPO_PUBLIC_NEBIUS_BASE_URL")
     or "https://api.studio.nebius.ai/v1"
 )
+# Legacy single-model setting. No chat call reads it: model_router picks a
+# Nemotron tier per call. It remains only as the fallback for the graph
+# diagram and the usage summary, so its default is the medium tier, not the
+# Qwen model this project ran on before the tiers existed.
 LLM_MODEL = (
     _get("NEBIUS_MODEL")
     or _get("EXPO_PUBLIC_NEBIUS_MODEL")
-    or "Qwen/Qwen3-235B-A22B-Instruct-2507"
+    or "nvidia/nemotron-3-super-120b-a12b"
 )
 
-# Optional cheaper model for Tier-1 work (pre-ranking, classification). Falls
-# back to LLM_MODEL everywhere until set — no behaviour change until configured.
+# Optional override for Tier-1 extraction (tasks, profile, email events). When
+# set it REPLACES the small Nemotron tier for those calls; unset, they go
+# through model_router like everything else. GET /health names it.
 LLM_MODEL_CHEAP = (
     _get("NEBIUS_MODEL_CHEAP")
     or _get("EXPO_PUBLIC_NEBIUS_MODEL_CHEAP")
@@ -60,7 +66,30 @@ LLM_MODEL_CHEAP = (
 )
 
 # ─── Google Maps (geocoding + directions) ───
-GOOGLE_MAPS_API_KEY = _get("GOOGLE_MAPS_API_KEY") or _get("EXPO_PUBLIC_GOOGLE_MAPS_API_KEY")
+#
+# The fallback is a landmine and is kept only so a local dev shell with one
+# .env still works. The EXPO_PUBLIC_ key is the one compiled into the APK, and
+# it is restricted to `com.lumi.app` + SHA-1 — a restriction Google enforces
+# through headers only the Maps SDK sends. A server using it gets
+# REQUEST_DENIED on every Geocoding and Directions call, which is exactly the
+# failure `/app/geocode` and `/app/route/directions` exist to END: 107 refused
+# calls in one day, reported to the user as "no route for the chosen way of
+# getting there".
+#
+# So falling back is survivable but never correct in production, and it says so
+# out loud rather than looking like a working server that finds no routes.
+GOOGLE_MAPS_API_KEY = _get("GOOGLE_MAPS_API_KEY")
+_MAPS_KEY_IS_THE_PHONES = False
+if not GOOGLE_MAPS_API_KEY:
+    GOOGLE_MAPS_API_KEY = _get("EXPO_PUBLIC_GOOGLE_MAPS_API_KEY")
+    if GOOGLE_MAPS_API_KEY:
+        _MAPS_KEY_IS_THE_PHONES = True
+        logging.getLogger(__name__).warning(
+            "GOOGLE_MAPS_API_KEY is not set — falling back to the APK's "
+            "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY, which is restricted to the "
+            "Android app and will be REQUEST_DENIED for every route and "
+            "geocode. Fix: fly secrets set GOOGLE_MAPS_API_KEY=... -a lumi-whatsapp"
+        )
 
 # ─── Google Programmable Search (lumi_agent.web_search) ───
 # Free tier: 100 queries/day. Needs the "Custom Search API" enabled on the same

@@ -2,7 +2,7 @@
  * run-overlap-kind — a call during a drive is not a conflict.
  * Run: npx tsx tests/run-overlap-kind.ts
  */
-import { classifyOverlap, overlapMinutesOf, isFloatingTask, suggestReschedule, ASSUMED_TRAVEL_MINUTES } from '../src/utils/overlapKind';
+import { classifyOverlap, overlapMinutesOf, isFloatingTask, suggestReschedule, ASSUMED_TRAVEL_MINUTES, isSettled } from '../src/utils/overlapKind';
 import { Task } from '../src/types/index';
 
 let failures = 0; let checks = 0;
@@ -136,6 +136,34 @@ function main() {
   check('a task is never in its own way',
     suggestReschedule(busyDay[0], busyDay, { now: '12:00', dayEnd: '22:00' }).at === '12:00');
 
+  console.log('\n6. A task she has already done is not in anyone way');
+  // Koral, 2026-09-22: a wedding she had TICKED OFF was still producing
+  //   "the exam runs past 17:58, when you have to leave for the wedding"
+  // on today timeline — a departure warning for a journey she was never
+  // going to make, pushing real work around to protect it.
+  const liveExam = t('exam', '16:00', 240);
+  const wedding = t('wedding', '19:00', 30, { location: { address: 'Hadera', lat: 32.4, lng: 34.9, confirmed: true, travelMinutes: 62 } });
+  check('two live tasks still collide', classifyOverlap(liveExam, wedding) !== null);
+  check(
+    'a COMPLETE task cannot be collided with',
+    classifyOverlap(liveExam, { ...wedding, status: 'complete' }) === null,
+  );
+  check(
+    '…in either argument position',
+    classifyOverlap({ ...wedding, status: 'complete' }, liveExam) === null,
+  );
+  check(
+    'a MOVED row is a tombstone; the copy on the other day is what can clash',
+    classifyOverlap(liveExam, { ...wedding, status: 'moved' }) === null,
+  );
+  check(
+    'a completed task is settled',
+    isSettled({ ...wedding, status: 'complete' }) && isSettled({ ...wedding, status: 'moved' }),
+  );
+  check(
+    'pending and missed are NOT settled — those still need handling',
+    !isSettled({ ...wedding, status: 'pending' }) && !isSettled({ ...wedding, status: 'missed' }),
+  );
   console.log(`\n${failures === 0 ? 'PASS' : 'FAIL'} — ${checks - failures}/${checks} checks\n`);
   process.exit(failures === 0 ? 0 : 1);
 }

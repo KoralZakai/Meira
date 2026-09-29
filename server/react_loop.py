@@ -253,14 +253,53 @@ class _Graph:
         return "\n".join(lines)
 
 
+class AgentCallError(RuntimeError):
+    """A model call failed for good, part-way through a turn.
+
+    Carries `.state` like GraphRecursionError, so the tools that already ran —
+    a task inferred, a reminder set — are still read by the caller instead of
+    being thrown away and run a second time.
+    """
+
+    def __init__(self, cause: Exception, state: dict):
+        super().__init__(str(cause))
+        self.cause = cause
+        self.state = state
+
+
 class ReActAgent:
     """Think, act, observe — until the model answers without calling a tool."""
 
-    def __init__(self, llm: ChatOpenAI, tools: list, prompt: str = ""):
+    def __init__(self, llm: ChatOpenAI, tools: list, prompt: str = "",
+                 retry_if: Optional[Callable[[Exception], bool]] = None,
+                 retries: int = 3, backoff_s: float = 0.8):
         self.llm = llm
         self.tools = list(tools or [])
         self.by_name = {t.name: t for t in self.tools}
         self.prompt = prompt or ""
+        self.retry_if = retry_if
+        self.retries = retries
+        self.backoff_s = backoff_s
+
+    async def _complete(self, wire: list):
+        """One model call, retried IN PLACE on a transient failure.
+
+        The retry used to live one level up and re-run the whole turn: the
+        18 KB prompt and the history sent again from zero, every tool called
+        again — so a 503 in round three created the task twice and cost three
+        rounds of tokens to get back to where it already was. Only the call
+        that failed is repeated now; everything the turn already learned stays
+        in `wire`.
+        """
+        for attempt in range(self.retries + 1):
+            try:
+                return await self.llm.complete(wire, self.tools)
+            except Exception as exc:  # noqa: BLE001 — re-raised unless retryable
+                if attempt >= self.retries or not (self.retry_if and self.retry_if(exc)):
+                    raise
+                logger.warning("model call failed (try %d/%d), retrying this call only: %s",
+                               attempt + 1, self.retries + 1, exc)
+                await asyncio.sleep(self.backoff_s * (attempt + 1))
 
     def get_graph(self) -> _Graph:
         return _Graph(list(self.by_name))
@@ -296,8 +335,14 @@ class ReActAgent:
     async def ainvoke(self, state: dict, config: Optional[dict] = None) -> dict:
         """Run the turn. `state["messages"]` is [{"role","content"}, ...].
 
-        Returns {"messages": [...]} holding the AIMessage/ToolMessage sequence
-        in call order — the shape both anti-fabrication guards read.
+        Or `state["wire"]`: the wire of an earlier run, to CONTINUE it — the
+        tool results already there are read, not re-earned. That is how a turn
+        that ended in an empty or garbled answer gets a second try at the
+        answer without calling every tool again.
+
+        Returns {"messages": [...], "wire": [...]} — messages hold the
+        AIMessage/ToolMessage sequence in call order, the shape both
+        anti-fabrication guards read.
         """
         # LangGraph counted supersteps, and one round trip is two of them (the
         # agent node, then the tools node). Keeping the caller's 15 meaning the
@@ -306,13 +351,19 @@ class ReActAgent:
         max_rounds = max(1, math.ceil(limit / 2))
 
         wire: list = []
-        if self.prompt:
-            wire.append({"role": "system", "content": self.prompt})
-        wire.extend(state.get("messages") or [])
+        if state.get("wire"):
+            wire = list(state["wire"])
+        else:
+            if self.prompt:
+                wire.append({"role": "system", "content": self.prompt})
+            wire.extend(state.get("messages") or [])
 
         collected: list = []
         for _round in range(max_rounds):
-            response = await self.llm.complete(wire, self.tools)
+            try:
+                response = await self._complete(wire)
+            except Exception as exc:  # noqa: BLE001 — carried out with the partial turn
+                raise AgentCallError(exc, {"messages": collected, "wire": wire}) from exc
             choice = response.choices[0].message
             usage = getattr(response, "usage", None)
             ai = AIMessage(
@@ -328,7 +379,7 @@ class ReActAgent:
             collected.append(ai)
 
             if not choice.tool_calls:
-                return {"messages": collected}
+                return {"messages": collected, "wire": wire}
 
             wire.append(_assistant_turn(choice))
             # Calls in one assistant turn are independent by construction, so
@@ -344,9 +395,11 @@ class ReActAgent:
 
         raise GraphRecursionError(
             f"agent did not finish within {max_rounds} tool rounds",
-            {"messages": collected})
+            {"messages": collected, "wire": wire})
 
 
-def create_react_agent(llm: ChatOpenAI, tools: list, prompt: str = "") -> ReActAgent:
-    """A ReAct agent over these tools. Signature matches langgraph.prebuilt's."""
-    return ReActAgent(llm, tools, prompt)
+def create_react_agent(llm: ChatOpenAI, tools: list, prompt: str = "",
+                       retry_if: Optional[Callable[[Exception], bool]] = None) -> ReActAgent:
+    """A ReAct agent over these tools. Signature matches langgraph.prebuilt's,
+    plus `retry_if`: which failures of ONE model call are worth repeating."""
+    return ReActAgent(llm, tools, prompt, retry_if=retry_if)

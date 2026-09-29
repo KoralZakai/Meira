@@ -54,9 +54,12 @@ _PATH = os.path.join(config.DATA_DIR, "known_places.json")
 # declare it, which is the right thing to build once there is enough history;
 # until then, declaring what she has already told us beats asking her again.
 _CONCEPTS: dict = {
+    # Kickboxing added 2026-09-28: "קיקבוקס" matched nothing here, so the one
+    # class she does at יגאל אלון 94 every week could never find its own gym.
     "fitness": ["gym", "workout", "training", "fitness", "yoga", "pilates",
+                "kickbox", "kickboxing", "boxing", "crossfit",
                 "חדר כושר", "כושר", "אימון", "אימונים", "התעמלות", "יוגה",
-                "פילאטיס"],
+                "פילאטיס", "קיקבוקס", "קיק בוקס", "איגרוף", "אגרוף", "קרוספיט"],
     "pool": ["pool", "swim", "swimming", "בריכה", "שחייה"],
     "work": ["work", "office", "עבודה", "משרד"],
     "doctor": ["doctor", "clinic", "dentist", "רופא", "מרפאה", "שיניים", "רופאה"],
@@ -69,6 +72,16 @@ _CONCEPTS: dict = {
 
 # Concepts that describe the CONTAINER, not the activity.
 _GENERIC = {"class"}
+
+# Activities that only ever happen at their place: a workout is at the gym
+# whether or not she said an hour. "work" is deliberately absent — "עבודה על
+# המצגת" is not a trip to the office.
+_PLACE_BOUND = {"fitness", "pool", "doctor", "therapy"}
+
+
+def place_bound(text: str) -> bool:
+    """Does this activity happen somewhere in particular, hour or no hour?"""
+    return concept_of(text) in _PLACE_BOUND
 
 # Words that carry no identity — dropped before token comparison so
 # "שיעור יוגה בערב" and "יוגה" still line up.
@@ -88,7 +101,7 @@ def _digits(phone: str) -> str:
 
 def _key(phone: str) -> str:
     """Last 9 digits — same rule as supabase_tasks and travel_prefs, so a place
-    learned from '0500000000' is found under '972500000000'."""
+    learned from '0500000009' is found under '972500000009'."""
     d = _digits(phone)
     return d[-9:] if len(d) >= 9 else d
 
@@ -168,8 +181,12 @@ def _save(data) -> None:
 
 
 def remember(phone: str, activity: str, address: str,
-             lat: Optional[float] = None, lng: Optional[float] = None) -> None:
-    """Record that this activity happens at this address."""
+             lat: Optional[float] = None, lng: Optional[float] = None,
+             name: Optional[str] = None) -> None:
+    """Record that this activity happens at this address.
+
+    `name` is what she calls the place ("Space Gym") — shown on the card, never
+    geocoded. Kept until a new one is given."""
     key = _key(phone)
     akey = activity_key(activity)
     if not key or not akey or not address:
@@ -181,6 +198,8 @@ def remember(phone: str, activity: str, address: str,
     # A later address wins — she moved gyms, or gave a better one. The count
     # still rises, because it is confidence in the ACTIVITY, not the string.
     entry["address"] = address
+    if name:
+        entry["name"] = name
     if lat is not None:
         entry["lat"] = lat
     if lng is not None:
@@ -218,7 +237,7 @@ def resolve(phone: str, activity: str, threshold: float = 0.6) -> Optional[dict]
     hit = mine.get(akey)
     if hit and hit.get("address"):
         return {"address": hit["address"], "lat": hit.get("lat"),
-                "lng": hit.get("lng"), "key": akey}
+                "lng": hit.get("lng"), "key": akey, "name": hit.get("name")}
 
     # No exact key. Compare her words against what each place has been called.
     toks = _tokens(activity)
@@ -232,7 +251,7 @@ def resolve(phone: str, activity: str, threshold: float = 0.6) -> Optional[dict]
     if best and best_score >= threshold:
         stored_key, entry = best
         return {"address": entry["address"], "lat": entry.get("lat"),
-                "lng": entry.get("lng"), "key": stored_key}
+                "lng": entry.get("lng"), "key": stored_key, "name": entry.get("name")}
     return None
 
 

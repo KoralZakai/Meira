@@ -9,6 +9,7 @@
  */
 import {
   classifyShape, isTimeBound, isFlexibleTask, splitDayTasks, sortFlexible,
+  isStandingTask,
 } from '../src/utils/taskShape';
 import { Task } from '../src/types/index';
 
@@ -126,6 +127,52 @@ function main() {
     sortFlexible([nice, doneMust, must]).length === 3);
   check('the order does not change when re-sorted',
     sortFlexible(sortFlexible([nice, doneMust, must])).map((t) => t.id).join(',') === order.join(','));
+
+  console.log('\n7. Standing work stays on the list until it is ticked');
+  /*
+   * Koral, 2026-09-22: "flexible tasks like 'להגיש קורות חיים' or 'create lean
+   * canvas' supposed to go into the tasks. be there until they are signed with
+   * V, no need to reschedule every day."
+   *
+   * getOverdueTasks was pure `date < today`, and the date on one of these is
+   * the day she WROTE IT DOWN, not a day anybody agreed to. So the next
+   * morning it appeared in the missed card being asked "did you do this? move
+   * it? let it go?" — the same three questions, every morning. Rule 6: the
+   * question has to fit the thing. You cannot be late for work nobody
+   * scheduled.
+   */
+  const cvAgain = task({ id: 'cv2', text: 'להגיש קורות חיים' });
+  const canvasAgain = task({ id: 'canvas2', text: 'create lean canvas', scheduledTime: '13:00' });
+  check('her first example is standing work', isStandingTask(cvAgain), cvAgain.text);
+  check('and so is her second', isStandingTask(canvasAgain), canvasAgain.text);
+  check('an hour LUMI parked it in changes nothing — that is a guess, not a promise',
+    isStandingTask(task({ id: 'cv3', text: 'להגיש קורות חיים', scheduledTime: '10:00' })));
+  // The counterexample that pins the boundary: an hour SHE pinned.
+  check('but an hour she pinned herself is a commitment she can miss',
+    !isStandingTask(task({
+      id: 'show', text: 'הופעה בערב של ברי סחרוף', fixedTime: '21:00', isFixed: true,
+    })), 'and "did you go?" is the right question for it');
+
+  // The three things that make it NOT standing, each for its own reason.
+  check('a DEADLINE is an agreement, so passing one is a real miss',
+    !isStandingTask(task({ id: 'd', deadline: '2026-09-20' })));
+  check('...and so is a deadline with an hour on it',
+    !isStandingTask(task({ id: 'dt', deadlineTime: '23:59' })));
+  check('something already done is not waiting for anything',
+    !isStandingTask(task({ id: 'c', status: 'complete' })));
+  check('a place to be is a commitment, not a to-do',
+    !isStandingTask(task({ id: 'p', location: { address: 'Ra\'anana' } as any })));
+  check('an appointment category is one too',
+    !isStandingTask(task({ id: 'i', category: 'interview' })));
+  check('and a row somebody else put in her diary',
+    !isStandingTask(task({ id: 'g', source: 'calendar' } as Partial<Task>)));
+
+  // What it is for: it survives the day it was written on.
+  const yesterday = task({ id: 'y', text: 'create lean canvas', date: '2026-09-21' });
+  check('it is still standing the next morning', isStandingTask(yesterday));
+  check('...and the next week', isStandingTask({ ...yesterday, date: '2026-09-01' } as Task));
+  check('ticking it is the only thing that stops it',
+    !isStandingTask({ ...yesterday, status: 'complete' } as Task));
 
   console.log(`\n${failures ? '✗' : '✓'} ${checks - failures}/${checks} checks passed\n`);
   process.exit(failures ? 1 : 0);

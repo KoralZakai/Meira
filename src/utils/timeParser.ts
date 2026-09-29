@@ -57,10 +57,39 @@ function detectRelativeDays(text: string): number | null {
  * only rule was /\b(at|by)\s+…/. `ב-?` is anchored on a following digit so it
  * cannot fire inside ordinary words ("ביגאל", "בעוד").
  */
+const MONTHS_HE = 'ינואר|פברואר|מרץ|מרס|אפריל|מאי|יוני|יולי|אוגוסט|ספטמבר|אוקטובר|נובמבר|דצמבר';
+const MONTHS_EN = 'january|february|march|april|may|june|july|august|september|october'
+  + '|november|december|jan|feb|mar|apr|jun|jul|aug|sept|sep|oct|nov|dec';
+
 function detectFixedTime(text: string): string | null {
-  const m = text.match(
-    /(?:\b(?:at|by)\s+|בשעה\s*|ב-?\s*(?=\d))(\d{1,2})(?::(\d{2}))?\s*(?:am|pm|a\.m\.|p\.m\.)?/i,
-  )
+  // "ברבע ל-9" — a quarter to nine. Checked first: it names the NEXT hour.
+  const quarterTo = text.match(/(?:ב)?רבע\s*ל-?\s*(\d{1,2})(?![\d:])/);
+  // The ב must START a word: "רחוב 8" is an address, not eight o'clock.
+  // A number followed by a month is a DAY: "מילואים ב 8 באוקטובר" read as
+  // 08:00. Mirrors task_extract._bare_hour / tz.MONTH_WORD_AFTER.
+  const prep = text.match(new RegExp(
+    String.raw`(?:\b(?:at|by)\s+|בשעה\s*|(?<![\u0590-\u05FF])ב-?\s*(?=\d))(\d{1,2})(?::(\d{2}))?`
+    + String.raw`(?!\d)(?!\s*(?:ב|ל)?-?\s*(?:${MONTHS_HE})(?![\u0590-\u05FF])|(?:st|nd|rd|th)?\s+(?:of\s+)?(?:${MONTHS_EN})\b)`
+    + String.raw`\s*(?:am|pm|a\.m\.|p\.m\.)?`,
+    'i',
+  ));
+  // "ב 8 וחצי", "ב-7 ורבע" — how the half and the quarter are actually said.
+  // Without this, "קיקבוקס ב 8 וחצי" kept the 8 and lost the half hour.
+  const spokenMinute = (match: RegExpMatchArray | null): number | null => {
+    if (!match || match[2] != null || match.index == null) return null;
+    const tail = text.slice(match.index + match[0].length);
+    if (/^\s*ו?חצי/.test(tail)) return 30;
+    if (/^\s*ו?רבע/.test(tail)) return 15;
+    return null;
+  };
+  if (quarterTo && (!prep || (quarterTo.index ?? 0) <= (prep.index ?? 0))) {
+    return detectFixedTime(text.replace(quarterTo[0], `ב-${parseInt(quarterTo[1], 10) - 1}:45`));
+  }
+  const spoken = spokenMinute(prep);
+  if (prep && spoken != null) {
+    return detectFixedTime(text.replace(prep[0], `ב-${prep[1]}:${spoken}`).replace(/\s*ו?(?:חצי|רבע)/, ''));
+  }
+  const m = prep
     // A BARE CLOCK TIME, with no preposition in front of it.
     //
     // Every pattern above needs one — "at", "by", "בשעה", or the Hebrew ב
@@ -82,13 +111,34 @@ function detectFixedTime(text: string): string | null {
   const minute = m[2] ? parseInt(m[2], 10) : 0;
   if (hour > 23 || minute > 59) return null;
 
-  const pm = /pm|p\.m\./i.test(text) || /בערב|בלילה|אחה"?צ|אחר\s*הצהריים|בצהריים/.test(text);
-  const am = /am|a\.m\./i.test(text) || /בבוקר/.test(text);
-  if (pm && hour < 12) hour += 12;
-  if (am && hour === 12) hour = 0;
-  // Afternoon bias only without an explicit marker: "at 3" means 15:00.
-  if (!pm && !am && hour >= 1 && hour <= 6) hour += 12;
+  hour = to24h(hour, meridiemOf(text));
   return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
+/**
+ * Which half of the day a phrase names. 'night' is its own answer: "11 בלילה"
+ * is 23:00 but "1 בלילה" is 01:00 — treating בלילה as "pm" put a 1 a.m. call
+ * at 13:00. Mirrors task_extract._meridiem on the server.
+ */
+type Meridiem = 'am' | 'pm' | 'night' | '';
+function meridiemOf(text: string): Meridiem {
+  // "3pm" has no \b between the 3 and the p, and a bare /am/ fired inside
+  // "team" — so: not preceded or followed by another letter.
+  if (/(?<![a-z])(?:pm|p\.m\.)(?![a-z])/i.test(text) || /בערב|אחה["״]?צ|אחר\s*הצהריים|בצהריים/.test(text)) return 'pm';
+  if (/בלילה|tonight/i.test(text)) return 'night';
+  if (/(?<![a-z])(?:am|a\.m\.)(?![a-z])/i.test(text) || /בבוקר/.test(text)) return 'am';
+  return '';
+}
+
+/**
+ * A spoken hour → 24h. With no marker, 1–6 is the afternoon ("ב6" is 18:00:
+ * nobody books a workout at six in the morning by saying just "six").
+ */
+function to24h(hour: number, mer: Meridiem): number {
+  if (mer === 'pm') return hour < 12 ? hour + 12 : hour;
+  if (mer === 'night') return hour >= 6 && hour < 12 ? hour + 12 : hour === 12 ? 0 : hour;
+  if (mer === 'am') return hour === 12 ? 0 : hour;
+  return hour >= 1 && hour <= 6 ? hour + 12 : hour;
 }
 
 export function parseTimeExpression(text: string, referenceDate: string = getTodayString()): TimeExpression {
@@ -127,27 +177,33 @@ export function parseTimeExpression(text: string, referenceDate: string = getTod
   //    "between 2pm and 6pm", "9 to 11am". Must come before the single fixed-time
   //    check so the start time isn't grabbed on its own.
   // Hebrew connectors included: "מ20:00 עד 00:00", "בין 14:00 ל-16:00".
-  const rangeMatch = text.match(
-    /(?:from\s+|between\s+|מ-?\s*|בין\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?\s*(?:-|–|—|to|until|till|and|עד|ל-?)\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?/i,
-  );
+  // Hebrew markers count as much as am/pm: "אימון ב 6 בערב עד 8 בערב" was
+  // read as a single 18:00 with no length, because only English ones did. The
+  // ב/בשעה in front of the first number is what makes "ב6 עד 7" a clock
+  // rather than a count.
+  const MER = String.raw`(am|pm|a\.m\.|p\.m\.|בערב|בבוקר|בלילה|בצהריים|אחה["״]?צ)?`;
+  const rangeMatch = text.match(new RegExp(
+    String.raw`(from\s+|between\s+|(?<![֐-׿])(?:ב|בשעה|מ)-?\s*|בין\s+)?(\d{1,2})(?::(\d{2}))?\s*${MER}\s*`
+    + String.raw`(?:-|–|—|to|until|till|and|עד|ל-?)\s*(\d{1,2})(?::(\d{2}))?(?!\d)\s*${MER}`
+    + String.raw`(?!\s*(?:שעות|דקות|ימים|שבועות|hours?|mins?|minutes?|days?|weeks?))`,
+    'i',
+  ));
   if (rangeMatch) {
-    const startHadMin = rangeMatch[2] != null;
-    const endHadMin = rangeMatch[5] != null;
-    const startMer = (rangeMatch[3] || '').toLowerCase();
-    const endMer = (rangeMatch[6] || '').toLowerCase();
+    const hadPrep = Boolean(rangeMatch[1]);
+    const startHadMin = rangeMatch[3] != null;
+    const endHadMin = rangeMatch[6] != null;
+    const startMer = meridiemOf(rangeMatch[4] || '');
+    const endMer = meridiemOf(rangeMatch[7] || '');
     // Avoid false positives like "2 to 3 days": only treat as a time range when
-    // at least one side has minutes (a colon) or an am/pm marker.
-    if (startHadMin || endHadMin || startMer || endMer) {
-      const norm = (h: number, mer: string, fallbackMer: string) => {
-        const m = mer || fallbackMer;
-        if (m.startsWith('p') && h < 12) h += 12;
-        if (m.startsWith('a') && h === 12) h = 0;
-        return h;
-      };
-      const startH = norm(parseInt(rangeMatch[1], 10), startMer, endMer);
-      const startMin = startHadMin ? parseInt(rangeMatch[2], 10) : 0;
-      const endH = norm(parseInt(rangeMatch[4], 10), endMer, startMer);
-      const endMin = endHadMin ? parseInt(rangeMatch[5], 10) : 0;
+    // at least one side has minutes (a colon), a day-half marker, or a
+    // preposition that makes it a clock.
+    if (startHadMin || endHadMin || startMer || endMer || hadPrep) {
+      const startH = to24h(parseInt(rangeMatch[2], 10), startMer || endMer);
+      const startMin = startHadMin ? parseInt(rangeMatch[3], 10) : 0;
+      let endH = to24h(parseInt(rangeMatch[5], 10), endMer || startMer);
+      // "ב6 עד 7": the end is in the same half of the day as the start.
+      if (!endMer && !startMer && startH >= 12 && endH < 12) endH += 12;
+      const endMin = endHadMin ? parseInt(rangeMatch[6], 10) : 0;
       if (startH <= 23 && endH <= 23 && startMin <= 59 && endMin <= 59) {
         const fixedTime = `${String(startH).padStart(2, '0')}:${String(startMin).padStart(2, '0')}`;
         const endTime = `${String(endH).padStart(2, '0')}:${String(endMin).padStart(2, '0')}`;

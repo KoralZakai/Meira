@@ -31,6 +31,8 @@ interface Props {
   /** The previous task of the day (chronologically) — used for way-home plans. */
   prevTask?: Task;
   profile?: UserProfile | null;
+  /** The day's single wake hour — see utils/alarmPlan.dayWakeOwner. */
+  dayEarliestWake?: string;
   language: AppLanguage;
   /** First away-appointment of the day gets wake/get-ready rows. */
   isFirstOfDay?: boolean;
@@ -65,7 +67,7 @@ export default function TravelChainCard({
   task, prevTask, profile, language, isFirstOfDay = false,
   initiallyExpanded = false, onTap, onNotLeft, onOpenRoute, onComplete,
   onTransportChange, note, alternatives, onShowAlternatives, onPickAlternative,
-  onEdit, onAlarmPress,
+  onEdit, onAlarmPress, dayEarliestWake,
 }: Props) {
   const [altsOpen, setAltsOpen] = useState(false);
   const he = language === 'he';
@@ -113,7 +115,7 @@ export default function TravelChainCard({
   // minus morning routine), hiding the chip on every un-routed task; and it
   // called ANY 'not_needed' state "off", so a 14:00 trip that legitimately
   // needs no alarm drew a 🔕 she could not explain.
-  const wake = wakeChipFor(task, wakeInputs(profile));
+  const wake = wakeChipFor(task, wakeInputs(profile), { dayEarliestWake });
   const alarmAt = wake?.at;
   const alarmOff = Boolean(wake?.muted);
 

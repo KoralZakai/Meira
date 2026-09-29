@@ -2,7 +2,7 @@
  * run-timeline-layout — the day as geometry.
  * Run: npx tsx tests/run-timeline-layout.ts
  */
-import { layoutDay, hasClash, PX_PER_MIN, MIN_BLOCK_PX } from '../src/utils/timelineLayout';
+import { layoutDay, hasClash, PX_PER_MIN, MIN_BLOCK_PX, MAX_BLOCK_PX } from '../src/utils/timelineLayout';
 import { Task } from '../src/types/index';
 
 let failures = 0; let checks = 0;
@@ -28,13 +28,12 @@ function main() {
   const day = layoutDay([conf, talk], { now: '13:10' });
   const C = day.find((b) => b.task.id === 'conference')!;
   const T = day.find((b) => b.task.id === 'prompt')!;
-  check('a 9h block is 432px', C.height === 432, `${C.height}px`);
-  check('an hour is 48px — visible, not floored',
-    layoutDay([t('hour', '10:00', 60)])[0].height === 48, `${layoutDay([t('hour', '10:00', 60)])[0].height}px`);
-  check('two hours is 96px', layoutDay([t('two', '10:00', 120)])[0].height === 96);
-  check('a 3h block is shorter', T.height < C.height, `${T.height}px`);
-  check('a 15m block is floored at 52px, not 12px',
+  check('no block reserves empty space: a 9h block is the floor, its content does the rest',
+    C.height === MIN_BLOCK_PX, `${C.height}px`);
+  check('an hour and three hours are the same floor', T.height === C.height && layoutDay([t('hour', '10:00', 60)])[0].height === MIN_BLOCK_PX);
+  check('a 15m block is floored, not 12px',
     layoutDay([t('call', '10:00', 15)])[0].height === MIN_BLOCK_PX, `${MIN_BLOCK_PX}px`);
+  void PX_PER_MIN; void MAX_BLOCK_PX;
 
   console.log('\n2. Where she is');
   check('13:10 is inside the conference', C.active);

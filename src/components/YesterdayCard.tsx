@@ -60,6 +60,27 @@ function isPastEvent(task: Task): boolean {
   return Boolean(task.fixedTime);
 }
 
+/**
+ * When this actually was, in as few characters as fit on the row.
+ *
+ * Koral, 2026-09-21: "Hani and Danny's wedding shows on today, but it was on
+ * 17.9 — why is it showing today?" It was showing because an unfinished task
+ * keeps its own date and this card resurfaces it, which is the whole point of
+ * the card. What it never did was SAY which day it came from, so a wedding
+ * four days gone sat among today's cards looking like today's business.
+ *
+ * Same fault as the alarm behind the ▸ and the calendar error swallowed into
+ * an empty array: the app knew, and did not say.
+ */
+function whenLabel(date: string, today: string, he: boolean): string {
+  if (date === previousDay(today)) return he ? 'אתמול' : 'yesterday';
+  const [, m, d] = date.split('-').map(Number);
+  const [ty] = today.split('-').map(Number);
+  const [y] = date.split('-').map(Number);
+  const short = `${d}.${m}`;
+  return y === ty ? short : `${short}.${String(y).slice(2)}`;
+}
+
 /** YYYY-MM-DD one day before `date`, local-calendar safe. */
 function previousDay(date: string): string {
   const [y, m, d] = date.split('-').map(Number);
@@ -112,33 +133,61 @@ export default function YesterdayCard({
 
       {open && (
         <View style={styles.body}>
-          {shown.map((task) => (
-            <View key={task.id} style={styles.row}>
-              <Text style={styles.rowIcon}>{getCategoryMeta(task.category).icon}</Text>
-              <Text style={styles.rowText} numberOfLines={1}>{task.text}</Text>
-              <TouchableOpacity
-                style={styles.rowDone}
-                onPress={() => onComplete([task.id])}
-                hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
-              >
-                <Text style={styles.rowDoneText}>{he ? '✓ בוצע' : '✓ Done'}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.rowMove}
-                onPress={() => (onReschedule ? onReschedule(task) : onMove([task.id]))}
-                hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
-              >
-                <Text style={styles.rowMoveText}>{he ? '↻ תזמון מחדש' : '↻ Reschedule'}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.rowDrop}
-                onPress={() => onDelete([task.id])}
-                hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
-              >
-                <Text style={styles.rowDropText}>🗑</Text>
-              </TouchableOpacity>
-            </View>
-          ))}
+          {shown.map((task) => {
+            // A wedding that already happened cannot be rescheduled, and this
+            // card was offering exactly that. The doc at the top of this file
+            // has always said a past event is ASKED about rather than moved;
+            // the rows never implemented it, so "↻ תזמון מחדש" sat next to
+            // Hani and Danny's wedding. Went / Didn't go, and nothing else.
+            return (
+              <View key={task.id} style={styles.row}>
+                <Text style={styles.rowIcon}>{getCategoryMeta(task.category).icon}</Text>
+                <View style={styles.rowBody}>
+                  <Text style={styles.rowText} numberOfLines={1}>{task.text}</Text>
+                  {/* The date, always. Without it a four-day-old task is
+                      indistinguishable from one of today's. */}
+                  <Text style={styles.rowWhen} numberOfLines={1}>
+                    {whenLabel(task.date, today, he)}
+                    {task.fixedTime ? ` · ${task.fixedTime}` : ''}
+                  </Text>
+                </View>
+                {/* ONE pair of buttons, for every row.
+                    Koral, 2026-09-23: "once have the bottom went didn't go —
+                    change it all to be Done/reschedule."
+                    A row that had a clock on it used to get Went / Didn't go
+                    instead, on the theory that you cannot reschedule a wedding.
+                    True of a wedding; false of the great majority of things
+                    that carry an hour, which are work she parked at a time and
+                    still means to do. Two different button pairs on one list
+                    also means reading each row before you can act on it, which
+                    is the opposite of what this card is for. Her call. */}
+                <TouchableOpacity
+                  style={styles.rowDone}
+                  onPress={() => onComplete([task.id])}
+                  hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+                >
+                  <Text style={styles.rowDoneText}>{he ? '✓ בוצע' : '✓ Done'}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.rowMove}
+                  onPress={() => (onReschedule ? onReschedule(task) : onMove([task.id]))}
+                  hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+                >
+                  <Text style={styles.rowMoveText}>
+                    {he ? '↻ תזמון מחדש' : '↻ Reschedule'}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.rowDrop}
+                  onPress={() => onDelete([task.id])}
+                  hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+                  accessibilityLabel={he ? 'לוותר' : 'Let go'}
+                >
+                  <Text style={styles.rowDropText}>💤</Text>
+                </TouchableOpacity>
+              </View>
+            );
+          })}
 
           {extra > 0 && (
             <Text style={styles.more}>
@@ -147,9 +196,19 @@ export default function YesterdayCard({
           )}
 
           <View style={styles.actions}>
-            <TouchableOpacity style={styles.moveAll} onPress={() => onMove(allIds)} activeOpacity={0.85}>
-              <Text style={styles.moveAllText}>{he ? '↻ תזמני הכל מחדש' : '↻ Reschedule all'}</Text>
-            </TouchableOpacity>
+            {/* Every row can be rescheduled (her call, 23.9), so the bulk
+                action moves every row. It still filtered out anything with an
+                hour — so on a day where all four leftovers had one, the button
+                sent an empty list and nothing happened, in silence (28.9). */}
+            {tasks.length > 0 && (
+              <TouchableOpacity
+                style={styles.moveAll}
+                onPress={() => onMove(allIds)}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.moveAllText}>{he ? '↻ תזמני הכל מחדש' : '↻ Reschedule all'}</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity style={styles.letGo} onPress={() => onLetGo(allIds)} activeOpacity={0.85}>
               <Text style={styles.letGoText}>{he ? 'שחררי' : 'Let them go'}</Text>
             </TouchableOpacity>
@@ -182,7 +241,9 @@ const styles = StyleSheet.create({
   },
   rowDoneText: { fontSize: 12, fontFamily: FONTS.bodyBold, color: BRAND.creamCard },
   rowIcon: { fontSize: 14 },
-  rowText: { flex: 1, fontFamily: FONTS.body, fontSize: 13, color: BRAND.warmInk },
+  rowBody: { flex: 1, marginRight: 6 },
+  rowWhen: { fontFamily: FONTS.body, fontSize: 11, color: BRAND.inkSoft, marginTop: 1 },
+  rowText: { fontFamily: FONTS.body, fontSize: 13, color: BRAND.warmInk },
   rowMove: {
     backgroundColor: BRAND.timeChipBg, borderRadius: 999,
     paddingHorizontal: 10, paddingVertical: 3,

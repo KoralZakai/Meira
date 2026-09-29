@@ -97,8 +97,8 @@ export function describeOutcome(o: DeletionOutcome, he: boolean): { title: strin
         : { title: 'Not signed in', body: 'There is no cloud account to delete. Data on this device goes when you uninstall the app.' };
     case 'partial':
       return he
-        ? { title: 'המחיקה לא הושלמה', body: `חלק מהנתונים לא נמחקו (${o.detail}). לא מחקתי כלום מהמכשיר. נסי שוב, או כתבי ל-you@example.com` }
-        : { title: 'Deletion incomplete', body: `Some data could not be removed (${o.detail}). Nothing was deleted from this device. Try again, or email you@example.com` };
+        ? { title: 'המחיקה לא הושלמה', body: `חלק מהנתונים לא נמחקו (${o.detail}). לא מחקתי כלום מהמכשיר. נסי שוב, או כתבי ל-koralzakai1@gmail.com` }
+        : { title: 'Deletion incomplete', body: `Some data could not be removed (${o.detail}). Nothing was deleted from this device. Try again, or email koralzakai1@gmail.com` };
     default:
       return he
         ? { title: 'המחיקה נכשלה', body: `${o.detail} שום דבר לא נמחק. נסי שוב כשיש חיבור.` }

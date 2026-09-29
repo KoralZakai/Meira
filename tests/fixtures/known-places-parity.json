@@ -246,6 +246,49 @@
    "concept": null,
    "key": "",
    "tokens": []
+  },
+  {
+   "text": "קיקבוקס",
+   "concept": "fitness",
+   "key": "@fitness",
+   "tokens": [
+    "קיקבוקס"
+   ]
+  },
+  {
+   "text": "קיקבוקס ב 8 וחצי",
+   "concept": "fitness",
+   "key": "@fitness",
+   "tokens": [
+    "וחצי",
+    "קיקבוקס"
+   ]
+  },
+  {
+   "text": "kickboxing class",
+   "concept": "fitness",
+   "key": "@fitness",
+   "tokens": [
+    "kickboxing"
+   ]
+  },
+  {
+   "text": "שיעור איגרוף",
+   "concept": "fitness",
+   "key": "@fitness",
+   "tokens": [
+    "איגרוף",
+    "שיעור"
+   ]
+  },
+  {
+   "text": "קיק בוקס בערב",
+   "concept": "fitness",
+   "key": "@fitness",
+   "tokens": [
+    "בוקס",
+    "קיק"
+   ]
   }
  ]
 }

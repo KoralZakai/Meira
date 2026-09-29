@@ -66,6 +66,7 @@ _STORE_MODULES = (
     "provenance",       # which turn created what
     "bug_reports",      # anything they reported
     "meeting_brief",    # who they were about to meet
+    "task_prep",        # what Meira prepared for their tasks
 )
 
 # Supabase tables owned directly by an auth user id.

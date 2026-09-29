@@ -52,10 +52,27 @@ export function plannedAlarmTime(task: Task, routineMinutes?: number): string | 
     return task.location.wakeUpBy;
   }
   const start = task.fixedTime;
-  if (!start || !Number.isFinite(routineMinutes as number) || (routineMinutes as number) <= 0) {
-    return undefined;
+  if (!start) return undefined;
+  if (Number.isFinite(routineMinutes as number) && (routineMinutes as number) > 0) {
+    return subtractMinutes(start, routineMinutes as number);
   }
-  return subtractMinutes(start, routineMinutes as number);
+  // No routine on her profile, so no guessing — EXCEPT the one block whose
+  // whole meaning is "get up early": the interview-morning study (prep-0d-…).
+  // Koral, 2026-09-28, the night before the Amazon interview: "I need an alarm
+  // clock". The block said "up early" at 09:00 and nothing rang, because her
+  // profile has no routine length. Its own get-ready buffer (interviewPrep's
+  // GET_READY_BUFFER_MIN, 30) is the honest number here.
+  if (isInterviewMorning(task)) return subtractMinutes(start, INTERVIEW_MORNING_GET_READY_MIN);
+  return undefined;
+}
+
+/** interviewPrep.GET_READY_BUFFER_MIN — duplicated, not imported, to keep this module leaf-level. */
+const INTERVIEW_MORNING_GET_READY_MIN = 30;
+
+function isInterviewMorning(task: Task): boolean {
+  return String(task.id || '').startsWith('prep-0d-')
+    && Boolean((task as { prepForTaskId?: string }).prepForTaskId)
+    && Boolean(task.fixedTime) && (task.fixedTime as string) < '12:00';
 }
 
 /**
@@ -171,12 +188,60 @@ export function wakeInputs(profile?: UserProfile | null): {
   };
 }
 
+/** Local alias, so dayWakeOwner below reads as the day rule and not the task rule. */
+const decideAlarmStateForTask = decideAlarmState;
+
+/**
+ * The one hour a DAY wakes her, and the task that owns it.
+ *
+ * Koral, 2026-09-22: "when adding a task before another task the clock alarm
+ * should change to an earlier". Every rule above this one judges a single
+ * task, so a day with an 08:00 class and a 10:00 appointment planned TWO
+ * alarms — 07:20 and 09:20 — and the phone rang twice; and adding something
+ * earlier than everything else did not move the morning, it just added to it.
+ *
+ * A morning has one beginning. It belongs to whatever starts first.
+ *
+ * Ties break on the task's own start hour and then its id, so the owner does
+ * not flip between syncs and re-arm the same alarm twice.
+ */
+export function dayWakeOwner(
+  tasks: Task[],
+  { usualWakeTime, routineMinutes }: { usualWakeTime?: string; routineMinutes?: number } = {},
+): { taskId: string; at: string } | null {
+  let best: { taskId: string; at: string; tie: string } | null = null;
+  for (const task of tasks) {
+    if (task.status !== 'pending') continue;
+    if (decideAlarmStateForTask(task, usualWakeTime, routineMinutes) !== 'planned') continue;
+    const at = plannedAlarmTime(task, routineMinutes);
+    if (!at) continue;
+    const tie = `${at}|${task.fixedTime ?? task.scheduledTime ?? '99:99'}|${task.id}`;
+    if (!best || tie < best.tie) best = { taskId: task.id, at, tie };
+  }
+  return best ? { taskId: best.taskId, at: best.at } : null;
+}
+
+/** The earliest wake a set of tasks needs, or undefined when none do. */
+export function earliestWakeOf(
+  tasks: Task[],
+  inputs: { usualWakeTime?: string; routineMinutes?: number } = {},
+): string | undefined {
+  return dayWakeOwner(tasks, inputs)?.at;
+}
+
 export function wakeChipFor(
   task: Task,
   { usualWakeTime, routineMinutes }: { usualWakeTime?: string; routineMinutes?: number } = {},
+  /**
+   * The day's single wake hour, when the caller has the whole day in hand.
+   * A task that wanted a later one is not muted — it is superseded, and a 🔕
+   * on it would read as "you turned this off", which she did not.
+   */
+  opts: { dayEarliestWake?: string } = {},
 ): WakeChip | null {
   const at = plannedAlarmTime(task, routineMinutes);
   if (!at) return null;
+  if (opts.dayEarliestWake && at > opts.dayEarliestWake) return null;
 
   // What the SCHEDULER would decide for this task, from the same inputs — so
   // the chip and the phone can never disagree about whether a morning rings.

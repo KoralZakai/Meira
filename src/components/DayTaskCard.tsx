@@ -19,6 +19,12 @@ interface DayTaskCardProps {
   onComplete?: (task: Task) => void;
   showVerificationBadge?: boolean;
   language: AppLanguage;
+  /**
+   * One line saying what this task still needs before it can be done —
+   * from utils/taskRequirements.describeGap. Omit when it is ready; the
+   * card then looks exactly as it always did.
+   */
+  gapLabel?: string;
 }
 
 export default function DayTaskCard({
@@ -28,6 +34,7 @@ export default function DayTaskCard({
   onComplete,
   showVerificationBadge = false,
   language,
+  gapLabel,
 }: DayTaskCardProps) {
   const [scaleAnim] = useState(new Animated.Value(1));
   const cardBg = BRAND.creamCard;
@@ -141,12 +148,28 @@ export default function DayTaskCard({
             </Text>
           ) : null}
         </View>
+
+        {/* What this task still needs before it can actually be done.
+            Derived deterministically from the task itself (utils/
+            taskRequirements): an address and an hour mean a journey to plan,
+            an interview means studying before it. Shown because the night
+            before, the difference between an interview that is ready and one
+            that is not was invisible — both drew the same card. */}
+        {gapLabel ? (
+          <Text style={styles.gapText} numberOfLines={1}>{gapLabel}</Text>
+        ) : null}
       </TouchableOpacity>
     </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
+  gapText: {
+    fontFamily: FONTS.body,
+    fontSize: 12,
+    color: BRAND.amber,
+    marginTop: 3,
+  },
   row: {
     flexDirection: 'row',
     paddingHorizontal: 12,

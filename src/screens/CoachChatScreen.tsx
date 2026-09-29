@@ -66,7 +66,7 @@ const CHIPS_HE = ['תכנן לי את היום', 'מה דחוף?', 'הוסף מ�
 let sessionMessages: Message[] | null = null;
 let sessionPending: CoachPending | undefined;
 
-export default function CoachChatScreen({ navigation }: any) {
+export default function CoachChatScreen({ navigation, route }: any) {
   const insets = useSafeAreaInsets();
   const scrollRef = useRef<ScrollView>(null);
   const [messages, setMessages] = useState<Message[]>(
@@ -74,7 +74,9 @@ export default function CoachChatScreen({ navigation }: any) {
       { id: '0', role: 'lumi', text: "Hey! Ready to light up your day? 🌟 What's on your mind?" },
     ],
   );
-  const [input, setInput] = useState('');
+  // "⌨️ Type it" from the voice sheet arrives with what was already heard, so
+  // a failed voice turn is one tap from sent, not a sentence to say again.
+  const [input, setInput] = useState<string>(route?.params?.initialText ?? '');
   const [loading, setLoading] = useState(false);
   const [language, setLanguage] = useState<'en' | 'he'>('en');
   const [pending, setPending] = useState<CoachPending | undefined>(sessionPending);

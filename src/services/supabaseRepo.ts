@@ -142,6 +142,43 @@ function safePriority(value: unknown): string | null {
   return typeof value === 'string' && VALID_PRIORITIES.includes(value) ? value : null;
 }
 
+/**
+ * The only `source` values the database will accept.
+ *
+ * Mirrors `tasks_source_check` in supabase/migrations/0003_whatsapp_sync.sql.
+ * Keep the two in step, or rather: do not bother, because anything not in this
+ * list is coerced below instead of being allowed to fail.
+ */
+const VALID_SOURCES = ['voice', 'manual', 'suggested', 'email', 'calendar', 'whatsapp'];
+
+/**
+ * A source the CHECK constraint will take, or null.
+ *
+ * WHY: a single row carrying an unrecognised `source` fails the whole upsert,
+ * and PostgREST rejects the BATCH — so one bad value stopped all 142 of her
+ * tasks reaching the cloud, every sync, with only a console line to show for
+ * it. On the phone everything looked right, because the local write had
+ * already succeeded and the row was simply marked as ahead of the cloud.
+ *
+ * Exactly the shape safePriority was written for, one column over. A column
+ * whose allowed values live in the DATABASE must be defended here, because the
+ * app ships new values (a new kind of generated task) long before anyone runs
+ * a migration, and losing the label is survivable where losing the row is not.
+ *
+ * The coercion is logged, not silent: an unknown source that starts appearing
+ * is either a migration somebody owes, or a typo, and neither should be
+ * discoverable only by noticing that the cloud is quietly a bit wrong.
+ */
+function safeSource(value: unknown): string | null {
+  if (typeof value !== 'string' || !value) return null;
+  if (VALID_SOURCES.includes(value)) return value;
+  console.warn(
+    `[supabaseRepo] task source "${value}" is not in tasks_source_check — `
+    + 'storing null so the row still syncs. Add it in a migration to keep it.',
+  );
+  return null;
+}
+
 function taskToRow(userId: string, t: Task): Record<string, unknown> {
   return {
     id: t.id,
@@ -166,6 +203,13 @@ function taskToRow(userId: string, t: Task): Record<string, unknown> {
     contact: t.contact ?? null,
     gmailThreadId: t.gmailThreadId ?? null,
     calendarEventId: t.calendarEventId ?? null,
+    // Dropped until now, which is why reconciling them looped: the push
+    // silently lost them and cloud hydration handed back a row without them.
+    // upsertTolerant removes either one and warns if the column is not there
+    // yet, so this is safe before 0011 is run — it just keeps not persisting
+    // until it is.
+    meetingUrl: t.meetingUrl ?? null,
+    attendees: t.attendees ?? null,
     verifiedArrival: t.verifiedArrival ?? null,
     completedAt: t.completedAt ?? null,
     // Dropped here until now, which made it useless: it is stamped locally to
@@ -185,7 +229,7 @@ function taskToRow(userId: string, t: Task): Record<string, unknown> {
     why: t.why ?? null,
     contactName: t.contactName ?? null,
     contactPhone: t.contactPhone ?? null,
-    source: t.source ?? null,
+    source: safeSource(t.source),
     hasLocation: t.hasLocation ?? null,
     hasDeadline: t.hasDeadline ?? null,
     locationLat: t.locationLat ?? null,
@@ -270,14 +314,43 @@ export async function upsertTasks(userId: string, tasks: Task[]): Promise<void> 
   await upsertTolerant('tasks', tasks.map((t) => taskToRow(userId, t)), 'userId,id');
 }
 
-/** Delete one task row. */
-export async function deleteTaskRow(userId: string, taskId: string): Promise<void> {
-  const { error } = await supabase
+/**
+ * Delete one task row, and say HOW MANY rows that was.
+ *
+ * It used to return `void` and throw only on an error, which made "removed it"
+ * and "matched nothing at all" the same observable outcome — rule 1, exactly.
+ * PostgREST answers a delete that hits zero rows with a cheerful 204: no error,
+ * no rows, nothing to tell the caller apart.
+ *
+ * That mattered on Koral's phone. Three mangled prep rows were swept locally,
+ * tombstoned, and deleted from the cloud — and came back from the cloud on
+ * every single launch, three times, for days. `deleteTaskRow` reported success
+ * each time. The tombstone list hid the symptom, so nothing rendered wrong and
+ * the delete that was doing nothing was never suspected. A growing denylist is
+ * not a fix; it is the sound of a delete that does not delete.
+ *
+ * A zero-count delete is now a warn naming the id, so the next launch says
+ * plainly whether the row was there and refused (RLS, a userId mismatch) or was
+ * never there at all. The count is returned for callers that can act on it;
+ * the ones that cannot may keep ignoring it.
+ */
+export async function deleteTaskRow(userId: string, taskId: string): Promise<number> {
+  const { error, count } = await supabase
     .from('tasks')
-    .delete()
+    .delete({ count: 'exact' })
     .eq('userId', userId)
     .eq('id', taskId);
   if (error) throw error;
+  const removed = count ?? 0;
+  if (removed === 0) {
+    console.warn(
+      `[supabaseRepo] delete of task ${taskId} matched NO cloud row. Either it was `
+      + 'already gone, or row-level security is refusing this user the delete — '
+      + 'in which case it will be pulled back on the next sync and only the '
+      + 'tombstone list is keeping it off the screen.',
+    );
+  }
+  return removed;
 }
 
 /**

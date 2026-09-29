@@ -23,7 +23,7 @@ This module is also the first FastAPI router in the codebase. main.py is 2,300
 lines with every route at the top level; new routes go in routers from here on.
 
 Dependencies: app_auth, task_extract, profile_extract, checkin_parse, email_events,
-day_schedule, task_store, tz.
+day_schedule, task_store, tz, stt.
 Consumed by main.py (include_router) and by the app's LumiServer client.
 """
 from __future__ import annotations
@@ -31,16 +31,22 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import JSONResponse
 
 import app_auth
 import checkin_parse
+import day_planner
 import day_schedule
 import geo
 import email_events
 import meeting_brief
+import task_prep
+import errands_along
 import profile_extract
+import rate_limit
+import route_proxy
+import stt
 import task_extract
 import task_store
 import tz as _tz
@@ -62,13 +68,29 @@ def _summary(scheduled: list, language: str) -> str:
     return f"{count} tasks today, starting {first} 👇"
 
 
+def _plan_summary(plan: dict, language: str) -> str:
+    """One short line about what the planner did. The timeline is the answer."""
+    placed, missed = len(plan["placed"]), len(plan["unplaced"])
+    if language == "he":
+        line = f"שיבצתי {placed} משימות 👇" if placed else "לא מצאתי זמן פנוי היום"
+        return line + (f" · {missed} לא נכנסו" if missed else "")
+    line = f"Planned {placed} tasks 👇" if placed else "No free time left today"
+    return line + (f" · {missed} didn't fit" if missed else "")
+
+
 @router.post("/schedule/build")
 async def build_schedule(request: Request, caller: dict = Depends(app_auth.require_caller)):
     """Lay a day on a timeline. Deterministic — no model call, no cost, ~1 ms.
 
-    Body: {date?, wake_time?, important_only?, language?, tasks?}
+    Body: {date?, wake_time?, important_only?, language?, tasks?, mode?, sleep_time?}
     `tasks` lets the client schedule what it is holding (an unsaved draft, or
     its offline cache); omit it and the server reads the user's saved day.
+
+    mode "plan" runs day_planner instead of the sort: flexible tasks go into
+    the time that is really free — after journeys, with buffers, before bed —
+    and the answer carries {placed, unplaced, windows}. Unplaced tasks come
+    back WITH their reason, never dropped. The default stays the sort, which
+    the WhatsApp tool and its tests rely on.
     """
     body = await request.json() if await request.body() else {}
     date = str(body.get("date") or _tz.today_il().isoformat())[:10]
@@ -80,6 +102,23 @@ async def build_schedule(request: Request, caller: dict = Depends(app_auth.requi
         tasks = await task_store.fetch_task_rows(caller["key"], date, date)
 
     now = _tz.now_il().strftime("%H:%M") if date == _tz.today_il().isoformat() else None
+
+    if body.get("mode") == "plan":
+        sleep_time = day_schedule.hhmm(body.get("sleep_time")) or "22:00"
+        plan = day_planner.plan_day(tasks, wake_time=wake_time, sleep_time=sleep_time, now=now)
+        slots = {p["id"]: p["start"] for p in plan["placed"]}
+        planned = []
+        for i, task in enumerate(tasks):
+            tid = str(task.get("id") or f"#{i}")
+            if tid in slots:
+                task = dict(task, scheduled_time=slots[tid])
+                if "scheduledTime" in task or "durationMinutes" in task:
+                    task["scheduledTime"] = slots[tid]
+            planned.append(task)
+        return {"date": date, "wake_time": wake_time, "sleep_time": sleep_time,
+                "tasks": planned, **plan,
+                "summary": _plan_summary(plan, language), "source": "planner"}
+
     scheduled = day_schedule.build_day_schedule(
         tasks, wake_time=wake_time, now=now,
         important_only=bool(body.get("important_only")), today=date)
@@ -220,6 +259,49 @@ async def meeting_brief_route(request: Request, caller: dict = Depends(app_auth.
     return await meeting_brief.build(event, caller["key"], force=bool(body.get("force")))
 
 
+@router.post("/task/prep")
+async def task_prep_route(request: Request, caller: dict = Depends(app_auth.require_caller)):
+    """One task → what to prepare for it, from live search, every item cited.
+
+    Body: {task: {id?, text, category?, date?, time?, location?}, force?: bool}
+
+    Karaoke → songs to practise and where the lyrics are; a clinic → what to
+    bring and ask. Returns {ok: true, kind, headline_*, items_*, sources[]} or
+    {ok: false, reason} — "nothing_to_prepare" for laundry, and a different
+    reason for every way it could fail, so the app never shows an invented card.
+    """
+    body = await request.json() if await request.body() else {}
+    task = body.get("task")
+    if not isinstance(task, dict) or not (task.get("text") or "").strip():
+        return JSONResponse({"ok": False, "reason": "no_task"}, status_code=400)
+    return await task_prep.build(task, caller["key"], force=bool(body.get("force")))
+
+
+@router.post("/errands/along")
+async def errands_along_route(request: Request, caller: dict = Depends(app_auth.require_caller)):
+    """An errand with no place → places ON her planned route, open when she passes.
+
+    Body: {task: {text}, trips: [{polyline, leave, arrive, date, label?}]}
+
+    The trips are the journeys the phone already planned (their encoded
+    polylines and times) — no position trace, just the lines. Returns
+    {ok, query, minutes, candidates:[{name, address, lat, lng, pass_at,
+    off_route_m, open_when_passing, maps_url, trip}]} or {ok: false, reason}.
+    """
+    body = await request.json() if await request.body() else {}
+    task = body.get("task") or {}
+    trips = body.get("trips") or []
+    if not isinstance(task, dict) or not isinstance(trips, list):
+        return JSONResponse({"ok": False, "reason": "bad_request"}, status_code=400)
+    memory = ""
+    try:
+        import memory_recall
+        memory = (await memory_recall.block_for(caller["key"], task.get("text") or "")) or ""
+    except Exception as exc:  # noqa: BLE001 — works without memory
+        logger.info("errands_along: memory unavailable (%s)", exc)
+    return await errands_along.along(task.get("text") or "", trips[:3], memory=memory)
+
+
 @router.post("/geocode")
 async def geocode_route(request: Request, caller: dict = Depends(app_auth.require_caller)):
     """An address → coordinates, resolved with the SERVER's Maps key.
@@ -248,3 +330,114 @@ async def geocode_route(request: Request, caller: dict = Depends(app_auth.requir
         # plain "not found" is what tells it to.
         return {"ok": False, "reason": "not_found"}
     return {"ok": True, **hit}
+
+
+@router.post("/route/directions")
+async def route_directions(request: Request, caller: dict = Depends(app_auth.require_caller)):
+    """Google Directions, asked by the SERVER with the server's key.
+
+    Body: {
+      origin, destination,            # addresses, or "lat,lng"
+      date?: "YYYY-MM-DD",            # the day of the appointment
+      arrive_by?: "HH:MM",            # arrive at or before this
+      queries: [{mode, transit_mode?}, ...]   # up to 8, run concurrently
+    }
+    Returns {results: [{status, error_message, data, cached}, ...]} — Google's
+    own body per query, pruned but not parsed.
+
+    WHY. The key compiled into the APK is restricted to `com.lumi.app` plus a
+    SHA-1 fingerprint, which is right, and which Google enforces through the
+    `X-Android-Package` / `X-Android-Cert` headers that only the Maps SDK
+    sends. A plain fetch from React Native sends neither, so EVERY Directions
+    call from the phone came back REQUEST_DENIED — 107 of them in one day at a
+    99% error rate, while the card told her there was no train.
+
+    `/app/geocode` above moved Geocoding here for exactly this reason, in
+    exactly these words. Directions was left behind.
+
+    The response is deliberately Google's own shape: `src/utils/transitParse`
+    already parses and ranks it the way she asked, and a second parser here
+    would be a second thing to keep in step (see server/clashes.py, which has
+    to be parity-tested against its TypeScript twin for precisely that reason).
+
+    AUTH: Supabase bearer token, like every other /app route. Without it this
+    is an open Directions proxy billed to her account.
+    """
+    body = await request.json() if await request.body() else {}
+    origin = str(body.get("origin") or "").strip()
+    destination = str(body.get("destination") or "").strip()
+    if not origin or not destination:
+        return JSONResponse({"error": "origin and destination are required"}, status_code=400)
+
+    queries = body.get("queries")
+    if not isinstance(queries, list) or not queries:
+        queries = [{"mode": "transit"}]
+    if len(queries) > route_proxy.MAX_QUERIES:
+        return JSONResponse(
+            {"error": f"at most {route_proxy.MAX_QUERIES} queries per call"}, status_code=400)
+
+    # One caller, one allowance. A client stuck in a loop cannot spend her
+    # Maps quota, and the cache below means the honest case rarely gets near it.
+    try:
+        rate_limit.check(f"route:{caller['key']}", limit=60, window_s=60.0)
+    except rate_limit.RateLimited as exc:
+        return JSONResponse({"error": "rate limited"}, status_code=429,
+                            headers={"Retry-After": str(exc.retry_after)})
+
+    today = _tz.today_il().isoformat()
+    date_iso = str(body.get("date") or today)[:10]
+    arrive_by = str(body.get("arrive_by") or "").strip()
+    arrival_epoch = None
+    if arrive_by:
+        arrival_epoch = _tz.epoch_il(date_iso, arrive_by)
+        if arrival_epoch is None:
+            return JSONResponse(
+                {"error": f"could not read {date_iso} {arrive_by} as a time"}, status_code=400)
+
+    results = await route_proxy.directions_batch(
+        origin, destination, queries, arrival_epoch,
+        ttl=route_proxy.ttl_for(date_iso, today))
+    return {"results": results, "date": date_iso, "arrive_by": arrive_by or None}
+
+
+# Whisper's own ceiling is 25 MB; a spoken task is seconds, and two minutes of
+# AAC is about 2 MB. Anything near the cap is a stuck recorder, not a sentence.
+STT_MAX_BYTES = 10 * 1024 * 1024
+
+
+@router.post("/stt")
+async def speech_to_text(
+    file: UploadFile = File(...),
+    hint: str = Form(""),
+    caller: dict = Depends(app_auth.require_caller),
+):
+    """The app's microphone → text, through the SAME Whisper as WhatsApp.
+
+    Multipart: `file` (the recording — the app sends AAC/m4a) and optional
+    `hint`, a short vocabulary list (her places, the names on her upcoming
+    tasks) that biases Whisper's spelling of words it has never heard.
+
+    Returns {text} or {error, detail}:
+      no_speech           200 — nothing was said; ask again
+      stt_not_configured  503 — the server has no STT key; the app says so
+      provider_failed     502 — Groq refused or timed out; worth one retry
+    Never an empty 200 — "nobody spoke" and "we could not listen" are
+    different fixes (silent-state rule 1).
+    """
+    if not rate_limit.allow(f"stt:{caller['key']}", rate_limit.STT_LIMIT,
+                            rate_limit.STT_WINDOW_S):
+        logger.warning("stt rate limit hit for one account")
+        return JSONResponse({"error": "rate_limited", "detail": "too many recordings — wait a moment"},
+                            status_code=429,
+                            headers={"Retry-After": str(int(rate_limit.STT_WINDOW_S))})
+
+    audio = await file.read(STT_MAX_BYTES + 1)
+    if len(audio) > STT_MAX_BYTES:
+        return JSONResponse({"error": "too_large", "detail": "recording over 10 MB"}, status_code=413)
+
+    result = await stt.transcribe_detailed(
+        audio, file.content_type or "audio/mp4", prompt=hint)
+    if result.text:
+        return {"text": result.text}
+    status = {"no_speech": 200, "stt_not_configured": 503}.get(result.error or "", 502)
+    return JSONResponse({"error": result.error, "detail": result.detail}, status_code=status)

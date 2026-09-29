@@ -8,7 +8,9 @@
  * Run: npx tsx tests/run-transit-parse.ts
  */
 import assert from 'node:assert';
-import { parseTransitRoute, parseTransitAlternatives, rideCount, describePlanOption } from '../src/utils/transitParse';
+import {
+  parseTransitRoute, parseTransitAlternatives, rideCount, describePlanOption, lineLabel,
+} from '../src/utils/transitParse';
 
 const walk = (mins: number, instr = 'Walk') => ({
   travel_mode: 'WALKING',
@@ -144,3 +146,75 @@ assert.ok(describePlanOption(alts[0], true).includes('ישיר'), 'and says so i
 
 console.log('✅ transit parse: 45-min two-bus route reports 45 min across 5 legs');
 console.log('✅ alternatives: single bus 176 beats Google\'s first-listed 38+172');
+
+// ───────────────────────────────────────────────────────────────────────────
+// "גבעת עדה" — the station eighty kilometres past where she was going.
+//
+// Read off Koral's interview card the night before, and off the device log the
+// same night. The line name below is verbatim from Google Directions for the
+// train she was actually being sent on, Tel Aviv area → Herzliya. Israel
+// Railways publishes no `short_name` for rail, so `line.name` was taken, and
+// `line.name` for rail is the route's TWO TERMINI. She reads the end of the
+// string, sees a town in the north, and correctly concludes the app has sent
+// her somewhere else. Nothing was wrong with the route.
+const RAIL_LINE = 'אשקלון-אשקלון<->בנימינה-בנימינה גבעת עדה';
+
+assert.strictEqual(
+  lineLabel(undefined, RAIL_LINE, 'בנימינה גבעת עדה', 'train'), '',
+  'a two-terminus rail name is not printed as a line number — the headsign says the direction',
+);
+assert.strictEqual(
+  lineLabel(undefined, RAIL_LINE, undefined, 'train'), 'בנימינה גבעת עדה',
+  'with no headsign, the FAR terminus stands in for the direction — never both ends',
+);
+assert.ok(
+  !lineLabel(undefined, RAIL_LINE, undefined, 'train').includes('אשקלון'),
+  'the station she boards at is never presented as where the train goes',
+);
+// The duplicated station prefix Israel Railways uses ("בנימינה-בנימינה גבעת עדה")
+// reads as two separate places on a narrow card.
+assert.strictEqual(
+  lineLabel(undefined, 'א<->בנימינה-בנימינה גבעת עדה', undefined, 'train'), 'בנימינה גבעת עדה',
+);
+// Everything that was already right stays right.
+assert.strictEqual(lineLabel('567', RAIL_LINE, 'anywhere', 'bus'), '567', 'a bus keeps its number');
+assert.strictEqual(lineLabel(undefined, '567', undefined, 'bus'), '567', 'so does a named bus route');
+assert.strictEqual(
+  lineLabel(undefined, 'קו העמק', 'חיפה', 'train'), 'קו העמק',
+  'a rail name that is NOT two termini is passed through untouched — no guessing at prose',
+);
+assert.strictEqual(lineLabel(undefined, undefined, undefined, 'train'), '', 'nothing in, nothing out');
+
+// End to end, through the parser: the leg carries the direction and no longer
+// carries the line's far end as if it were hers.
+const railRoute = parseTransitRoute(
+  { routes: [{
+    legs: [{
+      duration: { value: 50 * 60 },
+      departure_time: { text: '13:21' },
+      arrival_time: { text: '13:58' },
+      steps: [{
+        travel_mode: 'TRANSIT',
+        duration: { value: 22 * 60 },
+        transit_details: {
+          line: { name: RAIL_LINE, vehicle: { type: 'HEAVY_RAIL' } },
+          headsign: 'בנימינה גבעת עדה',
+          departure_stop: { name: 'רחובות' },
+          arrival_stop: { name: 'הרצליה' },
+          departure_time: { text: '13:21' },
+          arrival_time: { text: '13:43' },
+        },
+      }],
+    }],
+  }] },
+  '14:30', '7 HaPnina Street, Raanana',
+)!;
+assert.strictEqual(railRoute.legs[0].type, 'train');
+assert.strictEqual(railRoute.legs[0].lineNumber, '', 'no two-terminus string on the leg');
+assert.strictEqual(railRoute.legs[0].headsign, 'בנימינה גבעת עדה', 'the direction is kept, once');
+assert.ok(
+  !describePlanOption(railRoute, true).includes('גבעת עדה'),
+  'and the one-line summary cannot print it either',
+);
+
+console.log('✅ rail line names: the route\'s two termini never reach her card as a destination');

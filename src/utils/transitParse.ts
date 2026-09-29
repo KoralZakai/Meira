@@ -35,6 +35,62 @@ export function legTypeOf(vehicle: string): 'bus' | 'train' | 'subway' {
 }
 
 /**
+ * What to print for "which vehicle is this".
+ *
+ * A bus gives `short_name` — "567" — which is exactly the thing she is looking
+ * for on the front of it. Israel Railways gives no `short_name` at all, so the
+ * fallback reached for `line.name`, and for rail that name is the LINE'S TWO
+ * TERMINI:
+ *
+ *   "אשקלון-אשקלון<->בנימינה-בנימינה גבעת עדה"
+ *
+ * which reached her interview card as "גבעת עדה" — a station eighty kilometres
+ * north of Ra'anana, on a trip to Ra'anana. Koral read it at midnight the night
+ * before and could not make it mean anything, which is correct: it does not
+ * describe her journey. It is the name of the rails she happens to be on, and
+ * she gets off in the middle.
+ *
+ * So a two-terminus name is never printed whole. What she needs is the
+ * DIRECTION — the thing written on the front of the train and on the platform
+ * board — and Google's word for that is `headsign`, which the leg already
+ * carries and the card already prints. When a headsign exists this returns
+ * nothing at all rather than saying the same thing twice; when there is none,
+ * the far terminus is that same information and is used instead.
+ *
+ * Anything that is not rail, and any rail name that is not two termini, is
+ * passed through untouched — this refuses to guess at prose it does not
+ * recognise (rule 8).
+ */
+const TERMINI_SEPARATOR = /<->|<=>|↔/;
+
+/** "בנימינה-בנימינה גבעת עדה" → "בנימינה גבעת עדה". Israel Railways prefixes a
+ *  station's short name to its full one; printing both reads as two places. */
+function collapseStationName(part: string): string {
+  const [head, ...rest] = part.split('-');
+  const tail = rest.join('-').trim();
+  const short = head.trim();
+  if (tail && short && tail.startsWith(short)) return tail;
+  return part.trim();
+}
+
+export function lineLabel(
+  shortName: string | undefined,
+  name: string | undefined,
+  headsign: string | undefined,
+  type: 'walk' | 'bus' | 'train' | 'subway',
+): string {
+  const short = (shortName || '').trim();
+  if (short) return short;
+  const full = (name || '').trim();
+  if (type !== 'train' && type !== 'subway') return full;
+  const parts = full.split(TERMINI_SEPARATOR);
+  if (parts.length < 2) return full;
+  // The headsign says the direction better, and the card prints it already.
+  if ((headsign || '').trim()) return '';
+  return collapseStationName(parts[parts.length - 1]);
+}
+
+/**
  * Parse one Directions transit response into a TransitPlan (null when no route).
  *
  * EVERY step becomes a leg. The old version kept a single walk step + a single
@@ -98,10 +154,18 @@ export function parseTransitRoute(
         durationMinutes: minutes,
         departureTime: dep,
         arrivalTime: arr,
-        lineNumber: td.line?.short_name || td.line?.name || '',
+        lineNumber: lineLabel(
+          td.line?.short_name, td.line?.name, td.headsign, legTypeOf(td.line?.vehicle?.type),
+        ),
         stopName: td.departure_stop?.name,
         stopLat: s.start_location?.lat,
         stopLng: s.start_location?.lng,
+        // The direction, which is how a platform is actually signed. Google
+        // gives no platform number in Israel; `headsign` is the real answer
+        // to "which of these two trains am I standing in front of".
+        headsign: td.headsign || undefined,
+        // Read where a provider offers it. Google does not, today.
+        platform: td.departure_stop?.platform_code || td.platform || undefined,
       });
       return;
     }
@@ -192,13 +256,21 @@ export function rideCount(plan: TransitPlan): number {
 }
 
 /** "🚌 176 · 32 min · one bus · arrive 16:06" — one line per option. */
+/** The vehicle she is actually on. 🚌 above a train is the app not listening. */
+const RIDE_ICON: Record<string, string> = {
+  train: '🚆', subway: '🚇', tram: '🚊', bus: '🚌',
+};
+
 export function describePlanOption(plan: TransitPlan, he: boolean): string {
   const rides = plan.legs.filter((l) => l.type !== 'walk');
   const lines = rides.map((l) => l.lineNumber).filter(Boolean).join(' + ');
   const changes = rides.length <= 1
     ? (he ? 'ישיר' : 'direct')
     : (he ? `${rides.length - 1} החלפות` : `${rides.length - 1} changes`);
+  // The FIRST vehicle, which is the one she is deciding whether to run for.
+  // This was hard-coded to 🚌 and drew a bus over her train every time.
+  const icon = RIDE_ICON[rides[0]?.type ?? ''] ?? '🚌';
   return he
-    ? `🚌 ${lines || 'נסיעה'} · ${changes} · ${plan.totalDurationMinutes} דק' · יציאה ${plan.leaveHomeAt}, הגעה ${plan.arriveAt}`
-    : `🚌 ${lines || 'ride'} · ${changes} · ${plan.totalDurationMinutes} min · leave ${plan.leaveHomeAt}, arrive ${plan.arriveAt}`;
+    ? `${icon} ${lines || 'נסיעה'} · ${changes} · ${plan.totalDurationMinutes} דק' · יציאה ${plan.leaveHomeAt}, הגעה ${plan.arriveAt}`
+    : `${icon} ${lines || 'ride'} · ${changes} · ${plan.totalDurationMinutes} min · leave ${plan.leaveHomeAt}, arrive ${plan.arriveAt}`;
 }

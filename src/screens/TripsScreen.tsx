@@ -60,6 +60,8 @@ import { missedPlannedDeparture } from '../utils/liveRoutePlan';
 import { asLocation } from '../utils/buildTravelChain';
 import { openLocationInMaps } from '../services/NearbyTaskReminderService';
 import RouteMap from '../components/RouteMap';
+import TransitOptionsList from '../components/TransitOptionsList';
+import { rankDepartureOptions } from '../utils/departureOptions';
 
 /** What the last leg is called, for the line under the trip. */
 const MODE_WORD_HE: Record<string, string> = {
@@ -147,6 +149,9 @@ export default function TripsScreen({ navigation }: any) {
   // Per-trip line from the last "haven't left" recompute, and which one is busy.
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [replanningId, setReplanningId] = useState<string | null>(null);
+  // The departure being saved right now, so its own row can say so rather
+  // than the whole card going quiet for the second the write takes.
+  const [pickingDeparture, setPickingDeparture] = useState<string | null>(null);
   // Timetable options per trip, fetched only when she asks for them.
   const [alternatives, setAlternatives] = useState<Record<string, TransitPlan[]>>({});
   // Which trip has the "train + …" picker open, and the combination found.
@@ -400,17 +405,22 @@ export default function TripsScreen({ navigation }: any) {
   const pickWay = async (task: Task, plan: TransitPlan) => {
     const loc = asLocation(task);
     if (!loc) return;
-    const nextLocation: TaskLocation = {
-      ...loc,
-      transitPlan: plan,
-      leaveHomeBy: plan.leaveHomeAt,
-      travelMinutes: plan.totalDurationMinutes,
-    } as TaskLocation;
-    await updateTaskFields(task.id, { location: nextLocation } as any);
-    await armTaskAlerts({ ...task, location: nextLocation } as Task, language).catch(() => {});
-    setAlternatives((prev) => ({ ...prev, [task.id]: [] }));
-    setNotes((prev) => ({ ...prev, [task.id]: describePlanOption(plan, he) }));
-    await load();
+    setPickingDeparture(plan.leaveHomeAt);
+    try {
+      const nextLocation: TaskLocation = {
+        ...loc,
+        transitPlan: plan,
+        leaveHomeBy: plan.leaveHomeAt,
+        travelMinutes: plan.totalDurationMinutes,
+      } as TaskLocation;
+      await updateTaskFields(task.id, { location: nextLocation } as any);
+      await armTaskAlerts({ ...task, location: nextLocation } as Task, language).catch(() => {});
+      setAlternatives((prev) => ({ ...prev, [task.id]: [] }));
+      setNotes((prev) => ({ ...prev, [task.id]: describePlanOption(plan, he) }));
+      await load();
+    } finally {
+      setPickingDeparture(null);
+    }
   };
 
   /**
@@ -746,21 +756,43 @@ export default function TripsScreen({ navigation }: any) {
                       </TouchableOpacity>
                     </View>
 
-                    {/* Each option is tappable, and tapping SAVES it: route,
-                        leave time, wake time and alerts all move with it. */}
-                    {(alternatives[task.id] || []).map((option, i) => (
-                      <TouchableOpacity
-                        key={`${option.leaveHomeAt}-${i}`}
-                        style={styles.wayOption}
-                        onPress={() => pickWay(task, option)}
-                        activeOpacity={0.85}
-                      >
-                        <Text style={styles.wayOptionText} numberOfLines={2}>
-                          {describePlanOption(option, he)}
-                        </Text>
-                        <Text style={styles.wayPick}>{he ? 'בחרי' : 'Use'}</Text>
-                      </TouchableOpacity>
-                    ))}
+                    {/* The list that already solves this.
+                        "on the trips screens, the alternatives are not clear
+                        at all! i don't see the text clearly, i don't know what
+                        to choose." — and TransitOptionsList's own docstring
+                        describes precisely this failure, because it was
+                        written to replace it: one long sentence sharing a row
+                        with a "Use" label, so in Hebrew, at any real line
+                        name, the two clock times were the first thing pushed
+                        off screen. The times are the entire point of the list.
+                        This screen simply never adopted the fix.
+
+                        max 5, not the 3 the panic screen uses: Trips is where
+                        she browses, and she asked to SEE the options. */}
+                    {(alternatives[task.id] || []).length > 0 && (
+                      <View style={styles.waysList}>
+                        <TransitOptionsList
+                          options={rankDepartureOptions(alternatives[task.id], {
+                            appointment: task.fixedTime || task.scheduledTime,
+                            currentDeparture: loc.leaveHomeBy,
+                            max: 5,
+                          })}
+                          language={language}
+                          onPick={(p) => pickWay(task, p)}
+                          pickingDeparture={pickingDeparture}
+                          originNote={he ? 'מהבית' : 'from home'}
+                          // The DAY, not just the clock. Passing `now` as
+                          // undefined was not enough: the list falls back to
+                          // the real time, so at 23:35 every one of tomorrow's
+                          // departures read as already gone and the list came
+                          // back empty. It needs the date to know that.
+                          date={task.date}
+                          now={task.date === today
+                            ? new Date().toTimeString().slice(0, 5)
+                            : undefined}
+                        />
+                      </View>
+                    )}
 
                     <View style={styles.actions}>
                       <TouchableOpacity
@@ -841,6 +873,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10, paddingVertical: 8, backgroundColor: BRAND.creamCard,
   },
   wayOptionText: { flex: 1, fontFamily: FONTS.body, fontSize: 12, color: BRAND.warmInk },
+  waysList: { marginTop: 8 },
   wayPick: {
     fontFamily: FONTS.bodyHeavy, fontSize: 11, color: BRAND.timeChipText,
     backgroundColor: BRAND.timeChipBg, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4,

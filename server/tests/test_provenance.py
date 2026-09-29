@@ -25,7 +25,7 @@ class SessionTests(unittest.TestCase):
         self._p.stop()
         self._tmp.cleanup()
 
-    PHONE = "972500000000"
+    PHONE = "972500000009"
 
     def test_messages_close_together_are_one_session(self):
         a = pv.stamp(self.PHONE, "whatsapp", "יוגה ב-11", now=1000.0)
@@ -45,8 +45,8 @@ class SessionTests(unittest.TestCase):
         self.assertNotEqual(a["sessionId"], b["sessionId"])
 
     def test_the_same_person_written_two_ways_is_one_session(self):
-        a = pv.stamp("0500000000", "whatsapp", "x", now=1000.0)
-        b = pv.stamp("972500000000", "whatsapp", "y", now=1060.0)
+        a = pv.stamp("0500000009", "whatsapp", "x", now=1000.0)
+        b = pv.stamp("972500000009", "whatsapp", "y", now=1060.0)
         self.assertEqual(a["sessionId"], b["sessionId"])
 
     def test_channels_do_not_share_a_session(self):

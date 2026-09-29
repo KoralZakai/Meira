@@ -14,6 +14,9 @@
  * device.
  */
 import { TransitPlan } from '../types/index';
+import { checkPlan, planProblemLine } from './planIntegrity';
+
+export type Superlative = 'fastest' | 'earliest' | 'latest';
 
 export interface DepartureOption {
   plan: TransitPlan;
@@ -26,7 +29,26 @@ export interface DepartureOption {
   boardAt?: string;
   /** Where she boards it. */
   boardStop?: string;
-  /** HH:MM Google says she is there. */
+  /**
+   * The direction the first vehicle is signed with — "לכיוון בנימינה".
+   *
+   * "for trains it's important מספר רציף. if we check many optionals of train
+   * they are from other platform." Google returns no platform number for any
+   * Israeli station, and inventing one would be the worst possible lie to tell
+   * someone running for a train. The direction IS how the boards are
+   * organised, and it is what tells two trains leaving the same station
+   * minutes apart apart.
+   */
+  boardDirection?: string;
+  /** A literal platform, if a provider ever gives one. Google does not. */
+  boardPlatform?: string;
+  /**
+   * HH:MM the FIRST VEHICLE reaches its stop — the other half of the pair
+   * printed on a railway timetable. On a direct journey this is the number she
+   * can look up; on a connection it is where the first leg ends.
+   */
+  rideArriveAt?: string;
+  /** HH:MM Google says she is there, door to door. */
   arriveAt: string;
   durationMinutes: number;
   /** Vehicles, in order — walking legs are not rides. */
@@ -34,6 +56,23 @@ export interface DepartureOption {
   rides: number;
   /** Minutes of slack against the appointment: positive early, negative late. */
   slackMinutes?: number;
+  /**
+   * What this option is BEST at, among the ones she is actually shown.
+   *
+   * Koral, 2026-09-23, after checking rail.co.il herself and finding all three
+   * of her trains missing from the card: "you need to score the options and
+   * offer the best way: fastest route, Earliest arrival, latest departure".
+   *
+   * They are her three words and they pull against each other on purpose — the
+   * fastest train is rarely the latest departure. Naming which axis each option
+   * wins on is the honest way to present that: the ranker still picks one, and
+   * the list says what she gives up by taking a different one. Empty for an
+   * option that wins nothing, which is itself information.
+   *
+   * Computed over the SLICE she sees. Calling something "the fastest" when a
+   * faster one was cut off the bottom of the list would be a lie by omission.
+   */
+  superlatives: Superlative[];
   /** True when this option does not make the appointment at all. */
   late: boolean;
   /** The option currently stored on the task. */
@@ -89,6 +128,19 @@ export function rankDepartureOptions(
 
   for (const plan of plans) {
     if (!plan || !isHHMM(plan.leaveHomeAt)) continue;
+    // A journey that disagrees with itself is not an option.
+    //
+    // "you wrote: 13:51-14:13 ?!?! this it really bad!" — a TransitPlan carries
+    // four separate accounts of one trip (leaveHomeAt, arriveAt,
+    // totalDurationMinutes, and the legs), each read from a different field of
+    // Google's response, and nothing had ever compared them. Whatever came
+    // back was rendered. utils/planIntegrity compares them, and rule 2 says
+    // the drop may be silent to the list but never to the log.
+    const verdict = checkPlan(plan);
+    if (!verdict.ok) {
+      console.warn(planProblemLine(plan, verdict));
+      continue;
+    }
     // A plan with no arrival is a plan you cannot judge; the point of the list
     // is showing BOTH ends of the trip.
     if (!isHHMM(plan.arriveAt)) continue;
@@ -128,11 +180,16 @@ export function rankDepartureOptions(
       walkMinutes: walk,
       boardAt: board,
       boardStop: plan.firstBusStop || undefined,
+      rideArriveAt: rides[0]?.arrivalTime && isHHMM(rides[0].arrivalTime)
+        ? rides[0].arrivalTime : undefined,
+      boardDirection: rides[0]?.headsign || undefined,
+      boardPlatform: rides[0]?.platform || undefined,
       arriveAt: plan.arriveAt,
       durationMinutes: plan.totalDurationMinutes,
       lines: rides.map((l) => l.lineNumber).filter(Boolean) as string[],
       rides: rides.length,
       slackMinutes,
+      superlatives: [],
       late: slackMinutes !== undefined && slackMinutes < 0,
       current: Boolean(currentDeparture && currentDeparture === plan.leaveHomeAt),
     });
@@ -144,7 +201,52 @@ export function rankDepartureOptions(
   const order = (o: DepartureOption) =>
     toMinutes(o.boardAt ?? o.plan.leaveHomeAt) * 100 + toMinutes(o.arriveAt) / 100;
   out.sort((a, b) => order(a) - order(b));
-  return out.slice(0, max);
+  return awardSuperlatives(out.slice(0, max));
+}
+
+/**
+ * Mark which option wins on each of her three axes.
+ *
+ * Only among options that actually make the appointment: "the earliest
+ * arrival" is meaningless praise if the option also gets her there after the
+ * interview started, and a late option carrying a gold star is how a list
+ * stops being trusted. When nothing arrives in time every option is judged,
+ * because then the axes are all she has left to choose on.
+ *
+ * Ties are shared rather than broken arbitrarily — two trains arriving at the
+ * same minute are both the earliest, and picking one to crown would be
+ * inventing a difference.
+ */
+export function awardSuperlatives(options: DepartureOption[]): DepartureOption[] {
+  const inTime = options.filter((o) => !o.late);
+  const pool = inTime.length ? inTime : options;
+  if (!pool.length) return options;
+  const best = {
+    fastest: Math.min(...pool.map((o) => o.durationMinutes)),
+    earliest: Math.min(...pool.map((o) => toMinutes(o.arriveAt))),
+    latest: Math.max(...pool.map((o) => toMinutes(o.boardAt ?? o.departAt))),
+  };
+  for (const o of options) {
+    const won: Superlative[] = [];
+    if (pool.includes(o)) {
+      if (o.durationMinutes === best.fastest) won.push('fastest');
+      if (toMinutes(o.arriveAt) === best.earliest) won.push('earliest');
+      if (toMinutes(o.boardAt ?? o.departAt) === best.latest) won.push('latest');
+    }
+    o.superlatives = won;
+  }
+  return options;
+}
+
+/** "הכי מהירה · יציאה הכי מאוחרת" — her own three words, on the row. */
+const SUPERLATIVE_TEXT: Record<Superlative, { he: string; en: string }> = {
+  fastest: { he: 'הכי מהירה', en: 'fastest' },
+  earliest: { he: 'מגיעה הכי מוקדם', en: 'earliest arrival' },
+  latest: { he: 'יוצאת הכי מאוחר', en: 'latest departure' },
+};
+
+export function superlativeLabel(option: DepartureOption, he: boolean): string {
+  return option.superlatives.map((k) => SUPERLATIVE_TEXT[k][he ? 'he' : 'en']).join(' · ');
 }
 
 /** "direct" / "1 change" — the thing that decides between two similar times. */
@@ -178,7 +280,14 @@ export function vehicleLabel(option: DepartureOption, he: boolean): string {
         : icon === 'bike' ? '🚴' : '🚶';
   const lines = option.lines.join(' + ');
   if (lines) return `${emoji} ${lines}`;
-  return `${emoji} ${he ? 'נסיעה' : 'ride'}`;
+  // No line number is normal for rail here — Israel Railways gives none, and
+  // its `line.name` is the route's two termini, which is not what she is
+  // boarding (see transitParse.lineLabel). Name the VEHICLE rather than fall
+  // back to "a ride": the direction is on the line below.
+  const noun = icon === 'train' || icon === 'subway'
+    ? (he ? 'רכבת' : 'train')
+    : icon === 'bus' ? (he ? 'אוטובוס' : 'bus') : (he ? 'נסיעה' : 'ride');
+  return `${emoji} ${noun}`;
 }
 
 /**
@@ -198,10 +307,42 @@ export function boardLabel(option: DepartureOption, he: boolean): string {
     ? (he ? `🚶 ${option.walkMinutes} דק׳ לתחנה` : `🚶 ${option.walkMinutes} min to the stop`)
     : '';
   const stop = option.boardStop ? ` ${option.boardStop}` : '';
+  // THE VEHICLE'S OWN PAIR OF TIMES, not the door-to-door pair above it.
+  //
+  // Koral checked rail.co.il and read back "13:15-14:01, 13:20-13:58,
+  // 13:30-14:16", then could not find any of them on the card — because the
+  // card's headline times are door to door and include the walk at each end,
+  // so her 13:15→14:01 train appears there as 13:03→14:02. All three WERE
+  // being offered. She had no way to tell, because the one pair of numbers she
+  // could verify against was the one pair we never printed.
+  const ridePair = option.rideArriveAt
+    ? `${option.boardAt}–${option.rideArriveAt}`
+    : `${option.boardAt}`;
   const board = he
-    ? `יוצאת ${option.boardAt}${stop ? ` מ${option.boardStop}` : ''}`
-    : `departs ${option.boardAt}${stop ? ` from ${option.boardStop}` : ''}`;
-  return walk ? `${walk} · ${board}` : board;
+    ? `${ridePair}${stop ? ` מ${option.boardStop}` : ''}`
+    : `${ridePair}${stop ? ` from ${option.boardStop}` : ''}`;
+  const where = platformLabel(option, he);
+  const line = walk ? `${walk} · ${board}` : board;
+  return where ? `${line} · ${where}` : line;
+}
+
+/**
+ * Which platform — or the only honest substitute for it.
+ *
+ * A real platform number when a provider gives one (none does here yet), and
+ * otherwise the direction, which is what the departure boards are signed with
+ * and the thing that separates two trains out of the same station. Empty when
+ * we have neither: a blank is a fact, and a guessed platform number is how
+ * someone ends up on the wrong train.
+ */
+export function platformLabel(option: DepartureOption, he: boolean): string {
+  if (option.boardPlatform) {
+    return he ? `רציף ${option.boardPlatform}` : `platform ${option.boardPlatform}`;
+  }
+  if (option.boardDirection) {
+    return he ? `לכיוון ${option.boardDirection}` : `towards ${option.boardDirection}`;
+  }
+  return '';
 }
 
 /**

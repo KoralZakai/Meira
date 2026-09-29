@@ -28,7 +28,7 @@ CEVA = {
     "date": "2026-09-17", "time": "11:00",
     "organizer": "scheduler@comeet-notifications.com",
     "description": ("Position:C++ Software Engineer – AI & DSP Processor Simulators\n"
-                    "Interview with Marika Klubakov (Core Simulator and Debugger Team Leader)"),
+                    "Interview with Dana Levi (Core Simulator and Debugger Team Leader)"),
 }
 
 
@@ -36,7 +36,7 @@ class SubjectTests(unittest.TestCase):
     def test_pulls_company_person_and_role_from_an_ats_invite(self):
         s = meeting_brief.subjects(CEVA)
         self.assertEqual(s["company"], "Ceva")
-        self.assertEqual(s["person"], "Marika Klubakov")
+        self.assertEqual(s["person"], "Dana Levi")
         self.assertIn("Core Simulator", s["person_role"])
         self.assertIn("C++", s["role_title"])
 

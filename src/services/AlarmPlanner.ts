@@ -108,7 +108,14 @@ export async function armDueAlarms(tasks: Task[]): Promise<ArmResult> {
   }
 
   if (armed.length || stillWaiting.length) {
-    console.log(`[AlarmPlanner] armed ${armed.length}, waiting ${stillWaiting.length}`);
+    // warn, not log. A release build drops console.log entirely, so on
+    // 2026-09-17 — checking on her phone whether a 09:58 alarm had actually
+    // been armed — there was nothing in logcat either way. The one line that
+    // could have answered it was the one that never survives a release.
+    console.warn(
+      `[AlarmPlanner] armed ${armed.length}, waiting ${stillWaiting.length}`
+      + (armed.length ? ` — next ${armed.map((t) => `${t.date} ${t.text.slice(0, 20)}`).join(', ')}` : ''),
+    );
   }
   return { armed, stillWaiting };
 }

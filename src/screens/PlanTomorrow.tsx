@@ -29,6 +29,7 @@ import {
   planTomorrowFromGoogle, acceptGmailSuggestion, dismissGmailSuggestion,
   ensureTravelChain, analyzeWeek, WeekDayPlan,
 } from '../services/GoogleSync';
+import { nextGap, describeGap } from '../utils/taskRequirements';
 import { hydrateCustomCategories } from '../constants/categories';
 import { Task, AppLanguage, GapSuggestion, TaskLocation, UserProfile } from '../types';
 import { wakeChipFor, wakeInputs } from '../utils/alarmPlan';
@@ -216,6 +217,23 @@ export default function PlanTomorrow({ navigation }: PlanTomorrowProps) {
                 onHold={() => navigation.navigate('TaskDetail', { taskId: item.id })}
                 showVerificationBadge={false}
                 language={language}
+                // What it still needs before it can be done. This screen
+                // exists to get her ready for tomorrow, and "ready" was the
+                // one thing it could not say: an interview with a route and
+                // one without drew the same card. Suggestions are exempt —
+                // they are not on the day yet, so nothing is owed for them.
+                gapLabel={section.title.includes('💡')
+                  ? undefined
+                  : (() => {
+                    const gap = nextGap(item, {
+                      today: getTodayString(),
+                      // The prep blocks live on the days BEFORE the
+                      // interview, so tomorrow's list alone cannot tell
+                      // whether study exists. Both lists together can.
+                      existing: [...tomorrowTasks, ...suggestedTasks],
+                    });
+                    return gap ? describeGap(gap, language) : undefined;
+                  })()}
               />
             </View>
           )}

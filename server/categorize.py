@@ -62,12 +62,23 @@ _RULES: list[tuple[str, list[str], str, int]] = [
                      "פגישה", "פגישות", "מפגש", "תור"],                           "have_to",    45),
     ("call",        ["call", "phone", "ring", "voicemail",
                      "להתקשר", "שיחה", "טלפון", "לחזור אליו", "לחזור אליה"],      "need_to",    15),
+    # Job hunting is work. "לשלוח קורות חיים ל-Checkpoint" matched nothing, so
+    # the model's guess won — and on 22.9 that guess was 💪 Gym, which also
+    # made the app demand a location for sending an email.
     ("work",        ["work", "office", "project", "deploy", "shift", "client",
-                     "עבודה", "משרד", "פרויקט", "משמרת", "לקוח"],                 "have_to",    60),
+                     "cv", "resume", "job application", "reserve duty", "miluim",
+                     "עבודה", "לעבוד", "משרד", "פרויקט", "משמרת", "לקוח",
+                     "קורות חיים", "קו״ח", "מועמדות", "מילואים"],               "have_to",    60),
     ("leisure",     ["movie", "cinema", "relax", "party", "dinner out", "beach",
-                     "סרט", "קולנוע", "מסיבה", "לנוח", "חוף", "בילוי"],           "nice_to_do", 60),
+                     "karaoke", "concert",
+                     "סרט", "קולנוע", "מסיבה", "לנוח", "חוף", "בילוי",
+                     "קריוקי", "הופעה"],                                         "nice_to_do", 60),
     ("aspiration",  ["goal", "dream", "someday", "שאיפה", "חלום", "מתישהו"],      "nice_to_do", 30),
 ]
+
+# Preparing FOR an interview is study. Mirrored in src/utils/categorize.ts.
+_STUDY_FOR = re.compile(r"ללמוד|להתכונן|הכנה ל|לתרגל|study|prepare|prep for|practice",
+                        re.IGNORECASE)
 
 # Words that override the rule's priority — urgency the user stated out loud.
 _MUST = re.compile(r"urgent|asap|critical|must|deadline|due today"
@@ -86,13 +97,19 @@ def infer(text: str, learned: Optional[dict] = None) -> dict:
     when nothing in the table fired, which is the caller's signal that the
     model's own guess is worth keeping.
     """
-    lowered = (text or "").lower()
+    # A phone keyboard types קו"ח with an ASCII quote; the table spells it ״.
+    lowered = (text or "").lower().replace('"', "״")
     category, priority, duration, matched = "general", "need_to", 30, False
 
     for cat, keywords, pri, dur in _RULES:
         if any(kw in lowered for kw in keywords):
             category, priority, duration, matched = cat, pri, dur, True
             break
+    if category == "interview" and _STUDY_FOR.search(lowered):
+        # "ללמוד לראיון עבודה" is studying, not the interview: it was filed as
+        # 🎯 interview / must / 90 min, and that also made it spawn prep blocks
+        # of its own. Same label as the prep blocks interviewPrep creates.
+        category, priority, duration = "course", "have_to", 60
 
     if _MUST.search(lowered):
         priority = "must"

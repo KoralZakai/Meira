@@ -45,6 +45,7 @@
 import {
   Task, TaskCategory, TaskPriority, Goal, TaskLocation, AppLanguage, UserProfile,
 } from '../types/index';
+import { isPrepBlock } from '../utils/interviewPrep';
 import { DayGap } from '../utils/findGaps';
 import { addMinutes, getTodayString, timeToMinutes } from '../utils/timeUtils';
 import { normalizeProfile } from '../utils/profileShape';
@@ -322,10 +323,16 @@ export function rankGapIdeas(ctx: GapContext, limit = 4): GapIdea[] {
   // is what her timeline showed on 2026-09-17, twice over, two hours each.
   // Two prep blocks for one interview is not more preparation, it is a day
   // with four hours missing from it.
-  const alreadyPrepping = (t: Task) => ALREADY_PREP_RE.test(t.text);
+  // "Already prepping" is two different things now. This file's own blocks
+  // announce themselves with "Prepare for: " — and `utils/interviewPrep`
+  // creates its own, automatically, for every interview on the calendar, with
+  // titles of its own ("Final review for Ceva"). Offering a third one in a gap
+  // is not more preparation; it is two systems booking the same afternoon, and
+  // the two titles are similar enough that the store then folds them together.
+  const alreadyPrepping = (t: Task) => ALREADY_PREP_RE.test(t.text) || isPrepBlock(t);
   const hasPrepFor = (t: Task) => [...todayTasks, ...tomorrowTasks].some(
     (other) => other.status !== 'complete' && alreadyPrepping(other)
-      && other.text.includes(t.text),
+      && (other.text.includes(t.text) || (other as { prepForTaskId?: string }).prepForTaskId === t.id),
   );
   const upcomingBig = [
     ...todayTasks.filter((t) => {

@@ -24,7 +24,9 @@
 import { Task } from '../types/index';
 import { addMinutes, sortTasksByPriorityAndTime, getTodayString, getTomorrowString } from './timeUtils';
 
-const STUDY_KEYWORDS = /study|learn|code|coding|course|lecture|homework|קורס|ללמוד|שיעור|תרגיל/i;
+// Building software is a focus block too ("לסדר את כל הבאגים" got 30 min).
+// Same words as server/day_schedule.py STUDY_KEYWORDS.
+const STUDY_KEYWORDS = /study|learn|code|coding|course|lecture|homework|קורס|ללמוד|שיעור|תרגיל|debug|bugs|לפתח|פיתוח|לתכנת|באגים/i;
 const STUDY_CATEGORIES = new Set(['course', 'class', 'aspiration']);
 const IMPORTANT_KEYWORDS = /interview|exam|test|deadline|ראיון|מבחן|בחינה|דדליין|הגשה/i;
 

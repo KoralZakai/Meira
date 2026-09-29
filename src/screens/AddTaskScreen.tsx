@@ -26,6 +26,7 @@ import { inferTaskDetails, parseSpeechToTasksWithExpansion, ParsedTask } from '.
 import { parseTimeExpression } from '../utils/timeParser';
 import { getSettings } from '../services/TaskStorage';
 import type { PendingTaskAction } from '../hooks/useTasks';
+import { untilAfterFromChange } from '../utils/timeRange';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'AddTask'>;
 
@@ -237,18 +238,30 @@ export default function AddTaskScreen({ navigation, route }: Props) {
         }
       }
 
-      // Try LLM parsing first; fall back to manual if nothing comes back
-      let created: unknown[] = [];
+      // Try LLM parsing first; fall back to manual if nothing comes back.
+      //
+      // `initialDate` goes in as the DEFAULT day. It used not to, so the +
+      // pressed on tomorrow's timeline parsed a sentence with no date in it
+      // and wrote the task onto today: created, saved, synced — and absent
+      // from the day she was looking at. From the outside that is a button
+      // that does nothing.
+      let created: Array<{ date?: string }> = [];
       if (!fromTime && tasksState.addMorningTasksFromSpeech) {
-        created = await tasksState.addMorningTasksFromSpeech(trimmed);
+        created = await tasksState.addMorningTasksFromSpeech(trimmed, initialDate) as Array<{ date?: string }>;
       }
       if ((!created || created.length === 0) && tasksState.addManualTask) {
         await tasksState.addManualTask(trimmed, { ...(extra ?? {}), date: initialDate });
+        created = [{ date: initialDate }];
       }
-      // Say where it landed. Adding to the wrong day is silent until she goes
-      // looking for the task and cannot find it — by which point the mistake
-      // is hers to hunt rather than ours to state.
-      ToastAndroid?.show?.(`Added to ${dayBanner(initialDate)}`, ToastAndroid.SHORT);
+      // Say where it landed — the day it ACTUALLY landed on, read back from
+      // what was created, not the day this screen assumed. A sentence may
+      // carry its own date ("ביום ראשון"), and a toast naming the wrong day is
+      // worse than none: it ends the search before it starts.
+      const landed = Array.from(new Set(created.map((t) => t?.date).filter(Boolean) as string[]));
+      ToastAndroid?.show?.(
+        `Added to ${(landed.length ? landed : [initialDate]).map(dayBanner).join(', ')}`,
+        ToastAndroid.SHORT,
+      );
       navigation.goBack();
     } catch (e) {
       console.log('[AddTask] error:', e);
@@ -270,11 +283,8 @@ export default function AddTaskScreen({ navigation, route }: Props) {
     const hhmm = `${pad(selected.getHours())}:${pad(selected.getMinutes())}`;
     if (field === 'from') {
       setFromTime(hhmm);
-      // Auto-advance until by same duration gap if it existed
-      if (untilTime && fromTime) {
-        const gap = minutesBetween(fromTime, untilTime);
-        setUntilTime(addMinutesToTime(hhmm, gap));
-      }
+      // Until follows: same length as before, or an hour when there was none.
+      setUntilTime(untilAfterFromChange(fromTime, untilTime, hhmm, 60));
     } else {
       setUntilTime(hhmm);
     }

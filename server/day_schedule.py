@@ -43,7 +43,11 @@ from datetime import date as _date, timedelta as _timedelta
 # Study/learning work is the one category where the honest estimate is always
 # wrong in the same direction, so it gets a floor rather than a guess.
 STUDY_KEYWORDS = re.compile(
-    r"study|learn|code|coding|course|lecture|homework|קורס|ללמוד|שיעור|תרגיל",
+    r"study|learn|code|coding|course|lecture|homework|קורס|ללמוד|שיעור|תרגיל"
+    # Building software is a focus block too: "לעבוד על מאירה, לסדר את כל
+    # הבאגים ולבדוק את הטסטים" got 30 minutes on 2026-09-28. Mirrored in
+    # src/utils/buildDaySchedule.ts.
+    r"|debug|bugs|לפתח|פיתוח|לתכנת|באגים",
     re.IGNORECASE)
 STUDY_CATEGORIES = {"course", "class", "aspiration"}
 IMPORTANT_KEYWORDS = re.compile(

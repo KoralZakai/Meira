@@ -1,142 +1,187 @@
-# Meira — מאירה
+# Meira — the assistant that gets you out of the door on time
 
-A proactive personal assistant for people whose day falls apart in the gap
-between *knowing* what is next and *leaving on time for it*.
+**Meira is a local-aware personal secretary.** Tell her your day by voice, in
+Hebrew or English, the way you would tell a person. She turns it into a
+planned day: every appointment has a route, a leave time and a wake-up alarm.
+She watches the clock and your location, and when reality drifts she re-plans
+before you have to ask. When you are still at home and the bus has gone, she
+already has the next one.
 
-Meira does not ask you to plan. It reads the day you already have — calendar,
-mail, the things you told it in Hebrew over WhatsApp — works out when you must
-actually wake up and walk out of the door, and says so before it is too late:
+> Built for the **Nebius × NVIDIA Global AI Hackathon**, Personal AI track.
+> Runs on **NVIDIA Nemotron 3** (Nano, Super, Ultra) through **Nebius Token
+> Factory**. Live research by **Tavily**.
 
-> 🚪 לצאת עכשיו! אוטובוס 251 מארלוזורוב בעוד 12 דקות
-
-Built for the **Nebius × NVIDIA Global AI Hackathon** — *Personal AI* track.
-
----
-
-## What makes it different
-
-**It plans backwards from arrival, not forwards from now.** An interview at
-11:00 in Binyamina is not an 11:00 event. It is a 07:35 alarm, a 08:28 door,
-and a specific bus. Meira computes that chain and sets the alarm.
-
-**The cheap decisions are not the model's job.** Sorting a day, resolving
-"מחר", labelling a category, picking a check-in intent — all arithmetic and
-lookups, all in code, all ~1 ms and free. The model is used for language:
-open-ended conversation, tool selection, and deciding which words in a Hebrew
-sentence are the tasks.
-
-**Hebrew is first-class, not translated.** The category table, the date parser
-and the closure-detection markers are all written Hebrew-first, because an
-English-only fallback regex silently finds nothing in the country this runs in.
-
-**It says what it does not know.** Every researched claim cites the source it
-came from, and a claim that cannot cite one is dropped rather than softened.
+**▶ Demo video:** _link added at submission_ · **📱 Android APK:** [latest release](https://github.com/KoralZakai/Meira/releases/latest)
 
 ---
 
-## How Nebius and NVIDIA are used
+## The problem
 
-Every model call goes to **Nebius Token Factory**, and the models are
-**NVIDIA Nemotron 3**, in three tiers chosen per call by
-[`server/model_router.py`](server/model_router.py):
+Calendars know **what** and **when**. They do not know **how you get there**,
+so the gap is filled by you: when do I have to leave? Which bus? Do I have time
+between the dentist and the interview across town? I'm still at home and it's
+13:40, so what now? For anyone whose day happens in more than one place
+(students, field workers, parents, people with ADHD), that mental bookkeeping
+is where the day falls apart.
+
+## What Meira does
+
+| | |
+|---|---|
+| 🎙️ **Talk, don't type** | Speak your day freely ("interview at Rafael on the 8th, reserve duty in Ramla the same day, call Dotan from two to half past two"). A Nemotron *understand* step reads the whole conversation for intent and turns it into actions: add, change or ask. Code executes them, so dates, hours and ranges are exact. |
+| 🗺️ **Every appointment is a journey** | Route, leave-home time and a wake-up alarm, by her preferred mode, with a fallback ladder (train → bus) when the preference has no answer. The alarm is visible without a tap. |
+| ⏱️ **Live re-planning** | Still at home after the leave time, or late for something that has already started? Meira re-plans from where you are: *"leave now, arrive 21:47 (17 min late)"*, with the next departures one tap away. You get one notification, not a buzz every five minutes. |
+| ⚠️ **Clash detection** | Two places at once is a clash; a phone call during a meeting is not. She says which one to keep or move. |
+| 🔎 **Meira prepares you** *(new, Tavily)* | For what's next: an interview gets the company, the person and three questions. Karaoke gets songs to practise, with lyrics. A clinic visit gets what to bring and what to ask. Every line cites a live source, and an uncited line is dropped. |
+| 🛣️ **Errands on your way** *(new)* | "Fix the coffee machine", "laundry", "pick up a parcel": Meira searches along the routes she already planned, checks each place's opening hours **for the minute you pass it**, and recommends one ("open when you pass at 17:40, ★4.6, 120 m off route"). One tap puts the stop into your day. |
+| 📬 **Calendar and email aware** | Google Calendar and Gmail are read **on the phone** with your own token. Invitations become tasks, with the venue read from the invite body when the location field is empty. |
+| 💬 **Two doors, one brain** | The Android app and WhatsApp share one agent and one encrypted memory, keyed by a verified identity. |
+
+## How it uses Nemotron on Nebius Token Factory
+
+All model calls run **server-side**; the app ships no model key. Each call is
+routed to the smallest Nemotron tier that can do the job
+(`server/model_router.py`):
 
 | Tier | Model | Used for |
 |---|---|---|
-| small | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` | task extraction, profile extraction, mail→events, judging |
-| medium | `nvidia/nemotron-3-super-120b-a12b` | the conversational agent and tool selection |
-| large | `nvidia/Nemotron-3-Ultra-550b-a55b` | long-context research |
+| **Nano** | `nvidia/Nemotron-3-Nano-30B-A3B` | Extraction, intent, *"is this worth preparing?"*, *"is this an errand, and what do I search for on a map?"* |
+| **Super** | `nvidia/nemotron-3-super-120b-a12b` | The ReAct agent and its 21 tools, *understand* (conversation → actions), cited briefs and prep |
+| **Ultra** | `nvidia/Nemotron-3-Ultra-550b-a55b` | Long-context turns |
 
-Two things move a call off its default tier:
+- **Budget-aware degradation.** Past 80% of the monthly budget the Ultra tier
+  is withdrawn; past 100% everything runs on Nano. Meira degrades, she never
+  goes dark.
+- **Cache-shaped prompts.** The ~18 KB system prompt is byte-identical across
+  users and turns, so the provider's prefix cache applies. Per-user context is
+  appended after it (`server/tests/test_prompt_cache.py` guards this).
+- **Semantic memory.** Qwen3-Embedding on Nebius retrieves the handful of
+  facts relevant to a message instead of sending the whole memory each turn.
 
-- **Tokens.** A prompt that will not fit a tier's context window escalates,
-  because the alternative is a truncated prompt and a confidently wrong answer.
-- **Money.** `LLM_MONTHLY_BUDGET_USD` sets a ceiling. Past 80% of it the large
-  tier is withdrawn; past 100% everything runs on nano. Meira degrades — it
-  never goes dark. A personal assistant that stops answering at month-end is
-  worse than one that gets terser.
+**What is deliberately *not* the model's job:** sorting a day, resolving
+"tomorrow", time arithmetic, opening-hours math, clash geometry. Those are
+deterministic code with tests. The model is used for language and judgement.
+That is what makes the times trustworthy.
 
-`GET /diag/models` asks Nebius which models it actually serves and names any
-tier pointing at one it does not.
+## How it uses Tavily
 
-## How Tavily is used
-
-Live search is a **runtime dependency**, not a development convenience
-([`server/tavily_search.py`](server/tavily_search.py)):
-
-- **`web_search`** — the agent's window on the world. Tavily first, Google
-  Custom Search as the fallback; `recent_days=N` switches to news for "what
-  changed since we spoke".
-- **`read_page`** — one URL, cleaned full text. A snippet tells you a job
-  exists; it does not prepare you for the interview.
-- **`place_live_info`** — opening hours, and whether a place still exists.
-  Google Places returns a perfectly good address for a clinic that shut last
-  year.
-- **Meeting briefs** — `POST /app/meeting/brief` researches the next meeting on
-  the calendar: who the company is, who the person is, three questions worth
-  asking. Every bullet cites a source; uncited bullets are dropped.
-- **Agents that watch** — a scheduled personal agent can carry a `watch` query
-  it re-runs live, so a "news agent" has actual news.
-
----
+| Where | What Tavily provides |
+|---|---|
+| `server/task_prep.py` | Live sources for preparing any task: songs and lyrics, what to bring, tips. Nemotron plans the queries (about the task, never about you), then composes items that must each cite a source. |
+| `server/meeting_brief.py` | The company, its recent news and the person you're meeting, as a cited pre-meeting brief. |
+| `server/lumi_agent.py` → `web_search` | The agent's live web tool (Tavily first, Google Custom Search as fallback). |
+| `server/agent_runner.py` | Personal agents that run on a schedule and search the web. |
 
 ## Architecture
 
+```mermaid
+flowchart LR
+  subgraph Phone["Android app (Expo / React Native)"]
+    UI[Today · Tasks · Trips] --> LS[LumiServer.ts]
+    GC[Google Calendar + Gmail<br/>read on-device] --> LS
+    GPS[Location + live re-plan] --> LS
+  end
+  WA[WhatsApp] --> AT
+  LS -->|JWT-verified| API
+  subgraph Server["FastAPI on Fly.io"]
+    API[/app/* routes/] --> AT[agent_turn]
+    AT --> RL[ReAct loop · 21 tools]
+    API --> TP[task_prep] & EA[errands_along] & MB[meeting_brief] & RP[route_proxy]
+    RL & TP & EA & MB --> MR[model_router]
+  end
+  MR --> NTF[(Nebius Token Factory<br/>Nemotron 3 Nano · Super · Ultra)]
+  TP & MB & RL --> TAV[(Tavily)]
+  RP & EA --> GM[(Google Directions · Places)]
+  Server --> SB[(Supabase · encrypted stores)]
 ```
-WhatsApp webhook ─┐
-                  ├─► agent_turn.run_turn ─► lumi_agent.handle_whatsapp_message
-POST /agent/chat ─┘         (server/react_loop.py — a hand-written ReAct loop;
-                             LangGraph cost 35 MB on a 256 MB machine)
-```
 
-- **App** — Expo / React Native / TypeScript, Android. A thin client: it sends
-  what the user said and renders what comes back. There is no model call on the
-  phone and no model key in the APK.
-- **Server** — FastAPI on Fly.io. Holds every credential, runs the ReAct loop
-  and its 23 tools.
-- **State** — Supabase, plus encrypted JSON on a Fly volume (AES-256-GCM,
-  `server/secure_store.py`).
+- **Server** (`server/`): FastAPI and a custom ReAct loop (`react_loop.py`),
+  about 21 MB on a 256 MB machine. WhatsApp and `/agent/chat` share
+  `agent_turn.run_turn`.
+- **App** (`src/`): Expo 56 / React Native 0.85, Android. A thin client: it
+  sends what you said and renders what came back. There is no model on the
+  phone.
+- **Routes** go through the server (`route_proxy.py`), so the phone's
+  restricted Maps key never has to sign a raw request.
 
-## Privacy — what never reaches the server
+## Privacy and security
 
-Gmail and Google Calendar are read **on the phone**, with the user's own Google
-token. The app posts only what it found: a handful of subjects, or one calendar
-event. The mailbox and the calendar never leave the device, and no Google
-credential exists server-side.
+- **No secret is stored on disk.** Every server credential is an encrypted Fly
+  secret. The APK carries only values that are public by design (the Supabase
+  anon key behind row-level security, a package-restricted Maps key).
+- **Verified identity.** Every `/app/*` call carries a Supabase JWT, and the
+  server derives the storage key from the *verified* identity, never from a
+  value the client chose.
+- **Encrypted at rest.** Memory, profile, places, briefs and prep are
+  encrypted per user (`secure_store.py`).
+- **Account deletion covers every store.** A test fails if a new store is added
+  without being deleted.
+- **Your mailbox never leaves the phone.** Gmail and Calendar are read
+  on-device; at most one event, or four subject lines, is sent for a brief.
+- **Searches carry no personal data.** Tavily and Places queries describe the
+  task ("karaoke songs", "laundromat"), never you.
 
-Personal data at rest is encrypted. `DELETE /account` walks every store and
-reports, per store, what it deleted — and a structural test fails the build if
-a newly added store escapes it.
+## Engineering principles (from real bugs)
 
----
+This project keeps a written rule set, [`CLAUDE.md`](CLAUDE.md) → *The
+silent-state rule*, distilled from bugs where the app *knew* something and did
+not *say* it:
 
-## Running it
+- An empty result never means two things: "no events" and "Google refused us"
+  are different values.
+- A check that cannot fail is not a check.
+- A plan that exists is visible without a tap.
+- Every capability names its trigger (app open, backgrounded, closed, or
+  user-initiated).
 
-```bash
-npm install
-npm run build:env          # pulls the client env from EAS
-npx expo start --clear
-```
+**Tests:** 85 app test runners (`tests/run-*.ts`) and 66 server test modules
+(`server/tests/`, ~800 tests), including personas, language parity
+(Hebrew = English behaviour) and real calendar invitations.
+
+## Run it yourself
+
+### Server
 
 ```bash
 cd server
-python -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/python -m pytest tests -q        # 600+ tests, no network
-.venv/bin/uvicorn main:app --port 8000
+python3.12 -m venv .venv && . .venv/bin/activate
+pip install -r requirements.txt
+export NEBIUS_API_KEY=...            # Nebius Token Factory
+export TAVILY_API_KEY=...            # optional: prep, briefs, web search
+export GOOGLE_MAPS_API_KEY=...       # Directions + Places (server-restricted)
+export SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=...
+uvicorn main:app --port 8000
+python -m pytest -q                  # the server suite
 ```
 
-Server credentials are environment variables and are never written to disk —
-see the `ENV VARIABLES` section of [CLAUDE.md](CLAUDE.md) for the full list.
-You will need your own `NEBIUS_API_KEY`, `TAVILY_API_KEY`, Supabase project and
-Google Maps key; `google-services.json` is not included — supply your own
-Firebase config to build the Android app.
+Model tiers are configurable: `NEBIUS_MODEL_SMALL`, `NEBIUS_MODEL_MEDIUM`,
+`NEBIUS_MODEL_LARGE`. `GET /diag/models` checks that Token Factory serves each
+one.
 
-## Notes for readers
+### App (Android)
 
-- The code says "Lumi" throughout. That was the project's name until it was
-  renamed Meira; the rename has not been swept through the source, and doing it
-  for appearance's sake would be a large diff across working code.
-- Phone numbers and email addresses in tests and docs are placeholders.
+```bash
+npm install
+cp .env.example .env.local           # EXPO_PUBLIC_SERVER_URL, Supabase URL + anon key, Maps key
+# add your own google-services.json (Firebase) for push notifications
+npx expo run:android                 # or: npm run android:local (local EAS build)
+npx tsx tests/run-live-route.ts      # any test runner
+```
+
+Or install the prebuilt APK from [Releases](https://github.com/KoralZakai/Meira/releases/latest).
+
+## Repository layout
+
+```
+server/            FastAPI, ReAct agent, model router, task_prep, errands_along,
+                   meeting_brief, route_proxy, encrypted stores, tests/
+src/screens/       Today (the planned day), Tasks, Trips, Leave-now, chat, voice
+src/services/      LumiServer (the one server surface), live routing, calendar sync
+src/utils/         Deterministic planning: clashes, day window, time ranges
+tests/             App test runners (npx tsx tests/run-*.ts)
+docs/              Privacy policy, security notes
+```
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+[MIT](LICENSE) © 2026 Koral Zakai

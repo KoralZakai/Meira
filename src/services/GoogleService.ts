@@ -17,9 +17,19 @@ import * as SecureStore from 'expo-secure-store';
 import * as WebBrowser from 'expo-web-browser';
 import { UserProfile, CalendarEvent, TransitPlan, TransportType } from '../types/index';
 import * as RoutePlanner from './RoutePlanner';
-import { extractMeetingUrl } from '../utils/meetingLink';
+import { meetingUrlFromEvent } from '../utils/meetingLink';
+import { addressFromDescription } from '../utils/eventAddress';
 
 WebBrowser.maybeCompleteAuthSession();
+
+/**
+ * A day's calendar events, or the reason there are none.
+ * `error` is undefined ONLY when Google actually answered.
+ */
+export interface CalendarFetchResult {
+  events: CalendarEvent[];
+  error?: string;
+}
 
 const GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/gmail.readonly',
@@ -117,10 +127,57 @@ export const GoogleService = {
   },
 
   /** True when a Google token is stored (i.e. the user connected their account). */
+  /**
+   * Is there a Google token on this device?
+   *
+   * NOTE WHAT THIS DOES NOT ANSWER. A revoked grant, a refresh token Google
+   * has retired, and a grant made before the calendar scope existed all leave
+   * the blob in SecureStore untouched, so all three answer `true` here. This
+   * is "have we ever connected", not "does it work" — use
+   * `verifyGoogleConnection` for the second question, which is the one every
+   * user-facing check is actually asking.
+   */
   async isGoogleConnected(): Promise<boolean> {
     if (await loadStoredTokens()) return true;
     // Legacy single-token storage from older builds.
     return Boolean(await SecureStore.getItemAsync('google_access_token'));
+  },
+
+  /**
+   * Does the stored grant still WORK — asked by using it.
+   *
+   * "✓ Google connected" was a check that could not fail: it read a blob out
+   * of SecureStore and said yes. Koral verified the connection herself, was
+   * told it was fine, and the interview still never arrived, because the token
+   * was present and the request was being refused. A check that cannot fail is
+   * worse than no check — it ends the investigation. (CLAUDE.md, rule 3.)
+   *
+   * One real request against the calendar, today's window, smallest possible
+   * page. Returns the fix in words, not a boolean.
+   */
+  async verifyGoogleConnection(): Promise<{
+    ok: boolean;
+    /** Google's own words when it refused, else null. */
+    error: string | null;
+    /** Which fix this is: reconnect here, or change the Cloud project. */
+    fix: 'none' | 'reconnect' | 'enable_api' | 'connect';
+  }> {
+    if (!(await this.isGoogleConnected())) {
+      return { ok: false, error: 'not_connected', fix: 'connect' };
+    }
+    const today = new Date();
+    const key = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const { error } = await this.fetchCalendarEvents(key);
+    if (!error) return { ok: true, error: null, fix: 'none' };
+    // 401/403 split: an expired or revoked grant is fixed on this phone, a
+    // disabled API is fixed in the Google Cloud console and nowhere else.
+    // Telling her to "sign in again" for the second one wastes her evening.
+    const disabled = /has not been used in project|is disabled|accessNotConfigured/i.test(error);
+    return {
+      ok: false,
+      error,
+      fix: disabled ? 'enable_api' : 'reconnect',
+    };
   },
 
   async getToken(): Promise<string | null> {
@@ -150,17 +207,25 @@ export const GoogleService = {
   },
 
   /**
-   * One local day's events.
+   * One local day's events, WITH the reason when there are none.
    *
    * The window used to be sent as `${date}T00:00:00Z` – `T23:59:59Z`, i.e. UTC.
    * In Israel (UTC+3) that asks Google for 03:00 today → 02:59 TOMORROW, so
    * anything before 03:00 was never returned and late-night events landed on
    * the wrong day. The bounds are built from local midnight now and carry a
    * real offset, so "today" means the user's today.
+   *
+   * Why this returns a REASON and not just an array: every way this call can
+   * fail — no token, a refresh token Google has revoked, a grant made before
+   * the calendar scope existed, the Calendar API not enabled on the project —
+   * used to arrive at the caller as `[]`, which is indistinguishable from an
+   * empty calendar. Koral had an interview sitting on her calendar and the
+   * Profile screen answered "0 events found", because a 403 and a free
+   * Wednesday looked identical all the way up the stack. They do not any more.
    */
-  async getCalendarEventsToday(date: string): Promise<CalendarEvent[]> {
+  async fetchCalendarEvents(date: string): Promise<CalendarFetchResult> {
     const token = await this.getToken();
-    if (!token) return [];
+    if (!token) return { events: [], error: 'not_connected' };
     try {
       const [y, m, d] = date.split('-').map(Number);
       const dayStart = new Date(y, m - 1, d, 0, 0, 0, 0);
@@ -174,7 +239,20 @@ export const GoogleService = {
       });
       const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?${params}`;
       const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
+
+      // An HTTP error carries Google's own explanation. Keep it: "Request had
+      // insufficient authentication scopes" and "Calendar API has not been
+      // used in project … before or it is disabled" are two completely
+      // different fixes, and she cannot act on either without being told which.
+      if (!res.ok || !data) {
+        const detail = String(
+          data?.error?.message || data?.error_description || data?.error || 'no response body',
+        ).slice(0, 200);
+        const reason = `http_${res.status}: ${detail}`;
+        console.warn('[Google] calendar fetch failed', date, reason);
+        return { events: [], error: reason };
+      }
 
       // Google returns an offset-bearing RFC-3339 string ("…T11:00:00+03:00"),
       // and slicing characters 11–16 off it only worked while that offset
@@ -186,7 +264,7 @@ export const GoogleService = {
         return `${String(parsed.getHours()).padStart(2, '0')}:${String(parsed.getMinutes()).padStart(2, '0')}`;
       };
 
-      return (data.items || [])
+      const events: CalendarEvent[] = (data.items || [])
         // An all-day event has `start.date` and no `start.dateTime`. It has no
         // clock time at all, so giving it 00:00 would invent a midnight
         // appointment — and then a wake alarm for it. Skipped.
@@ -196,7 +274,12 @@ export const GoogleService = {
           title: item.summary,
           startTime: hhmm(item.start?.dateTime) || '00:00',
           endTime: hhmm(item.end?.dateTime) || '00:00',
-          location: item.location,
+          // An invite written by a recruiting system (Comeet, Spark Hire,
+          // Greenhouse…) leaves `location` EMPTY and puts the address in the
+          // body, usually beside a Google Maps link. Reading it back out is
+          // the difference between an interview that has a route, a leave-home
+          // time and an alarm, and one that is only a name on a timeline.
+          location: item.location || addressFromDescription(item.description),
           description: item.description,
           // Google exposes the video link in three different places depending
           // on how the event was created; none of them were being read, so the
@@ -206,13 +289,23 @@ export const GoogleService = {
             item.hangoutLink
             || (item.conferenceData?.entryPoints || [])
               .find((e: any) => e.entryPointType === 'video')?.uri
-            || extractMeetingUrl(item.location, item.description),
+            || meetingUrlFromEvent(item.location, item.description),
           attendees: (item.attendees || [])
             .map((a: any) => a.email)
             .filter(Boolean),
           organizer: item.organizer?.email,
         }));
-    } catch { return []; }
+      return { events };
+    } catch (e) {
+      const reason = `network: ${String((e as Error)?.message || e).slice(0, 200)}`;
+      console.warn('[Google] calendar fetch threw', date, reason);
+      return { events: [], error: reason };
+    }
+  },
+
+  /** One local day's events, array only — for callers that cannot act on a failure. */
+  async getCalendarEventsToday(date: string): Promise<CalendarEvent[]> {
+    return (await this.fetchCalendarEvents(date)).events;
   },
 
   /**
@@ -395,6 +488,13 @@ export const GoogleService = {
   getTransitPlans: RoutePlanner.getTransitPlans,
   getTransitAlternatives: RoutePlanner.getTransitAlternatives,
   getPlanForMode: RoutePlanner.getPlanForMode,
+  // The same two lookups, carrying WHY they came back empty. New code uses
+  // these: the array/null pair above cannot tell a refused API key from a
+  // destination with no bus, and the app spent 107 rejected Directions calls
+  // telling her the second thing while the first was happening.
+  transitAlternatives: RoutePlanner.transitAlternatives,
+  transitAlternativesMulti: RoutePlanner.transitAlternativesMulti,
+  planForMode: RoutePlanner.planForMode,
   getDepartNowPlan: RoutePlanner.getDepartNowPlan,
   getDepartNowOptions: RoutePlanner.getDepartNowOptions,
   compareModes: RoutePlanner.compareModes,

@@ -29,7 +29,11 @@ import { timeToMinutes, addMinutes } from './timeUtils';
  * blocks and the proportion was invisible exactly when it should be doing its
  * work. 0.8 differentiates from an hour up: 1h = 48px, 2h = 96px, 9h = 432px.
  */
-export const PX_PER_MIN = 0.8;
+// 1.6 (Koral, 28.9: "longer blocks get a bigger frame"). At 0.8 a card's own
+// content (~100px: title, place, chips) was taller than an hour AND than two,
+// so both rendered the same size and the proportion never showed. At 1.6 an
+// hour is 96px — about one card — and two hours is visibly twice that.
+export const PX_PER_MIN = 1.6;
 /**
  * No block shorter than this, whatever its duration.
  *
@@ -42,9 +46,36 @@ export const PX_PER_MIN = 0.8;
  * 30 min visibly shorter than 1 h needs a floor of ~24 px, which cannot hold a
  * title. The scale earns its keep from an hour upwards.
  */
-export const MIN_BLOCK_PX = 44;
+export const MIN_BLOCK_PX = 64;
+/**
+ * Past the first hour, a block grows by this much per minute — a quarter of
+ * the first hour's rate.
+ *
+ * Koral, 28.9, on the phone: "empty blocks need smaller space; do not create a
+ * big frame with no content inside." At a flat 1.6 px/min a 3-hour block was
+ * 288px around ~100px of card: two thirds of a screen of nothing. Longer still
+ * reads longer (her earlier ask), but the extra is a hint, not a canvas:
+ * 1h 96 · 2h 123 · 3h 150 · 4h+ 170.
+ */
+export const EXTRA_PX_PER_MIN = 0.45;
+/** No block taller than this, whatever its duration. */
+export const MAX_BLOCK_PX = 170;
 /** Gap between a block and the next thing under it. */
 export const BLOCK_GAP_PX = 10;
+
+/**
+ * A block's floor. The CONTENT decides the height above it.
+ *
+ * Koral, 28.9, twice in an hour: "empty blocks need smaller space" — "shrink
+ * the blocks if there is empty space with no content". Any duration-driven
+ * height leaves a frame bigger than what is in it, so duration no longer adds
+ * height at all. How long a thing lasts is on the rail beside it — start at
+ * the top, end at the bottom — and the card is exactly as tall as its words.
+ * (pxPerMin/max are kept in the signature so a caller could opt back in.)
+ */
+export function blockHeight(_minutes: number, _pxPerMin = PX_PER_MIN, minPx = MIN_BLOCK_PX, _maxPx = MAX_BLOCK_PX): number {
+  return minPx;
+}
 
 export interface TimelineBlock {
   task: Task;
@@ -71,10 +102,11 @@ const startOf = (t: Task): string | undefined => t.fixedTime || t.scheduledTime 
 /** Blocks in clock order, positioned, with overlaps resolved into columns. */
 export function layoutDay(
   tasks: Task[],
-  opts: { now?: string; pxPerMin?: number; minBlockPx?: number } = {},
+  opts: { now?: string; pxPerMin?: number; minBlockPx?: number; maxBlockPx?: number } = {},
 ): TimelineBlock[] {
   const pxPerMin = opts.pxPerMin ?? PX_PER_MIN;
   const minBlockPx = opts.minBlockPx ?? MIN_BLOCK_PX;
+  const maxBlockPx = opts.maxBlockPx ?? MAX_BLOCK_PX;
   const now = opts.now ? timeToMinutes(opts.now) : undefined;
 
   const timed = tasks
@@ -122,7 +154,7 @@ export function layoutDay(
       out.push({
         ...b,
         columns,
-        height: Math.max(minBlockPx, Math.round(minutes * pxPerMin)),
+        height: blockHeight(minutes, pxPerMin, minBlockPx, maxBlockPx),
         past: now !== undefined && now >= b.endMin,
         active,
         progress: active ? (now! - b.startMin) / minutes : 0,

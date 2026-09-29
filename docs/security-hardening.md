@@ -140,7 +140,7 @@ Full regression: `python3 -m pytest tests/ -q` → **389 passed** · `npm run te
 
 ```bash
 # 1. Unauthenticated → 401
-curl -s -o /dev/null -w '%{http_code}\n' https://lumi-whatsapp.fly.dev/tasks/972500000000
+curl -s -o /dev/null -w '%{http_code}\n' https://lumi-whatsapp.fly.dev/tasks/972500000009
 # expect 401
 
 # 2. Cross-user with a REAL token → 403

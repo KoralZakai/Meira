@@ -237,9 +237,57 @@ function emitSpeaking(speaking: boolean) {
   });
 }
 
+const HEBREW_LETTER = /[א-ת]/;
+
+/**
+ * Which voice should read THIS text.
+ *
+ * It used to follow the UI language, so a Hebrew reply in an English UI was
+ * read letter-by-letter by the English voice (and the reverse). The text knows
+ * its own language: any Hebrew letter means the Hebrew voice, which also copes
+ * with the English names inside a Hebrew sentence ("Meira", "Ceva").
+ */
+export function voiceLanguageFor(text: string, fallback: AppLanguage): 'he-IL' | 'en-US' {
+  if (HEBREW_LETTER.test(text)) return 'he-IL';
+  if (/[A-Za-z]/.test(text)) return 'en-US';
+  return fallback === 'he' ? 'he-IL' : 'en-US';
+}
+
+let hebrewVoice: { status: 'available' | 'missing' | 'unknown'; id?: string } | null = null;
+
+/**
+ * Is a Hebrew voice installed on this phone?
+ *
+ * Android reports Hebrew under both codes — `he` and the legacy `iw` that
+ * Java's Locale still produces — so both are accepted. 'missing' is worth
+ * telling her about: without it every Hebrew reply is silence or gibberish,
+ * and the fix (Settings → Text-to-speech → install Hebrew) is hers to make.
+ * 'unknown' means the engine would not list its voices; we try anyway.
+ */
+export async function hebrewVoiceStatus(): Promise<'available' | 'missing' | 'unknown'> {
+  if (hebrewVoice) return hebrewVoice.status;
+  try {
+    const voices = await Speech.getAvailableVoicesAsync();
+    if (!voices?.length) {
+      hebrewVoice = { status: 'unknown' };
+    } else {
+      const he = voices.find((v) => /^(he|iw)([-_]|$)/i.test(v.language || ''));
+      hebrewVoice = he ? { status: 'available', id: he.identifier } : { status: 'missing' };
+      if (!he) console.warn('[TTS] no Hebrew voice installed — Hebrew replies cannot be spoken');
+    }
+  } catch (error) {
+    console.warn('[TTS] could not list voices', error);
+    hebrewVoice = { status: 'unknown' };
+  }
+  return hebrewVoice.status;
+}
+
 /** TTS via expo-speech — SHORT texts only per CLAUDE.md speech rules. */
 export async function speak(text: string, language: AppLanguage): Promise<void> {
-  const voice = language === 'he' ? 'he-IL' : 'en-US';
+  const voice = voiceLanguageFor(text, language);
+  const voiceId = voice === 'he-IL' && (await hebrewVoiceStatus()) === 'available'
+    ? hebrewVoice?.id
+    : undefined;
 
   return new Promise<void>((resolve) => {
     const done = () => {
@@ -250,6 +298,7 @@ export async function speak(text: string, language: AppLanguage): Promise<void> 
       emitSpeaking(true);
       Speech.speak(text, {
         language: voice,
+        ...(voiceId ? { voice: voiceId } : {}),
         pitch: 1,
         rate: 0.95,
         onDone: done,

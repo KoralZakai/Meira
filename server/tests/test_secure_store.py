@@ -195,12 +195,12 @@ class LegacyPlaintextMigrationTests(unittest.TestCase):
             json.dump(data, f)
 
     def test_a_plaintext_store_is_recognised(self):
-        self._write_plaintext({"500000000": {"@fitness": {"address": "Yigal Alon 94"}}})
+        self._write_plaintext({"500000009": {"@fitness": {"address": "Yigal Alon 94"}}})
         with mock.patch.object(secure_store, "_load_key", lambda: b"k" * 32):
             self.assertTrue(secure_store.is_plaintext(self.path))
 
     def test_migration_encrypts_it_and_keeps_every_value(self):
-        original = {"500000000": {"@fitness": {"address": "Yigal Alon 94", "lat": 32.07}}}
+        original = {"500000009": {"@fitness": {"address": "Yigal Alon 94", "lat": 32.07}}}
         self._write_plaintext(original)
         with mock.patch.object(secure_store, "_load_key", lambda: b"k" * 32):
             moved = secure_store.migrate_plaintext([self.path])
@@ -209,12 +209,12 @@ class LegacyPlaintextMigrationTests(unittest.TestCase):
             self.assertEqual(secure_store.read_json(self.path, None), original)
 
     def test_the_address_is_no_longer_readable_on_disk(self):
-        self._write_plaintext({"500000000": {"@fitness": {"address": "Yigal Alon 94"}}})
+        self._write_plaintext({"500000009": {"@fitness": {"address": "Yigal Alon 94"}}})
         with mock.patch.object(secure_store, "_load_key", lambda: b"k" * 32):
             secure_store.migrate_plaintext([self.path])
         raw = open(self.path, "r", encoding="utf-8").read()
         self.assertNotIn("Yigal Alon", raw)
-        self.assertNotIn("500000000", raw)
+        self.assertNotIn("500000009", raw)
 
     def test_it_also_tightens_the_permissions(self):
         """The 0644 files are legacy `open(path, 'w')` writes. write_json goes

@@ -58,6 +58,8 @@ import {
 import { getTodayString } from './src/utils/timeUtils';
 import { Task } from './src/types';
 import { registerPush } from './src/services/PushService';
+import { startCalendarAutoSync } from './src/services/CalendarAutoSync';
+import { installRouteGateway } from './src/services/RouteGateway';
 import {
   speakMorningBriefingNow,
   maybeSpeakWakeBriefing,
@@ -131,6 +133,14 @@ async function armTomorrowAlarms(): Promise<void> {
   const upcoming = (await getAllTasks()).filter((t) => t.date >= today && t.date <= soonKey);
   await armDueAlarms(upcoming);
 }
+
+// Routes are asked for through the SERVER, whose Maps key is unrestricted.
+// The key inside the APK is restricted to com.lumi.app + SHA-1, which Google
+// enforces through headers only the Maps SDK sends — so every Directions call
+// made directly from the phone was REQUEST_DENIED (107 of them in one day).
+// At module scope on purpose: a headless background sync never mounts a
+// component, and a hook would install this too late for it.
+installRouteGateway();
 
 function LumiAppShell() {
   // Focused route name — the floating Lumi hides where a bigger Lumi lives.
@@ -220,6 +230,18 @@ function LumiAppShell() {
       if (settings.whatsAppPhone) {
         registerPush(settings.whatsAppPhone).catch(() => {});
       }
+
+      // Google Calendar, from here on, keeps itself up to date.
+      //
+      // It used to be pulled by ONE thing: TodaySchedule coming into focus,
+      // once per half hour. An event booked while the app was shut therefore
+      // reached Lumi whenever she next happened to open that one tab — and
+      // since the route, the leave time and the wake alarm are all built from
+      // the import, none of them existed until then either. Owned by the root
+      // now, not by a screen: which tab she is on must not decide whether her
+      // calendar is read. Foreground on every return, plus a background job
+      // while the app is closed.
+      startCalendarAutoSync(settings.language);
     };
 
     setup();

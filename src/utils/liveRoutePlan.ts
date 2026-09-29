@@ -8,16 +8,43 @@ import { Task, TransitPlan } from '../types/index';
 import { LatLng } from './positionDrift';
 import { addrOf, timeOf } from './dayPlanning';
 
-/** The trip a live re-plan would act on: the next pending, located, timed task. */
+/**
+ * How long after a thing has STARTED it is still worth routing her to it.
+ * Half of it, at most an hour: late for karaoke is still karaoke; an all-day
+ * conference she skipped must not nag "leave now" until the evening.
+ */
+export function stillWorthGoingUntil(startMin: number, durationMinutes: number): number {
+  return startMin + Math.min(60, Math.max(10, Math.round(durationMinutes / 2)));
+}
+
+/**
+ * The trip a live re-plan would act on: the next pending, located, timed task
+ * — including one that has already STARTED while she has not arrived.
+ *
+ * Koral, 28.9: "if I have a task now and I haven't left for it — my location
+ * didn't change — update the leave time and the arrival accordingly." This
+ * used to take only tasks at or after the current minute, so the moment the
+ * appointment began she dropped out of every re-plan: the screen kept a leave
+ * time from the past and an arrival that was no longer true. A started trip
+ * stays the trip (earliest first, so it wins) until she arrives, ticks it, or
+ * it is too far gone to be worth going (stillWorthGoingUntil).
+ */
 export function nextTrip(tasks: Task[], now: Date = new Date()): Task | undefined {
-  const hhmm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  const toMin = (hhmm: string) => {
+    const [h, m] = hhmm.split(':').map(Number);
+    return h * 60 + m;
+  };
   return tasks
-    .filter((t) => t.status === 'pending'
+    .filter((t) => {
       // Already there. Re-planning a journey to a place she is standing in is
       // the bug this guard exists for: it produced a live travel card to a
       // building she was inside, and pushed the NEXT trip's origin back home.
-      && !t.verifiedArrival
-      && addrOf(t) && timeOf(t) && timeOf(t)! >= hhmm)
+      if (t.status !== 'pending' || t.verifiedArrival || !addrOf(t) || !timeOf(t)) return false;
+      const start = toMin(timeOf(t)!);
+      if (!Number.isFinite(start)) return false;
+      return start >= nowMin || nowMin < stillWorthGoingUntil(start, t.durationMinutes || 30);
+    })
     .sort((a, b) => (timeOf(a)! < timeOf(b)! ? -1 : 1))[0];
 }
 

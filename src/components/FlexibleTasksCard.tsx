@@ -32,9 +32,31 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 
 const COLLAPSED_COUNT = 3;
 
+/**
+ * "since 20 Sep" — CLAUDE.md rule 4.
+ *
+ * A standing to-do carries the day it was WRITTEN DOWN, and it now appears on
+ * today as well, because today is when she can act on it. Drawing it with no
+ * date makes it read as something she wrote this morning; drawing the date is
+ * the difference between a list she trusts and one she has to interrogate.
+ */
+function waitingSince(dateISO: string, he: boolean): string {
+  const [y, m, d] = dateISO.split('-').map(Number);
+  if (!y || !m || !d) return '';
+  const label = new Date(y, m - 1, d).toLocaleDateString(he ? 'he-IL' : 'en-GB',
+    { day: 'numeric', month: 'short' });
+  return he ? `מאז ${label}` : `since ${label}`;
+}
+
 interface Props {
   tasks: Task[];
   language: AppLanguage;
+  /**
+   * The day this card is drawn under. Any task dated earlier is standing work
+   * carried forward, and says so. Omitted = every row is assumed to be today's,
+   * which is what the card used to assume of everything.
+   */
+  dayKey?: string;
   onToggle: (task: Task) => void | Promise<void>;
   onTap?: (task: Task) => void;
   /** Long-press → the editor, same as a timeline block. */
@@ -42,7 +64,7 @@ interface Props {
 }
 
 export default function FlexibleTasksCard({
-  tasks, language, onToggle, onTap, onHold,
+  tasks, language, dayKey, onToggle, onTap, onHold,
 }: Props) {
   const [expanded, setExpanded] = useState(false);
   const he = language === 'he';
@@ -80,6 +102,11 @@ export default function FlexibleTasksCard({
       {shown.map((task) => {
         const meta = getCategoryMeta(task.category);
         const done = task.status === 'complete';
+        // Standing work she wrote down on an earlier day. It keeps its own
+        // date — nothing is moved — so the row has to print it.
+        const carried = dayKey && task.date && task.date < dayKey
+          ? waitingSince(task.date, he)
+          : '';
         return (
           <TouchableOpacity
             key={task.id}
@@ -101,10 +128,11 @@ export default function FlexibleTasksCard({
               >
                 {meta.icon}  {task.text}
               </Text>
-              {task.deadline || task.durationMinutes ? (
+              {task.deadline || task.durationMinutes || carried ? (
                 <Text style={styles.rowMeta} numberOfLines={1}>
                   {task.durationMinutes ? `~${task.durationMinutes} ${he ? 'דק׳' : 'min'}` : ''}
                   {task.deadline ? `${task.durationMinutes ? '  ·  ' : ''}⏳ ${task.deadline}` : ''}
+                  {carried ? `${task.durationMinutes || task.deadline ? '  ·  ' : ''}${carried}` : ''}
                 </Text>
               ) : null}
             </View>

@@ -791,6 +791,209 @@ const PLACE_NAME_CORRECTIONS = {
 
 ---
 
+## THE SILENT-STATE RULE — the bug this project keeps shipping
+
+Four bugs, one fault. Lumi **knew** and did not **say**.
+
+| Date | What she saw | What was actually true |
+|---|---|---|
+| 2026-09-17 | "Where is the clock alarm?" | The alarm was armed, correct to the minute, behind a `▸` nobody had reason to tap |
+| 2026-09-21 | "0 events found" in the calendar check | Google may have been refusing us outright; every failure returned `[]`, same as a free day |
+| 2026-09-21 | An interview with no route | The event had no `location` field; the address was in the body and nothing read it |
+| 2026-09-21 | "Why is the wedding showing today?" | It was from 17.9. The row knew the date and never drew it |
+| 2026-09-22 | The interview was STILL missing after the fix shipped | The import was fixed. Nothing ran it: one screen's focus, once per 30 min, and the day-picker was documented as "no sync" |
+| 2026-09-22 | An in-person interview drawn as a video call, with no journey | The address fix made us read the invitation body; the only URL in it is the Maps link, and the meeting-link reader took it. `isRemoteTask` → no departure |
+| 2026-09-22 | An interview with no route at all | She prefers trains, no train reaches Ra'anana, and the chain asked once. `null` was the whole plan |
+
+Each one passed review because **nothing was broken** — the alarm fired, the
+array was valid, the card rendered. The value was right and unreachable. That
+is the failure mode to hunt, and it will not show up in a type check or a
+green test. These rules are how it gets caught instead.
+
+### 1. An empty result must never be able to mean two things
+
+`[]`, `null`, `0`, `false` and `undefined` are answers. They are not error
+reports. When a function can return the same empty value for "nothing to
+report" and "I could not find out", it MUST return the reason alongside:
+
+```ts
+// ✗ a 403, a dead token and a free Wednesday are now the same value
+async function events(date: string): Promise<Event[]> {
+  try { … } catch { return []; }
+}
+
+// ✓ the caller can tell, and so can she
+async function events(date: string): Promise<{ events: Event[]; error?: string }>
+```
+
+Pattern: `GoogleService.fetchCalendarEvents`.
+
+### 2. `catch` may swallow the throw, never the reason
+
+A bare `catch { return []; }` is banned in any path the user can observe.
+Every catch records what happened — `console.warn` at minimum, a returned
+reason where a caller can act on it. Console.**log** is dropped by release
+builds; if it matters while standing in front of her phone, it is a `warn`.
+
+### 3. A check that cannot fail is not a check
+
+Any "✓ connected" / "✓ saved" / "N found" the user can tap MUST be able to
+say **"it failed, and here is why"**, in words naming the fix. "Sign in again"
+and "enable the API in Google Cloud" are different fixes and must read
+differently. She verified the calendar herself and the check confirmed a lie —
+that is worse than no check, because it ended the investigation.
+
+Precedent: `lumi-fake-confirmations`, `lumi-cloud-sync-root-cause`, and now
+`calendarDiagnostics`.
+
+### 4. Data from another day or another hour must show that day or hour
+
+Any row, card or list item carrying something not from the day on screen
+displays its date. No exceptions for "it's obvious from context" — it is not.
+A wedding from 17.9 among today's cards reads as today's.
+
+### 5. A plan that exists must be visible without a tap
+
+Wake time, leave time and route belong in the **collapsed** summary. An alarm
+behind an expander is one she can neither trust nor turn off, which is the
+same as not having it. See `AlarmPlanner`'s own doc.
+
+### 6. The question has to fit the thing
+
+A past event (it has a `fixedTime` and the time has gone) is asked *"did you
+go?"* — never offered a reschedule. You cannot reschedule a wedding.
+
+### 7. A capability with no trigger is not a feature
+
+Ask, of every piece of machinery: **what runs this, and when?** Name the
+trigger or it does not exist.
+
+The calendar import was correct, tested and shipped twice while the only thing
+that could run it was one screen coming into focus, behind a throttle she could
+not see. So an event booked on Sunday for Wednesday reached Lumi when she
+happened to open one particular tab — and the route, the leave time and the
+wake alarm are all built from the import, so none of them existed either. The
+import was never the bug. The absence of a caller was, and no review caught it
+because there was nothing wrong with the code that was there.
+
+A trigger must answer all four:
+
+| | |
+|---|---|
+| **App open, screen visible** | focus / a heartbeat |
+| **App open, elsewhere** | AppState `active`, at the ROOT — not on a screen |
+| **App closed** | `expo-background-task` (WorkManager, ~15 min floor, OS-scheduled) |
+| **She went looking** | pull-to-refresh, picking a day, the Profile check |
+
+A throttle is part of the trigger. `CALENDAR_SYNC_INTERVAL_MS` was 30 minutes,
+which meant "add the event in Google, switch back to Meira" did nothing at all
+and reported nothing. Any human-initiated path forces past it.
+
+And a background job that lands something must SAY SO — see rule 1. An import
+she never hears about is indistinguishable from no import.
+
+Pattern: `src/services/CalendarAutoSync.ts`, owned by `App.tsx`, never by a screen.
+
+### 8. Two readers of the same blob will fight
+
+Before adding a second thing that scans a free-text field, ask what the FIRST
+one now sees.
+
+`addressFromDescription` was added to read the venue out of an invitation body,
+because recruiting systems leave Google's `location` empty. It worked. But
+`extractMeetingUrl` was already scanning that same body for "the first URL",
+and the only URL in a Comeet invitation is the **Google Maps link next to the
+address**. So the map became the meeting link, which made the event a `zoom`,
+which made `isRemoteTask` true, which made `overlapKind.departureOf` return
+`undefined` — and an in-person interview in Ra'anana had no departure, no
+travel leg and a 💻 badge.
+
+The irony is exact: **the code added to find the address is what convinced the
+app she did not have to travel to it.** Nothing threw, nothing was empty, both
+readers did what they said.
+
+A reader of prose states what it will NOT accept. `addressFromDescription`
+refuses unlabelled prose on purpose; `meetingUrlFromEvent` now takes any URL
+from the `location` field (the organiser put it where the venue goes — that is
+a deliberate "this is online") but from prose only a RECOGNISED conferencing
+host. Guessing from prose is how a map became a meeting.
+
+Pattern: `src/utils/meetingLink.ts` — `NOT_A_MEETING_RE`, `meetingUrlFromEvent`.
+
+### 9. A preference is not a constraint
+
+When she states a preference, honour it first — and then answer the question
+anyway.
+
+`getPlanForMode('train')` is absolute by design: it keeps only all-rail routes
+and returns `null` otherwise, "an explicit no-train, never a bus in disguise".
+That is right. What was wrong is that `ensureTravelChain` asked **once** and
+used what came back, so a train preference plus a destination no train reaches
+produced no route, no leave-home time, no wake alarm and an empty card.
+Preferring trains cost her the plan.
+
+A preference is a LADDER: rail first, bus underneath. And the rungs are
+ordered by the actual goal, not the preference — a train arriving at 14:45
+loses to a bus arriving at 14:10 for a 14:30 interview, because "by train" was
+never a request to be late.
+
+Whatever answered is recorded, and when it is not what she asked for the plan
+carries the sentence that says so. A bus arriving under a 🚆 chip is its own
+bug, already on the known-open list.
+
+Pattern: `src/utils/transitFallback.ts` — `modeLadder`, `bestPlanInTime`,
+`fallbackNote`.
+
+### 10. The platform already counted the failures. Go and read the number.
+
+Every provider this project depends on keeps a success rate, and for months
+nobody in this codebase ever looked at one. On 2026-09-22, in ten minutes of
+clicking:
+
+| Dashboard | What it had been saying | For how long |
+|---|---|---|
+| Google Cloud → Maps Metrics | **Directions API: 107 requests, 99% errors, 9 ms median** | every route, forever |
+| Supabase → Project home | **84.3% success rate, 400 API-gateway warnings in 60 min** | since migration 0011 was written and not run |
+
+Neither needed a debugger, a repro or a hypothesis. They were printed on the
+front page of a dashboard she already had open, and they each named a bug that
+had survived several rounds of "why is there no route?".
+
+A 9 ms median is the whole diagnosis on its own: a real Directions answer takes
+100-400 ms, so nine means rejected at the edge before any routing ran. Learn to
+read the latency as well as the count — a fast failure and a slow success look
+nothing alike.
+
+**So: before theorising about why something does not work, open the provider's
+console and read its error rate.** If the number is not ~0%, that IS the bug,
+and the stack trace you were about to go looking for does not exist because
+nothing threw.
+
+And the mirror of it, for us: an app that cannot state its own success rate is
+asking her to be its monitoring. Every remote call this project makes now
+returns a typed reason (`utils/routeFailure`) precisely so that the number is
+available on THIS side too, instead of only on Google's.
+
+### Before calling any of this fixed
+
+- [ ] Grep the change for `catch {` and `return []` / `return null` / `return 0`. Each one: can the caller tell this from success?
+- [ ] Every new user-facing surface: what does it render when the thing behind it FAILED? Not "empty" — failed.
+- [ ] Anything dated: does the date appear on screen?
+- [ ] A new reader of a free-text field: what does the EXISTING reader of that field now see? (rule 8)
+- [ ] A preference that can come back empty: is there a rung below it, and does the result say which one answered? (rule 9)
+- [ ] Every new capability: name the four triggers (rule 7). "The user will open the screen" is not one of them.
+- [ ] A remote call that is failing: what does the PROVIDER's console say its error rate is? (rule 10)
+- [ ] Both languages. `npm run test:langparity`.
+- [ ] A test that would have caught the ACTUAL bug, run against the real payload where one exists (`tests/run-calendar-import.ts` uses the genuine invitation).
+
+### Known-open, do not re-report as new
+
+- The chat plans a trip **by bike** (server) while the stored `transportType`
+  is the profile default, so the timeline chip shows 🚌. Server and phone
+  disagree about how she is travelling. Open since 2026-09-17.
+
+---
+
 ## WHAT CLAUDE CODE MUST ALWAYS DO
 
 1. Read this file (CLAUDE.md) before every task
@@ -803,4 +1006,7 @@ const PLACE_NAME_CORRECTIONS = {
 8. Support both EN and HE in all strings, UI, and TTS
 9. Android only (no iOS for now)
 10. Run `npx expo start --clear` after changes and confirm no crashes
+11. Obey THE SILENT-STATE RULE above — an empty result must never be able to mean two things
+12. Never report a fix as shipped until it is on `master` AND in a build. An uncommitted fix is not in the APK; nor is one sitting on a branch
+13. Name the trigger. Code that nothing calls, on a schedule nobody set, is not a feature — see rule 7 of THE SILENT-STATE RULE
 

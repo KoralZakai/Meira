@@ -9,6 +9,9 @@ import { armTaskAlerts } from '../services/NotificationService';
 import { taskNeedsAlerts } from '../utils/alertPlan';
 import { armDueAlarms } from '../services/AlarmPlanner';
 import { recallPlace } from '../services/KnownPlacesStore';
+import { loadProfile } from '../services/UserProfileStorage';
+import { planArrivedTasks } from '../services/ArrivedTaskPlanner';
+import { routineForTask, sameHourOfDay } from '../utils/routines';
 import {
   addTask,
   addTasksForDate,
@@ -214,7 +217,18 @@ export function useTasks() {
       // The pickers still win when the user actually set one; they are an
       // explicit choice. The text is the fallback, not the other way round.
       const te = parseTimeExpression(text);
-      const fixedTime = extra?.fixedTime ?? te.fixedTime ?? undefined;
+      const onDate = extra?.date ?? te.deadline ?? today;
+      // HER WEEK ALREADY SAYS. "קיקבוקס" is a line in her routines with an hour
+      // and an address, and the task used to be created with neither. The
+      // routine's hour is used when she named none, or named the same hour of
+      // day ("ב 8 וחצי" for a 20:30 class); a picker she actually set wins.
+      const routine = await loadProfile()
+        .then((p: any) => routineForTask(text, p?.routinesNotes, onDate))
+        .catch(() => null);
+      const said = extra?.fixedTime ?? te.fixedTime ?? undefined;
+      const useRoutineHour = !extra?.fixedTime && Boolean(routine?.timeApplies)
+        && (!said || sameHourOfDay(said, routine?.time));
+      const fixedTime = useRoutineHour ? routine!.time : said;
       // "תעירי אותי ב-7" is an instruction, and nothing used to write it down:
       // Task.alarmAt was read by the alarm planner and set by no one, so the
       // only alarm possible was the one derived from a route.
@@ -234,7 +248,7 @@ export function useTasks() {
       const saved = await addTask({
         text,
         tags: extractTaskTags(text),
-        date: extra?.date ?? te.deadline ?? today,
+        date: onDate,
         status: 'pending',
         source: 'manual',
         category: derived.category,
@@ -243,7 +257,8 @@ export function useTasks() {
         fixedTime,
         scheduledTime: fixedTime,
         durationMinutes:
-          extra?.durationMinutes ?? te.durationMinutes ?? derived.durationMinutes ?? 30,
+          extra?.durationMinutes ?? te.durationMinutes
+          ?? (useRoutineHour ? routine?.minutes : undefined) ?? derived.durationMinutes ?? 30,
         // A string here is enough: GoogleSync.ensureTravelChain geocodes it and
         // builds the leave/wake chain, which is the whole point of typing an
         // address into a task.
@@ -262,7 +277,11 @@ export function useTasks() {
               },
               hasLocation: true,
             }
-            : {}),
+            : routine?.address
+              // From her routines: a string is enough — the travel chain
+              // geocodes it (with her city) a moment from now.
+              ? { location: routine.address, hasLocation: true }
+              : {}),
         // "בחדר כושר" says WHAT KIND of place without saying which. Keeping it
         // is what lets Lumi ask "your usual gym?" once and remember the answer
         // (known_places), instead of asking for an address every single time.
@@ -278,6 +297,8 @@ export function useTasks() {
       // inside Android's 24 h reach — so sweep now rather than waiting for the
       // next cold start.
       if (saved?.alarmAt) armDueAlarms([saved]).catch(() => {});
+      // Route it now, not on some other screen's next sweep (ArrivedTaskPlanner).
+      if (saved) planArrivedTasks([saved]).catch(() => {});
       await refresh();
     },
     [refresh, today],
@@ -332,21 +353,35 @@ export function useTasks() {
     [refresh],
   );
 
+  /**
+   * `defaultDate` is the day the CALLER was looking at.
+   *
+   * addManualTask learned this months ago; this path never did, so the + on a
+   * timeline showing tomorrow went through the parser, came back with no date
+   * of its own ("ללמוד לראיון" names no day) and fell through to `today`. The
+   * task was created, the screen went back to tomorrow, and tomorrow was
+   * unchanged — indistinguishable from a button that does nothing.
+   *
+   * A date the SENTENCE carries still wins: "next Monday" means next Monday
+   * however the screen got here.
+   */
   const addMorningTasksFromSpeech = useCallback(
-    async (speechText: string) => {
-      console.log('[LLM_PARSER] addMorningTasksFromSpeech input:', speechText);
+    async (speechText: string, defaultDate?: string) => {
+      console.warn('[LLM_PARSER] addMorningTasksFromSpeech input:', speechText);
       try {
         const parsed = await parseSpeechToTasksWithExpansion(speechText);
-        console.log('[LLM_PARSER] addMorningTasksFromSpeech parsed result:', parsed);
         if (!parsed.length) {
-          console.log('[LLM_PARSER] no parsed tasks found, skipping store write');
+          // warn, not log: a release build drops console.log, and "the parser
+          // returned nothing" is exactly the state that looks like a dead
+          // button from the outside.
+          console.warn('[LLM_PARSER] no parsed tasks found, skipping store write');
           return [];
         }
 
         // Group tasks by date and add them
         const tasksByDate = new Map<string, typeof parsed>();
         for (const task of parsed) {
-          const taskDate = task.deadline || today;
+          const taskDate = task.deadline || defaultDate || today;
           if (!tasksByDate.has(taskDate)) {
             tasksByDate.set(taskDate, []);
           }
@@ -355,7 +390,7 @@ export function useTasks() {
 
         const allCreated = [];
         for (const [taskDate, tasksForDate] of tasksByDate) {
-          console.log(`[LLM_PARSER] writing ${tasksForDate.length} tasks for ${taskDate}`);
+          console.warn(`[LLM_PARSER] writing ${tasksForDate.length} tasks for ${taskDate}`);
           const created = await addTasksForDate(taskDate, tasksForDate);
           allCreated.push(...created);
         }

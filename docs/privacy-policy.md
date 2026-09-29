@@ -2,7 +2,7 @@
 
 **Last updated:** 15 September 2026
 **App:** Lumi (`com.lumi.app`)
-**Contact:** you@example.com
+**Contact:** koralzakai1@gmail.com
 
 > **Draft — have a person read this before you publish it.** Every factual
 > claim below was checked against the code on 2026-09-15 (permissions in
@@ -89,7 +89,7 @@ You can ask us to:
 - **Export** your data
 
 **To delete your account and all your data:** use *Settings → Delete my account*
-in the app, or email **you@example.com** with the subject "Delete my
+in the app, or email **koralzakai1@gmail.com** with the subject "Delete my
 account". We will delete your account, tasks, conversations, profile and
 location history within 30 days and confirm when it is done.
 
@@ -114,4 +114,4 @@ app if the change is significant.
 
 ## Contact
 
-**you@example.com**
+**koralzakai1@gmail.com**

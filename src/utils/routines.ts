@@ -375,6 +375,187 @@ export function blockedForGap(
   return [];
 }
 
+// ── routineForTask — "קיקבוקס" is already in her week ─────────────────────
+//
+// The phone-side twin of server/routine_match.py, for a task typed into the +
+// screen. Koral, 2026-09-28: "I added 'קיקבוקס' — I expected Meira to know
+// where it is, Yigal Alon 94, and it has a time, 20:30-21:30 — it's in my
+// routines!" parseRoutineNotes above read the day and the hour and threw the
+// address away; nothing at all matched a new task against the result.
+//
+//   exact   — the task names the routine's activity: hour AND address.
+//   concept — same kind of activity (yoga vs a kickboxing line): the ADDRESS
+//             only. Same gym, different class, different hour.
+// Tested by tests/run-routine-task.ts, with the same cases as the Python.
+
+const ROUTINE_WHEN_WORDS = new Set([
+  'כל', 'יום', 'ימי', 'בימי', 'ביום', 'בשעה', 'שעה', 'עד', 'בין', 'בערב', 'בבוקר',
+  'בצהריים', 'בלילה', 'ערב', 'בוקר', 'וחצי', 'ורבע', 'רבע', 'every', 'at', 'from',
+  'to', 'until', 'on', 'evening', 'morning', 'weekly', 'שבועי', 'פעם', 'בשבוע', 'פעמיים',
+]);
+const ADDRESS_LEAD_WORDS = new Set(['רחוב', 'רח', "רח'", 'רח׳', 'שדרות', 'שד', 'כתובת', 'street', 'st']);
+const ROUTINE_CITIES = [
+  'תל אביב-יפו', 'תל אביב', 'ת"א', 'ת״א', 'רמת גן', 'גבעתיים', 'הרצליה', 'רעננה',
+  'חיפה', 'ירושלים', 'בני ברק', 'חולון', 'בת ים', 'פתח תקווה', 'ראשון לציון',
+  'tel aviv', 'ramat gan', 'givatayim', 'herzliya', 'raanana', 'haifa', 'jerusalem',
+];
+/** One activity, two alphabets. */
+const ACTIVITY_ALIASES: Record<string, string> = {
+  kickbox: 'קיקבוקס', kickboxing: 'קיקבוקס', boxing: 'איגרוף', אגרוף: 'איגרוף',
+  yoga: 'יוגה', pilates: 'פילאטיס', gym: 'כושר', crossfit: 'קרוספיט',
+  swim: 'שחייה', swimming: 'שחייה', run: 'ריצה', running: 'ריצה',
+  dance: 'ריקוד', ריקודים: 'ריקוד', guitar: 'גיטרה', piano: 'פסנתר',
+};
+const ROUTINE_STOP = new Set([
+  'the', 'a', 'an', 'at', 'in', 'on', 'to', 'with', 'my', 'for', 'and', 'class',
+  'של', 'עם', 'את', 'אל', 'לי', 'לה', 'לו', 'היום', 'מחר',
+]);
+/** Kinds of activity — the same table as utils/knownPlaces, fitness only matters here. */
+const FITNESS_RE = /gym|workout|training|fitness|yoga|pilates|kickbox|boxing|crossfit|חדר כושר|כושר|אימון|יוגה|פילאטיס|קיקבוקס|קיק בוקס|איגרוף|אגרוף|קרוספיט/i;
+
+const cleanWord = (t: string) => t.replace(/^[.,;:!?()"[\]]+|[.,;:!?()"[\]]+$/g, '');
+const scriptOf = (w: string) => (/[֐-׿]/.test(w) ? 'he' : 'latin');
+
+/**
+ * What she calls the place: the words before its address, minus hours, days
+ * and when-words. "Space Gym - Yigal Alon 94" → "Space Gym". The address is
+ * what gets geocoded, the name is what the card shows — they travel separately.
+ * Mirrors routine_match.name_before on the server.
+ */
+export function nameBeforeAddress(text: string, address: string): string | null {
+  const street = String(address || '').split(',')[0].trim();
+  const at = street ? text.indexOf(street) : -1;
+  if (at <= 0) return null;
+  const head = text.slice(0, at)
+    .replace(/(\d{1,2})[:.](\d{2})\s*(?:-|–|—|עד|to|until)\s*(\d{1,2})[:.](\d{2})/g, ' ')
+    .replace(/(^|[^\d])\d{1,2}:\d{2}(?!\d)/g, '$1 ');
+  // length > 1: the ב of "ביגאל" is left behind when the street is found inside it.
+  const keep = head.split(/\s+/).map(cleanWord).filter((w) => w.length > 1
+    && !/^[-–—:|/]+$/.test(w)
+    && !ROUTINE_WHEN_WORDS.has(w.toLowerCase()) && !ADDRESS_LEAD_WORDS.has(w.toLowerCase())
+    && !weekdaysIn(w).length);
+  const name = keep.join(' ').replace(/^[\s\-–—,:]+|[\s\-–—,:]+$/g, '');
+  return name || null;
+}
+
+/** Her words for the activity, folded to one spelling across languages. */
+function significant(text: string): string[] {
+  const toks = String(text || '').toLowerCase().match(/[\p{L}]+/gu) || [];
+  return toks
+    .filter((t) => t.length > 2 && !ROUTINE_WHEN_WORDS.has(t) && !ROUTINE_STOP.has(t) && !weekdaysIn(t).length)
+    .map((t) => ACTIVITY_ALIASES[t] ?? t);
+}
+
+/**
+ * A street address in a routine line — "<street words> <house number>" — or
+ * null. Needs the house number: without one, any two words look like a street.
+ * The preposition ב is peeled off the street's first word, as utils/hebrewPlace does.
+ */
+export function addressInRoutine(text: string): string | null {
+  const tokens = String(text || '').split(/\s+/).filter(Boolean);
+  for (let idx = 0; idx < tokens.length; idx++) {
+    const num = cleanWord(tokens[idx]);
+    if (!/^\d{1,4}[א-ת]?$/.test(num)) continue;
+    const words: string[] = [];
+    for (let j = idx - 1; j >= 0 && words.length < 3; j--) {
+      const w = cleanWord(tokens[j]);
+      const bare = /^ב-?[\u0590-\u05FF]{3,}/.test(w) ? w.replace(/^ב-?/, '') : w;
+      if (!/^[\u0590-\u05FFA-Za-z'"׳״-]{2,}$/.test(w)
+        || ROUTINE_WHEN_WORDS.has(w.toLowerCase()) || ROUTINE_WHEN_WORDS.has(bare)
+        || ADDRESS_LEAD_WORDS.has(bare.toLowerCase()) || weekdaysIn(w).length
+        // "Space Gym, יגאל אלון 94": a comma closes the name before the street,
+        // and a street is written in one alphabet — without these the gym's
+        // name became "Gym יגאל אלון 94".
+        || /[,;]$/.test(tokens[j])
+        || (words.length > 0 && scriptOf(w) !== scriptOf(words[0]))) break;
+      words.unshift(w);
+    }
+    if (!words.length) continue;
+    if (/^ב-?[\u0590-\u05FF]{3,}/.test(words[0])) words[0] = words[0].replace(/^ב-?/, '');
+    const address = [...words, num].join(' ');
+    const rest = tokens.slice(idx + 1, idx + 4).map(cleanWord).join(' ');
+    const city = ROUTINE_CITIES.find((c) => rest.toLowerCase().startsWith(c.toLowerCase()));
+    return city ? `${address}, ${rest.slice(0, city.length)}` : address;
+  }
+  return null;
+}
+
+export interface RoutineMatch {
+  text: string;
+  match: 'exact' | 'concept';
+  weekdays: number[];
+  time?: string;
+  minutes?: number;
+  address?: string;
+  /** What she calls the place ("Space Gym"), when the line names it apart from the task. */
+  name?: string;
+  /** An exact match on a day the routine runs: the hour may be used. */
+  timeApplies: boolean;
+}
+
+/** Split her notes into lines; a comma piece that is only a city stays with its line. */
+function routineLines(notes?: string): string[] {
+  const out: string[] = [];
+  for (const line of String(notes || '').split(/[;\n•]+/)) {
+    const pieces: string[] = [];
+    for (const raw of line.split(',')) {
+      const piece = raw.trim();
+      if (!piece) continue;
+      const onlyCity = ROUTINE_CITIES.some((c) => c.toLowerCase() === piece.toLowerCase());
+      if (pieces.length && (onlyCity || !significant(piece).length)) pieces[pieces.length - 1] += `, ${piece}`;
+      else pieces.push(piece);
+    }
+    out.push(...pieces.filter((p) => p.length >= 3));
+  }
+  return out;
+}
+
+/** The routine this task IS, or null. */
+export function routineForTask(taskText: string, notes: string | undefined, date: string): RoutineMatch | null {
+  const mine = significant(taskText);
+  if (!mine.length) return null;
+  const taskFitness = FITNESS_RE.test(taskText) || FITNESS_RE.test(mine.join(' '));
+  const day = /^\d{4}-\d{2}-\d{2}/.test(date) ? weekdayOf(date.slice(0, 10)) : null;
+  let exact: RoutineMatch | null = null;
+  let concept: RoutineMatch | null = null;
+  for (const text of routineLines(notes)) {
+    const theirs = new Set(significant(text));
+    const weekdays = weekdaysIn(text);
+    const { time, minutes } = timeIn(text);
+    const address = addressInRoutine(text) ?? undefined;
+    const name = address ? nameBeforeAddress(text, address) ?? undefined : undefined;
+    if (theirs.has(mine[0]) || mine.some((w) => w.length >= 4 && theirs.has(w))) {
+      if (!exact) {
+        exact = {
+          text, match: 'exact', weekdays, time, minutes, address, name,
+          timeApplies: Boolean(time) && (!weekdays.length || day == null || weekdays.includes(day)),
+        };
+      }
+    } else if (taskFitness && FITNESS_RE.test(text) && address && !concept) {
+      concept = { text, match: 'concept', weekdays, address, name, timeApplies: false };
+    }
+  }
+  if (exact && !exact.address && concept) exact = { ...exact, address: concept.address, name: concept.name };
+  const hit = exact ?? concept;
+  // "קיקבוקס 20:30 ביגאל אלון 94" names the CLASS, not the place: no name for
+  // the kickboxing task itself, and none for a yoga class borrowing the address
+  // either. "Space Gym" has a word that is no activity.
+  const words = hit?.name ? significant(hit.name) : [];
+  if (hit?.name && (words.every((w) => mine.includes(w)) || words.every((w) => FITNESS_RE.test(w)))) {
+    const { name: _drop, ...rest } = hit;
+    return rest;
+  }
+  return hit;
+}
+
+/** Does "08:30" as she typed it name the routine's 20:30? Twelve-hour agreement. */
+export function sameHourOfDay(said?: string | null, routineTime?: string): boolean {
+  if (!said || !routineTime) return false;
+  const [sh, sm] = said.split(':').map(Number);
+  const [rh, rm] = routineTime.split(':').map(Number);
+  return sm === rm && sh % 12 === rh % 12;
+}
+
 // Self-check: npx tsx src/utils/routines.ts
 if (typeof require !== 'undefined' && require.main === module) {
   const parsed = parseRoutineNotes('gym Mon/Wed 18:00, kids 16:00 every day, weekly review Sunday');

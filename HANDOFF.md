@@ -6,7 +6,7 @@ Memory: `~/.claude/projects/-Users-user-dev-Lumi-My-AI-Assistant/memory/`.
 ## The sync WORKS. Read `keyRole` before believing any number.
 
 ```bash
-curl -s "https://lumi-whatsapp.fly.dev/diag/sync?phone=972500000000" | python3 -m json.tool
+curl -s "https://lumi-whatsapp.fly.dev/diag/sync?phone=972500000009" | python3 -m json.tool
 ```
 Expect `keyRole: service_role`, `phone.linked: true`, `taskRowCount` ~95.
 

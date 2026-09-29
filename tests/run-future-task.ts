@@ -17,7 +17,7 @@
 import { planTransitAlerts, planFixedTimeAlerts, PlannedAlert } from '../src/utils/alertPlan';
 import { calculateWakeTime, timeToMinutes, minutesToTime } from '../src/utils/timeUtils';
 import {
-  decideAlarmState, alarmMomentOf, isWithinAlarmReach, plannedAlarmTime,
+  decideAlarmState, alarmMomentOf, isWithinAlarmReach, plannedAlarmTime, ALARM_REACH_MS,
 } from '../src/utils/alarmPlan';
 import { Task, TransitPlan, UserProfile } from '../src/types/index';
 
@@ -162,10 +162,28 @@ check(plannedAlarmTime(task) === wakeBy, 'the planned alarm time is the computed
 check(!isWithinAlarmReach(task), 'NOT armable yet — Android would ring it on the wrong day');
 
 // …and once the morning comes within 24 h, it becomes armable.
-const soon: Task = { ...task, date: iso(new Date(Date.now() + 20 * 60 * 60 * 1000)) };
-const soonMoment = alarmMomentOf(soon);
-check(!!soonMoment, 'alarm moment resolves for a task inside 24 h');
-check(isWithinAlarmReach(soon), 'becomes armable once inside 24 h → the evening reminder arms it');
+//
+// The clock is stopped for this, relative to the task's REAL ring moment. It
+// used to move only the date to "now + 20 h" and keep the 06:45 wake time, so
+// run between 04:00 and 06:45 the alarm landed ~25 h out and this failed on
+// correct code — and test:all chains with &&, so it hid every later suite.
+const HOUR = 60 * 60 * 1000;
+const ringsAt = alarmMomentOf(task);
+check(!!ringsAt, 'alarm moment resolves for the task 12 days out');
+if (ringsAt) {
+  const ring = ringsAt.getTime();
+  const soonNow = ring - 20 * HOUR;
+  check(alarmMomentOf(task, soonNow)?.getTime() === ring,
+    'alarm moment resolves for a task inside 24 h');
+  check(isWithinAlarmReach(task, soonNow), 'armable 20 h before it rings');
+  check(!isWithinAlarmReach(task, ring - ALARM_REACH_MS - 60_000),
+    'NOT armable a minute before the 24 h reach opens');
+  if (dayBefore) {
+    check(isWithinAlarmReach(task, absMs(dayBefore)),
+      'becomes armable once inside 24 h → the evening reminder arms it',
+      `evening reminder at ${stamp(dayBefore)}, alarm at ${iso(ringsAt)} ${wakeBy}`);
+  }
+}
 
 // 5. An afternoon task must never claim an alarm.
 const afternoon: Task = {

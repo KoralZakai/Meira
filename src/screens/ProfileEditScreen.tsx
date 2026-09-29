@@ -25,7 +25,13 @@ import {
 } from '../services/SupabaseAuthService';
 import { isSupabaseConfigured } from '../services/supabaseClient';
 import { GoogleService } from '../services/GoogleService';
-import { syncCalendarToday, calendarDiagnostics } from '../services/GoogleSync';
+import {
+  syncCalendarToday, calendarDiagnostics, lastCalendarReconcile,
+} from '../services/GoogleSync';
+import { clearDismissedExternalIds } from '../services/TaskStorage';
+import {
+  backgroundSyncRegistered, registerBackgroundCalendarSync, lastSyncAt,
+} from '../services/CalendarAutoSync';
 import { setSystemAlarm } from '../services/AlarmService';
 import { getTomorrowString } from '../utils/timeUtils';
 import { AppSettings, TimeSetting, AppLanguage } from '../types/models';
@@ -95,6 +101,8 @@ export default function ProfileEditScreen({ navigation }: any) {
   // ── Calendar diagnostics ──
   const [cal, setCal] = useState<{
     connected: boolean; eventsFound: number; daysScanned: number; imported: number;
+    error: string | null; withoutLocation: number;
+    blockedByDismiss: number; blockedTitles: string[];
   } | null>(null);
   const [calChecking, setCalChecking] = useState(false);
 
@@ -105,17 +113,124 @@ export default function ProfileEditScreen({ navigation }: any) {
       const added = await syncCalendarToday(settings?.language ?? 'en', true).catch(() => 0);
       const result = await calendarDiagnostics();
       setCal(result);
-      Alert.alert(
-        'Calendar',
-        !result.connected
-          ? 'Not connected. Tap 🔗 Google below to connect.'
+      // The check has to be able to say "Google refused us", not only "0 found".
+      // An expired grant, a scope the token never had and a genuinely empty
+      // fortnight all used to print the same reassuring sentence — which is
+      // how an interview sat on the calendar, unimported, for four days.
+      // Which fix, in words, decided by USING the grant — not by the presence
+      // of a token in SecureStore, which is what "✓ connected" used to mean.
+      // "Sign in again" and "enable the Calendar API in Google Cloud" are
+      // different evenings; printing both and letting her guess is rule 3 by
+      // half measures.
+      const verdict = result.error
+        ? await GoogleService.verifyGoogleConnection().catch(() => null)
+        : null;
+      const fixLine = verdict?.fix === 'enable_api'
+        ? 'This is the Google Cloud project, NOT this phone: the Calendar API '
+          + 'is switched off for the project this app signs in with. Signing in '
+          + 'again will not help.'
+        : 'Tap 🔗 Google below and sign in again — the stored grant has expired '
+          + 'or been revoked.';
+
+      let body = !result.connected
+        ? 'Not connected. Tap 🔗 Google below to connect.'
+        : result.error
+          ? `Google refused the request:\n\n${result.error}\n\n`
+            + `Nothing can be imported until that is fixed.\n\n${fixLine}`
           : `${result.eventsFound} event(s) found in the next ${result.daysScanned} days.\n`
             + `${result.imported} already imported as tasks`
             + (added > 0 ? `, ${added} just added.` : '.')
+            + (result.withoutLocation > 0
+              ? `\n\n${result.withoutLocation} of them have no address on the event, `
+                + 'so there is nothing to plan a route to.'
+              : '')
             + (result.eventsFound === 0
-              ? '\n\nNothing in your calendar for this window — check you added them to the same Google account.'
-              : ''),
-      );
+              ? '\n\nGoogle answered, and this account has nothing booked in that window '
+                + '— check the event is on the same Google account you connected here.'
+              : '');
+
+      // Whether the automatic pull is ACTUALLY running, asked of Android, not
+      // assumed. "Background sync is on" is exactly the sort of claim this app
+      // has shipped as a lie before; if WorkManager never took the job, or the
+      // OS restricted us, this says so and says which.
+      let bgOn = await backgroundSyncRegistered().catch(() => false);
+      let bgReason = '';
+      if (!bgOn) {
+        // Try once, here, and keep the REASON. A failed registration that only
+        // ever appeared in a console she cannot open is not a report.
+        const r = await registerBackgroundCalendarSync();
+        bgOn = r.ok;
+        if (!r.ok) {
+          bgReason = r.reason === 'expo_go'
+            ? ' (Expo Go cannot run background jobs — needs the installed APK.)'
+            : r.reason === 'restricted_by_os'
+              ? " (Android has restricted this app's background work — check "
+                + 'Battery settings for Meira.)'
+              : ` (${r.reason})`;
+        }
+      }
+      const last = await lastSyncAt().catch(() => 0);
+      const ago = last
+        ? `${Math.max(0, Math.round((Date.now() - last) / 60000))} min ago`
+        : 'never';
+      const autoLine =
+        `\n\n— Auto-sync —\nLast pull: ${ago}\n` +
+        (bgOn
+          ? 'Background: ON (Android runs it about every 15 min; it decides when).'
+          : `Background: OFF${bgReason} — pulls only while the app is open.`);
+      body += autoLine;
+
+      // What the reconcile pass actually DID, in words.
+      //
+      // "1 event(s) found. 0 already imported." was true, accurate and
+      // useless: it named the symptom and left the cause to be guessed at for
+      // four days. Every line below names one event and what happened to it.
+      const rec = lastCalendarReconcile();
+      if (rec) {
+        body += `\n\n— Last import —\n`
+          + `${rec.seen} event(s) checked: `
+          + [
+            rec.inserted ? `${rec.inserted} added` : '',
+            rec.updated ? `${rec.updated} corrected` : '',
+            rec.unchanged ? `${rec.unchanged} already right` : '',
+            rec.blocked ? `${rec.blocked} BLOCKED` : '',
+            rec.complete ? `${rec.complete} already done` : '',
+            rec.failed ? `${rec.failed} FAILED` : '',
+          ].filter(Boolean).join(', ');
+        if (rec.notes.length) {
+          body += '\n\n' + rec.notes.slice(0, 6).map((n) => `• ${n}`).join('\n');
+        }
+      }
+      // An event Google HAS that this phone is refusing on purpose is the one
+      // outcome that looks exactly like a bug and is not one. Name it, and
+      // offer the undo — a tombstone with no way back is a dead end.
+      if (result.blockedByDismiss > 0) {
+        Alert.alert(
+          'Calendar',
+          `${body}\n\n` +
+          `⛔ ${result.blockedByDismiss} event(s) on Google are blocked on this phone ` +
+          'because they were deleted here once, and a deletion is permanent:\n\n' +
+          result.blockedTitles.slice(0, 5).map((t) => `• ${t}`).join('\n') +
+          '\n\nUnblock them and import again?',
+          [
+            { text: 'Leave blocked', style: 'cancel' },
+            {
+              text: 'Unblock & import',
+              onPress: async () => {
+                const lifted = await clearDismissedExternalIds().catch(() => 0);
+                const back = await syncCalendarToday(settings?.language ?? 'en', true)
+                  .catch(() => 0);
+                Alert.alert(
+                  'Calendar',
+                  `${lifted} block(s) lifted, ${back} event(s) imported.`,
+                );
+              },
+            },
+          ],
+        );
+      } else {
+        Alert.alert('Calendar', body);
+      }
     } finally {
       setCalChecking(false);
     }

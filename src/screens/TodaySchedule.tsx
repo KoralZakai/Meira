@@ -3,11 +3,11 @@
  * Also: 🔊 spoken day briefing (button + first-open-of-day offer banner).
  * Dependencies: TaskStorage, MorningBriefingService, SpeechService.
  */
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View, ScrollView, StyleSheet, Text, TouchableOpacity, ActivityIndicator, Alert,
 } from 'react-native';
-import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useFocusEffect } from '@react-navigation/native';
@@ -35,13 +35,19 @@ import { speakMorningBriefingNow } from '../services/MorningBriefingService';
 import { stopSpeaking } from '../services/SpeechService';
 import { scheduleFocusCheckIns, armMissingTaskAlerts } from '../services/NotificationService';
 import { armDueAlarms } from '../services/AlarmPlanner';
-import { plannedAlarmTime, wakeInputs } from '../utils/alarmPlan';
+import { plannedAlarmTime, wakeInputs, earliestWakeOf, wakeChipFor } from '../utils/alarmPlan';
 import {
-  syncCalendarToday, getGmailEventSuggestions,
-  acceptGmailSuggestion, dismissGmailSuggestion, ensureTravelChain,
-  ensureTravelChainAhead, getNextUpcomingTask,
+  getGmailEventSuggestions, acceptGmailSuggestion, dismissGmailSuggestion,
+  ensureTravelChain, getNextUpcomingTask, lastCalendarFailure,
 } from '../services/GoogleSync';
-import NextUpCard from '../components/NextUpCard';
+import { syncCalendarDate, syncCalendarNow, onCalendarSync } from '../services/CalendarAutoSync';
+import { onDayChanged, onDayPlanned } from '../services/DayEvents';
+import NextImportantStrip from '../components/NextImportantStrip';
+import TaskPrepCard from '../components/TaskPrepCard';
+import { prepForTask } from '../services/TaskPrepService';
+import { TaskPrepResult } from '../services/LumiServer';
+import MeiraCoin from '../components/MeiraCoin';
+import BottomSheet from '../components/ui/BottomSheet';
 import MeetingBriefCard from '../components/MeetingBriefCard';
 import YesterdayCard from '../components/YesterdayCard';
 import { GapSuggestionCard } from '../components/GapSuggestionCard';
@@ -49,14 +55,13 @@ import TravelChainCard from '../components/TravelChainCard';
 import DayTimeline from '../components/DayTimeline';
 import { ModeQuote } from '../components/TimelineTravelLeg';
 import TransitOptionsList from '../components/TransitOptionsList';
-import FlexibleTasksCard from '../components/FlexibleTasksCard';
-import { splitDayTasks } from '../utils/taskShape';
+import { splitDayTasks, isStandingTask } from '../utils/taskShape';
 import { asLocation, toChainProfile } from '../utils/buildTravelChain';
 import {
   replanFromNextDeparture, describeNextDeparture, nextDepartureOptions, applyDepartureOption,
   markArrivals, replanFromOrigin, keepNextTripLive,
 } from '../services/LiveRoute';
-import { missedPlannedDeparture } from '../utils/liveRoutePlan';
+import { missedPlannedDeparture, stillWorthGoingUntil } from '../utils/liveRoutePlan';
 import { DepartureOption, departureUncatchable, minutesToDecide } from '../utils/departureOptions';
 import {
   dayPresence, describeDayPresence, DayPresenceVerdict,
@@ -146,6 +151,19 @@ const FOCUS_MOTIVATION_HE = [
   'את/ה יכול/ה! 💪', 'צעד אחר צעד — קדימה! ✨', 'היום זה קורה. 🚀',
 ];
 
+/** The line under the pill when Meira prepared something. */
+function prepLabel(p: TaskPrepResult, he: boolean): string {
+  const n = (he ? p.items_he : p.items_en)?.length ?? 0;
+  switch (p.kind) {
+    case 'songs': return he ? `🎤 ${n} שירים לתרגל, עם מילים ›` : `🎤 ${n} songs to practise, with lyrics ›`;
+    case 'questions': return he ? `❓ מה להביא ומה לשאול ›` : `❓ What to bring and ask ›`;
+    case 'checklist': return he ? `✅ רשימה להכנה ›` : `✅ A checklist to get ready ›`;
+    case 'route_tips': return he ? `🧭 טיפים לדרך ›` : `🧭 Tips before you go ›`;
+    case 'ideas': return he ? `💡 ${n} רעיונות ›` : `💡 ${n} ideas ›`;
+    default: return he ? `🔎 מאירה הכינה לך ${n} דברים ›` : `🔎 Meira prepared ${n} things ›`;
+  }
+}
+
 function asLoc(t?: Task) {
   // Must tolerate undefined — departureTask below is a .find() that can miss.
   return t && t.location && typeof t.location === 'object' ? t.location : undefined;
@@ -158,6 +176,9 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  // What went wrong during the last voice plan — a task that did not fit, a
+  // calendar that was not checked. Stays until dismissed (silent-state rule 3).
+  const [planProblems, setPlanProblems] = useState<string[]>([]);
   // Per-task line from the last route recompute ("next bus …"), shown on the card.
   const [replanNotes, setReplanNotes] = useState<Record<string, string>>({});
   // Other ways to make a trip, fetched only when she asks (one Google call).
@@ -195,6 +216,22 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
     })();
     return () => { cancelled = true; };
   }, [nextUp?.id]);
+  // Prepare for whatever the pill shows. A meeting with a brief is covered;
+  // everything else asks the server once (cached on both sides). Rule 7's
+  // trigger: the pill's task changing — which is every Today load and every
+  // time the next thing moves.
+  useEffect(() => {
+    const t = nextUp;
+    if (!t) { setPrep(null); return; }
+    if (prep?.taskId === t.id) return;
+    let cancelled = false;
+    (async () => {
+      const res = await prepForTask(t);
+      if (cancelled) return;
+      setPrep(res ? { taskId: t.id, text: t.text, result: res } : null);
+    })();
+    return () => { cancelled = true; };
+  }, [nextUp?.id, nextUp?.text]);
   // Pending tasks stranded on earlier dates. They used to be invisible here —
   // this screen only ever queried today — so an unfinished task was simply lost.
   const [overdue, setOverdue] = useState<Task[]>([]);
@@ -217,6 +254,16 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
   // indicator anywhere. Weeks of tasks lived only on the device while the
   // WhatsApp sync sat waiting for an account that was never created.
   const [signedIn, setSignedIn] = useState(true);
+  /**
+   * Google's own words when the last calendar pull was refused, else null.
+   *
+   * On screen, unprompted. She checked the calendar connection herself, was
+   * told "connected", and the interview still was not there — because the
+   * only surface that could report a refusal was a button in Profile she had
+   * no reason to press twice. A failure she has to go looking for is a
+   * failure she will not find. (THE SILENT-STATE RULE, 3 and 5.)
+   */
+  const [calendarError, setCalendarError] = useState<string | null>(null);
   // Where she actually is — at home / in transit / standing in one of today's
   // places. Every route in this app assumed "at home, always"; this is the
   // input that makes the return leg of a round trip start from the right town.
@@ -228,6 +275,11 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
   // What the last automatic re-route did, and why. A leave time that changes
   // on its own is not trustworthy; one that says "you've moved — re-routed" is.
   const [liveNote, setLiveNote] = useState<string | null>(null);
+  // Which trip the live note is about. When it is the same trip as the missed-
+  // departure card, the card is a duplicate: Meira already re-planned it, and
+  // the options stay one tap away ("More options ›") instead of on screen.
+  const [liveNoteTaskId, setLiveNoteTaskId] = useState<string | null>(null);
+  const [missedOptionsOpen, setMissedOptionsOpen] = useState(false);
   // The trip whose departure has gone while she is still at the origin. Not a
   // note — a prompt with the three next departures already loaded, because at
   // that moment she has seconds, not a browsing mood.
@@ -280,6 +332,21 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
    */
   const [dateKey, setDateKey] = useState<string>(getTodayString());
   const [showDayPicker, setShowDayPicker] = useState(false);
+  const scrollRef = useRef<ScrollView>(null);
+  const [timelineY, setTimelineY] = useState(0);
+  const [eventsOpen, setEventsOpen] = useState(false);
+  const [eventsReview, setEventsReview] = useState(false);
+  const [briefOpen, setBriefOpen] = useState(false);
+  // What Meira prepared for the pill's task (songs for karaoke, what to bring
+  // to a clinic) — anything the meeting brief does not cover.
+  const [prep, setPrep] = useState<{ taskId: string; text: string; result: TaskPrepResult } | null>(null);
+  /**
+   * Standing work written on an earlier day and not ticked yet. getOverdueTasks
+   * removes standing tasks on purpose (they are not "missed"), so
+   * `overdue.filter(isStandingTask)` was always empty and this work showed up
+   * nowhere on Today. Loaded on its own now; it goes to the task pool.
+   */
+  const [carried, setCarried] = useState<Task[]>([]);
   /** Tasks for a date that is NOT today. Read-only browse; no side effects. */
   const [otherDayTasks, setOtherDayTasks] = useState<Task[]>([]);
   const showingToday = dateKey === getTodayString();
@@ -296,17 +363,66 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
   useEffect(() => {
     if (showingToday) { setOtherDayTasks([]); return; }
     let alive = true;
+    // Local first, so the day draws instantly...
     getTasksForDate(dateKey)
       .then((rows) => { if (alive) setOtherDayTasks(sortTasksByPriorityAndTime(rows)); })
       .catch(() => { if (alive) setOtherDayTasks([]); });
+    // ...then ASK GOOGLE about this specific day, and draw it again.
+    //
+    // This used to be "the quiet path. No sync, no alarms" — read-only browse,
+    // by design. The design was wrong in one specific way: picking a day is
+    // the single most literal way to ask "what do I have on Wednesday", and it
+    // was the one path guaranteed never to fetch it. An interview sitting in
+    // Google Calendar showed an empty Wednesday and nothing on screen could
+    // say why. The other half of the old rule still holds — no arrivals, no
+    // presence loop, no missed-bus interrupt for a day she is only looking at.
+    // Importing what Google already knows is not a side effect on her day.
+    (async () => {
+      const added = await syncCalendarDate(dateKey, language).catch(() => 0);
+      if (!alive) return;
+      setCalendarError(lastCalendarFailure());
+      if (added > 0) {
+        const rows = await getTasksForDate(dateKey).catch(() => null);
+        if (alive && rows) setOtherDayTasks(sortTasksByPriorityAndTime(rows));
+      }
+    })();
     return () => { alive = false; };
-  }, [dateKey, showingToday]);
+  }, [dateKey, showingToday, language]);
 
   /** Re-read whichever day is on screen, by whichever route owns it. */
   const refreshDay = useCallback(async () => {
     if (showingToday) await load();
     else await loadOtherDay(dateKey);
   }, [showingToday, dateKey, loadOtherDay]);
+
+  /**
+   * Redraw when the automatic sync lands something.
+   *
+   * The pull no longer belongs to this screen (CalendarAutoSync owns it, off
+   * the app root), so this screen has to be TOLD. Without this the import
+   * would work perfectly and the day on screen would still be the one loaded
+   * two minutes ago — the same bug one layer up.
+   */
+  useEffect(() => onCalendarSync((r) => {
+    setCalendarError(r.error);
+    if (r.added > 0 || r.newTasks.length) refreshDay().catch(() => {});
+  }), [refreshDay]);
+
+  /**
+   * A voice plan landed (the mic lives in the tab bar, above this screen).
+   * Focus does not fire when she is already here, so without this the plan
+   * would be saved and the timeline would still show the old day.
+   */
+  /** A chat task was just routed (ArrivedTaskPlanner) — show the route now. */
+  useEffect(() => onDayChanged(() => {
+    refreshDay().catch(() => {});
+  }), [refreshDay]);
+
+  useEffect(() => onDayPlanned((e) => {
+    if (e.date === getTodayString() && !showingToday) setDateKey(getTodayString());
+    refreshDay().catch(() => {});
+    setPlanProblems(e.problems);
+  }), [refreshDay, showingToday]);
 
   /**
    * The live loop: where is she, and is the plan still true?
@@ -400,6 +516,8 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
         if (!alive) return;
         if (live?.replanned) {
           setLiveNote(live.message ?? null);
+          setLiveNoteTaskId(live.task?.id ?? null);
+          setMissedOptionsOpen(false);
           await load(false).catch(() => {});
           if (!alive) return;
         }
@@ -534,6 +652,16 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
     await load(false);
   };
 
+  // The gold pill's task. A failed read must not look like "nothing next".
+  const refreshNextUp = () => {
+    getNextUpcomingTask()
+      .then((t) => {
+        setNextUp(t);
+        if (!t) console.warn('[Today] next important: nothing timed in the next 7 days');
+      })
+      .catch((e) => console.warn('[Today] next important unreadable', e));
+  };
+
   const load = async (showSpinner = true) => {
     try {
       // A refresh after an action must not blank the screen — only the first
@@ -568,6 +696,9 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
       // same Done / Move / Delete choice as yesterday's leftovers.
       const nowHHMM = new Date().toTimeString().slice(0, 5);
       getOverdueTasks(today, nowHHMM).then(setOverdue).catch(() => {});
+      getAllTasks()
+        .then((all) => setCarried(all.filter((t) => t.date < today && isStandingTask(t))))
+        .catch((e) => console.warn('[Today] carried tasks unreadable', e));
       // An unconfigured build is the WORST case, not an exempt one: it means
       // the APK shipped without EXPO_PUBLIC_SUPABASE_*, so nothing can ever
       // sync. Skipping the check here left signedIn stuck at its optimistic
@@ -594,15 +725,20 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
       // end. Still off the critical path: the local list is already rendered.
       (async () => {
         try {
-          await syncCalendarToday(settings.language);
-          await ensureTravelChain(today, settings.language);
-          await ensureTravelChainAhead(settings.language);
+          // One owner, one at a time. This used to be the three calls inline,
+          // which meant the screen's chain and the app-root auto-sync could be
+          // merging the same events into the same array concurrently — the
+          // exact race the comment above was written about, reintroduced a
+          // level up. runCalendarSync holds an in-flight guard: whoever asks
+          // second joins the run already going.
+          const r = await syncCalendarNow(settings.language, 'today-screen');
+          setCalendarError(r.error);
         } catch (e) {
           console.warn('[Today] sync chain failed', e);
         }
         const refreshed = await getTasksForDate(today).catch(() => null);
         if (refreshed) setTasks(sortTasksByPriorityAndTime(refreshed));
-        getNextUpcomingTask().then(setNextUp).catch(() => {});
+        refreshNextUp();
 
         // Anything that arrived from WhatsApp or Google in the sync above has
         // never had an alert armed — the merge writes rows, nothing more, and
@@ -646,7 +782,7 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
       // leave alert planned today — not the moment tomorrow starts. Without
       // this the alarm for a 09:00 meeting was never set unless the Plan
       // Tomorrow screen happened to be opened the night before.
-      getNextUpcomingTask().then(setNextUp).catch(() => {});
+      refreshNextUp();
 
       getGmailEventSuggestions(settings.language).then(setEmailSuggestions).catch(() => {});
       // Free slot today + an active wish-list goal → suggest doing it now.
@@ -799,17 +935,31 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
    * where she is standing, and a later slot is anchored to wherever the
    * previous task leaves her instead (GapFillService).
    */
+  /**
+   * Ideas for a free window — ON THE DAY THAT WINDOW BELONGS TO.
+   *
+   * Both of these used to pass `getTodayString()` while the screen was drawing
+   * whatever day the picker was on. So on TOMORROW: the ideas were ranked
+   * against today's list, and tapping one wrote the task onto TODAY at
+   * tomorrow's hour. The tap worked, the store changed, and the timeline she
+   * was looking at did not — "I press add and nothing happens". An idea that
+   * was an existing task was worse: it was MOVED to today.
+   *
+   * `dateKey` is the day on screen. It is the only correct answer here.
+   */
   const handleRequestGapIdeas = async (gap: DayGap): Promise<GapIdea[]> => {
     const now = new Date().toTimeString().slice(0, 5);
-    const isNow = gap.start <= now && gap.end > now;
+    // "Where am I standing" only means something for a window happening now,
+    // which can only be a window on today.
+    const isNow = showingToday && gap.start <= now && gap.end > now;
     const point = isNow ? await getCurrentLocation().catch(() => null) : null;
     return suggestForGap(gap, {
-      today: getTodayString(), currentPoint: point, routines, language,
+      today: dateKey, currentPoint: point, routines, language,
     });
   };
 
   const handlePickGapIdea = async (idea: GapIdea, gap: DayGap) => {
-    await applyGapIdea(idea, gap, getTodayString());
+    await applyGapIdea(idea, gap, dateKey);
     await load(false);
   };
 
@@ -1144,32 +1294,59 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
   // still has. Look for room TODAY first and give it a real slot; only a day
   // with none left rolls to tomorrow.
   const handleMoveOverdue = async (ids: string[]) => {
+    if (!ids.length) return;
     const gone = new Set(ids);
     setOverdue((prev) => prev.filter((t) => !gone.has(t.id)));
     const today = getTodayString();
     const nowHHMM = new Date().toTimeString().slice(0, 5);
-    const dayTasks = await getTasksForDate(today).catch(() => [] as Task[]);
-    const all = await getAllTasks().catch(() => [] as Task[]);
+    // The day as it fills up. Each moved task joins it before the next one is
+    // placed — otherwise "Reschedule all" gave every task the SAME free slot.
+    const day = await getTasksForDate(today).catch((e) => {
+      console.warn('[Today] reschedule: today unreadable', e);
+      return [] as Task[];
+    });
+    const all = await getAllTasks().catch((e) => {
+      console.warn('[Today] reschedule: tasks unreadable', e);
+      return [] as Task[];
+    });
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const tomorrow = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    const placed: string[] = [];
+    let failed = 0;
 
     for (const id of ids) {
       const task = all.find((t) => t.id === id);
-      if (!task) continue;
-      const slot = suggestReschedule(task, dayTasks, { now: nowHHMM });
-      if (slot.when === 'today' && slot.at) {
-        await moveTasksToDate([id], today).catch(() => {});
-        await updateTaskFields(id, {
-          scheduledTime: slot.at, fixedTime: undefined, isFixed: false,
-        } as any).catch(() => {});
-      } else {
-        const d = new Date();
-        d.setDate(d.getDate() + 1);
-        const pad = (n: number) => String(n).padStart(2, '0');
-        await moveTasksToDate(
-          [id], `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
-        ).catch(() => {});
+      if (!task) { failed += 1; continue; }
+      const slot = suggestReschedule(task, day, { now: nowHHMM, dayEnd: profile?.sleepTime });
+      try {
+        if (slot.when === 'today' && slot.at) {
+          await moveTasksToDate([id], today);
+          await updateTaskFields(id, {
+            scheduledTime: slot.at, fixedTime: undefined, isFixed: false,
+          } as any);
+          day.push({ ...task, date: today, status: 'pending', scheduledTime: slot.at, fixedTime: undefined });
+          placed.push(`${task.text.slice(0, 24)} ${slot.at}`);
+        } else {
+          await moveTasksToDate([id], tomorrow);
+          placed.push(`${task.text.slice(0, 24)} ${language === 'he' ? 'מחר' : 'tomorrow'}`);
+        }
+      } catch (e) {
+        failed += 1;
+        console.warn('[Today] reschedule failed for', id, e);
       }
     }
-    await ensureTravelChain(today, language).catch(() => {});
+    // Say where everything went — a bulk move with no answer looks like a
+    // button that does nothing.
+    const he = language === 'he';
+    setLiveNote(
+      (placed.length
+        ? `↻ ${he ? 'תוזמן מחדש' : 'Rescheduled'}: ${placed.join(' · ')}`
+        : '')
+      + (failed ? `${placed.length ? ' — ' : ''}${he ? `${failed} לא הצליחו, נסי שוב` : `${failed} couldn't be moved — try again`}` : ''),
+    );
+    await ensureTravelChain(today, language).catch((e) => console.warn('[Today] travel chain after reschedule', e));
     await load(false);
   };
 
@@ -1257,6 +1434,34 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
   ];
 
   const suggestionCount = emailSuggestions.length + (goalSuggestion ? 1 : 0);
+  const handleAddAllSuggestions = async () => {
+    for (const s of emailSuggestions) await handleAcceptEmailSuggestion(s);
+    if (goalSuggestion) await handleAcceptGoalSuggestion(goalSuggestion);
+    setEventsOpen(false);
+  };
+  // The next important thing, as the gold pill: when, and its wake alarm.
+  // Late to something that has STARTED, still worth going, not there yet:
+  // that outranks tomorrow's 08:00 (Koral, 28.9 — at 21:33 the pill pointed at
+  // tomorrow while karaoke had begun and she was still home). Same window as
+  // the live re-plan, liveRoutePlan.stillWorthGoingUntil.
+  const clockMin = timeToMinutes(clock);
+  const lateTrip = showingToday && presence.state !== 'at-venue'
+    ? tasks.find((t) => {
+      const at = t.fixedTime || t.scheduledTime;
+      if (t.status !== 'pending' || t.verifiedArrival || !asLoc(t)?.address || !at) return false;
+      const start = timeToMinutes(at);
+      return start < clockMin && clockMin < stillWorthGoingUntil(start, t.durationMinutes || 30);
+    }) ?? null
+    : null;
+  const lateBy = lateTrip ? clockMin - timeToMinutes((lateTrip.fixedTime || lateTrip.scheduledTime)!) : 0;
+  const pillTask = lateTrip ?? nextUp;
+  const nextUpTime = nextUp ? (nextUp.fixedTime || nextUp.scheduledTime || '') : '';
+  const nextUpWhen = nextUp
+    ? (nextUp.date && nextUp.date !== getTodayString()
+      ? `${formatDayLabel(nextUp.date, language)}${nextUpTime ? ` ${nextUpTime}` : ''}`
+      : nextUpTime)
+    : '';
+  const nextUpWake = nextUp ? wakeChipFor(nextUp, wakeInputs(profile)) : null;
 
 
   const leaveBy = tasks.map(asLoc).find((l) => l?.leaveHomeBy)?.leaveHomeBy;
@@ -1286,6 +1491,24 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
   const dayOrder = [...dayTasks].sort((a, b) =>
     ((a.fixedTime || a.scheduledTime || '99:99') < (b.fixedTime || b.scheduledTime || '99:99') ? -1 : 1));
   const firstAwayId = dayOrder.find((t) => asLocation(t))?.id;
+  /**
+   * The ONE hour this day wakes her — the earliest wake any of its tasks needs.
+   *
+   * Every card used to decide its own, so adding a task earlier than the rest
+   * left the old alarm exactly where it was and drew a second ⏰ next to it.
+   * A morning has one beginning; see utils/alarmPlan.dayWakeOwner.
+   */
+  const dayEarliestWake = earliestWakeOf(dayTasks, wakeInputs(profile));
+  // Clashes and doubles on ANY day on screen — 8.10 (reserve duty vs two
+  // interviews) said nothing because both checks ran for today only.
+  const dayClashes = showingToday ? clashes : resolveClashes(otherDayTasks).filter((c) => {
+    const verdict = classifyOverlap(c.a, c.b);
+    return !verdict || verdict.kind === 'spatial';
+  });
+  const daySameThing = showingToday ? sameThing : findSameThingGroups(otherDayTasks);
+  const clashAt = dayClashes[0]
+    ? [dayClashes[0].a, dayClashes[0].b].map((t) => t.fixedTime || t.scheduledTime || '').filter(Boolean).sort()[1] || ''
+    : '';
   const nextPendingId = dayOrder.find((t) => t.status === 'pending')?.id;
   /**
    * Two different things, drawn two different ways.
@@ -1296,7 +1519,26 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
    * can be ticked off without pretending to own five hours of the day and
    * without colliding with a party it does not actually conflict with.
    */
-  const { timed: timelineTasks, flexible: flexibleTasks } = splitDayTasks(dayOrder);
+  const { timed: timelineTasks, flexible: dayFlexible } = splitDayTasks(dayOrder);
+  /**
+   * Standing work she wrote down on an earlier day and has not ticked yet.
+   *
+   * "flexible tasks like 'להגיש קורות חיים' or 'create lean canvas' supposed
+   * to go into the tasks. be there until they are signed with V, no need to
+   * reschedule every day." They used to fall off the bottom of the day they
+   * were typed on and reappear in the MISSED card the next morning, asking
+   * her to move them — every morning.
+   *
+   * Nothing is moved and no date is rewritten: the row keeps the day it was
+   * written on, and the card prints that day next to it (rule 4). It simply
+   * appears on today as well, because today is when she can act on it.
+   *
+   * Only on today. Drawing a to-do from last Sunday onto next Thursday's
+   * plan says it is scheduled for Thursday, which is the claim this whole
+   * change exists to stop making.
+   */
+  const carriedFlexible = showingToday ? carried : [];
+  const flexibleTasks = [...dayFlexible, ...carriedFlexible];
   /**
    * Which cards actually get drawn — utils/dayWindow, which explains the rule
    * and is pinned by tests/run-day-window.ts. The short version: the cap used
@@ -1305,7 +1547,10 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
    * screen. The cut comes off the past end now.
    */
   const nowClock = new Date().toTimeString().slice(0, 5);
-  const visibleIds = visibleDayIds(timelineTasks, nowClock);
+  // Today's clock hides today's past — never another day's morning.
+  const visibleIds = showingToday
+    ? visibleDayIds(timelineTasks, nowClock)
+    : new Set(timelineTasks.map((t) => t.id));
   const visibleDayOrder = showAllTasks
     ? timelineTasks : timelineTasks.filter((t) => visibleIds.has(t.id));
   const hiddenTaskCount = timelineTasks.length - visibleDayOrder.length;
@@ -1337,6 +1582,7 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
     <View style={styles.root}>
 
       <ScrollView
+        ref={scrollRef}
         style={{ flex: 1 }}
         // The day scrolls UNDER the glass header, which is the only reason a
         // blur is worth its cost: a blurred bar with nothing passing beneath
@@ -1346,6 +1592,44 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
         showsVerticalScrollIndicator={false}
         scrollIndicatorInsets={{ top: insets.top + HEADER_HEIGHT }}
       >
+        {/* E2 (Koral, 28.9): events found in her email / goals, as ONE honey
+            banner opened from the 📅 icon in the header. */}
+        {eventsOpen && suggestionCount > 0 && (
+          <View style={styles.eventsBanner}>
+            <View style={styles.eventsRow}>
+              <Text style={styles.eventsTitle} numberOfLines={2}>
+                {language === 'he'
+                  ? `📅 ${suggestionCount} אירועים נמצאו במייל`
+                  : `📅 ${suggestionCount} event${suggestionCount === 1 ? '' : 's'} found in your email`}
+              </Text>
+              <TouchableOpacity style={styles.eventsAddAll} onPress={handleAddAllSuggestions} activeOpacity={0.85}>
+                <Text style={styles.eventsAddAllText}>{language === 'he' ? 'להוסיף הכל' : 'Add all'}</Text>
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity onPress={() => setEventsReview((v) => !v)} hitSlop={8}>
+              <Text style={styles.eventsSub} numberOfLines={eventsReview ? undefined : 1}>
+                {[...emailSuggestions.map((s) => s.taskToAdd?.text), goalSuggestion?.taskToAdd?.text]
+                  .filter(Boolean).join(' · ')}
+                {'  '}<Text style={styles.eventsReview}>{eventsReview
+                  ? (language === 'he' ? 'סגירה' : 'close')
+                  : (language === 'he' ? 'לעבור אחד-אחד' : 'review')}</Text>
+              </Text>
+            </TouchableOpacity>
+            {eventsReview && (
+              <View style={{ gap: 8, marginTop: 8 }}>
+                {emailSuggestions.map((s) => (
+                  <GapSuggestionCard key={s.id} suggestion={s}
+                    onAccept={handleAcceptEmailSuggestion} onReject={handleRejectEmailSuggestion} />
+                ))}
+                {goalSuggestion && (
+                  <GapSuggestionCard suggestion={goalSuggestion}
+                    onAccept={handleAcceptGoalSuggestion} onReject={handleRejectGoalSuggestion} />
+                )}
+              </View>
+            )}
+          </View>
+        )}
+
         {/* Nothing is syncing — say so, every time, until it is fixed. */}
         {showingToday && !signedIn && (
           <TouchableOpacity style={styles.offlineBanner} onPress={handleSignIn} activeOpacity={0.85}>
@@ -1356,30 +1640,48 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
             </Text>
           </TouchableOpacity>
         )}
-
-        {/* Clashes, above everything else — a day cannot be trusted if it
-            silently claims you are in two places at once. Each one is a full
-            card now: both sides with their hour, their place and a 🔒 when
-            someone else holds the slot; the minutes at stake in the header
-            colour (red for an overlap, amber for a journey that does not
-            fit); every option with an icon for the kind of compromise it is;
-            and "which matters more?" set apart at the bottom, because
-            dropping something is a different answer from moving it. */}
-        {showingToday && clashes.map((clash) => (
-          <ClashCard
-            key={`${clash.a.id}-${clash.b.id}`}
-            clash={clash}
-            language={language}
-            onApply={applyClashOption}
-            onOpenTask={(t) => navigation.navigate('TaskDetail', { taskId: t.id })}
-          />
-        ))}
+        {/* Google is refusing us — say so on the day itself, not only in a
+            Profile check nobody reopens. */}
+        {calendarError && calendarError !== 'not_connected' && (
+          <TouchableOpacity
+            style={styles.calErrorBanner}
+            onPress={() => navigation.navigate('ProfileEdit')}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.calErrorText}>
+              {language === 'he'
+                ? `⚠️ היומן לא נקרא — גוגל החזיר: ${calendarError}`
+                : `⚠️ Calendar not read — Google said: ${calendarError}`}
+            </Text>
+            <Text style={styles.calErrorHint}>
+              {language === 'he'
+                ? 'אירועים חדשים לא ייכנסו עד שזה יתוקן. הקישי כדי להתחבר מחדש לגוגל'
+                : 'New events cannot arrive until this is fixed. Tap to reconnect Google'}
+            </Text>
+          </TouchableOpacity>
+        )}
+        {/* One line, not a card: the clash itself is drawn INSIDE the
+            timeline with its two answers; this only says it exists and takes
+            her there (Koral, 28.9 — one place per thing). */}
+        {dayClashes.length > 0 && (
+          <TouchableOpacity
+            style={styles.clashLink}
+            activeOpacity={0.85}
+            onPress={() => scrollRef.current?.scrollTo({ y: Math.max(0, timelineY - 8), animated: true })}
+          >
+            <Text style={styles.clashLinkText} numberOfLines={1}>
+              {language === 'he'
+                ? `⚠️ ${dayClashes.length > 1 ? `${dayClashes.length} התנגשויות` : 'התנגשות'} ב-${clashAt} — לראות ›`
+                : `⚠️ ${dayClashes.length > 1 ? `${dayClashes.length} clashes` : 'Clash'} at ${clashAt} — see it ›`}
+            </Text>
+          </TouchableOpacity>
+        )}
 
         {/* "Is this the same interview?" — three rows for one appointment,
             each with a different hour, is what a conversation leaves behind.
             Never merged silently: picking an hour for her is how the wrong
             one ends up on an interview. */}
-        {showingToday && sameThing.map((group) => (
+        {daySameThing.map((group) => (
           <SameThingCard
             key={group.tasks.map((t) => t.id).join('-')}
             group={group}
@@ -1388,184 +1690,27 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
             onDismiss={handleNotTheSame}
           />
         ))}
-
-        {/* First-open-of-day: offer the spoken briefing */}
-        {showingToday && showBriefingOffer && (
-          <View style={styles.briefingBanner}>
-            <Text style={styles.briefingText}>
-              {language === 'he' ? '🔊 רוצה לשמוע את היום שלך?' : '🔊 Want to hear your day?'}
-            </Text>
-            <TouchableOpacity
-              style={styles.briefingPlay}
-              onPress={() => { dismissBriefingOffer(); toggleBriefing(); }}
-            >
-              <Text style={styles.briefingPlayText}>{language === 'he' ? 'נגן ▶' : 'Play ▶'}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={dismissBriefingOffer} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Text style={styles.briefingClose}>✕</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* What is ACTUALLY next, with its wake / leave / route chain — above
-            the fold, because "the first thing in today's list" is not the same
-            as "the next thing that needs you somewhere at a time". */}
-        {showingToday && nextUp && (
-          <NextUpCard
-            task={nextUp}
-            language={language}
-            profile={profile}
-            onAlarmPress={handleAlarmPress}
-            onPress={() => {
-              // Tapping what's next opens its TRAVEL ROUTE — the map, the chain,
-              // and the "not left yet → next bus" recompute — when it is a trip.
-              // A task with no place has no route, so it opens its detail instead.
-              const l = asLoc(nextUp);
-              if (l?.transitPlan || l?.leaveHomeBy) {
-                navigation.navigate('LeaveNow', { task: nextUp, isFirstOfDay: nextUp.id === firstAwayId });
-              } else {
-                navigation.navigate('TaskDetail', { taskId: nextUp.id });
-              }
-            }}
-            onStart={() => navigation.navigate('FocusNow', { task: nextUp })}
-          />
-        )}
-
-        {meetingBrief && nextUp && briefTaskId === nextUp.id && (
-          <MeetingBriefCard
-            brief={meetingBrief}
-            language={language}
-            refreshing={briefRefreshing}
-            onRefresh={async () => {
-              setBriefRefreshing(true);
-              try {
-                const res = await nextMeetingBrief(true);
-                setMeetingBrief(res?.brief ?? null);
-                setBriefTaskId(res?.task.id ?? null);
-              } finally {
-                setBriefRefreshing(false);
-              }
-            }}
-          />
-        )}
-
-        {/* The 132px avatar that used to sit here is gone. It occupied the
-            most valuable space on the screen — above the fold, before the
-            schedule — to say nothing the status line does not say better. */}
-        {showingToday && (
-        <TouchableOpacity
-          style={styles.heroWrap}
-          onPress={() => navigation.navigate('CoachChat')}
-          activeOpacity={0.85}
-        >
-          <Text style={styles.heroStatus} numberOfLines={2}>
-            {tasks.length > 0
-              ? `${pending.length}/${tasks.length} ${language === 'he' ? 'משימות להיום' : 'tasks today'}` +
-                (leaveBy ? ` · 🚪 ${leaveBy}` : '') +
-                (focusTask ? ` · 🎯 ${focusTask.text.slice(0, 28)}` : '')
-              : language === 'he' ? 'הכל פנוי! לחצי כאן לתכנן את היום' : 'All clear — tap to plan your day'}
-          </Text>
-        </TouchableOpacity>
-        )}
-
-        {/* What you didn't finish — collapsed, and you decide what happens
-            to it. Previously these tasks kept their old date and vanished. */}
-        {showingToday && <YesterdayCard
-          tasks={overdue}
-          today={getTodayString()}
-          language={language}
-          onMove={handleMoveOverdue}
-          onReschedule={(t) => setSelectedTask(t)}
-          onLetGo={handleLetGoOverdue}
-          onComplete={handleCompleteOverdue}
-          onDelete={handleDeleteOverdue}
-        />}
-
-        {/* Suggestions (Gmail events + a wish-list item for a free slot) behind
-            ONE collapsed row. Rendered open, they were 1-N extra cards
-            competing with the actual schedule on first paint. */}
-        {showingToday && suggestionCount > 0 && (
-          <View style={styles.suggestBox}>
-            <TouchableOpacity
-              style={styles.suggestHeader}
-              onPress={() => toggleSuggestions(!suggestionsOpen)}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.suggestTitle}>
-                💡 {suggestionCount} {language === 'he'
-                  ? (suggestionCount === 1 ? 'הצעה' : 'הצעות')
-                  : (suggestionCount === 1 ? 'suggestion' : 'suggestions')}
-              </Text>
-              <Text style={styles.suggestChevron}>{suggestionsOpen ? '▲' : '▼'}</Text>
-            </TouchableOpacity>
-
-            {suggestionsOpen && (
-              <View style={styles.suggestBody}>
-                {emailSuggestions.map((s) => (
-                  <GapSuggestionCard
-                    key={s.id}
-                    suggestion={s}
-                    onAccept={handleAcceptEmailSuggestion}
-                    onReject={handleRejectEmailSuggestion}
-                  />
-                ))}
-                {goalSuggestion && (
-                  <GapSuggestionCard
-                    suggestion={goalSuggestion}
-                    onAccept={handleAcceptGoalSuggestion}
-                    onReject={handleRejectGoalSuggestion}
-                  />
-                )}
-              </View>
-            )}
-          </View>
-        )}
-
-        {/* "Before you go" merged into NextUpCard above — one card for the
-            next trip, tap it for the full route. */}
-
-        {/* Focus card — tapping it opens the one-thing-at-a-time screen.
-            Naming the focus was never the hard part; starting it is.
-            Hidden when the focus IS what's next — the two cards were the same
-            task shown twice, which is the overlap that made the top of the
-            screen noise. */}
-        {/* The big gold focus card is gone. It restated the next task in a
-            second, louder shape, and between it and NEXT UP the day itself
-            started below the fold — on a screen whose entire job is showing
-            the day. Progress moved into the one-line summary above; starting
-            a task is a tap on its block. */}
-        {/* Where she is, said plainly. The whole travel chain is built on an
-            assumption about this — "she is at home" — and until now that
-            assumption was invisible and unfalsifiable. A chip that says
-            "🚆 In transit" is also how she knows why the leave time changed. */}
-        {showingToday && (presence.state !== 'unknown' || hereLabel) && (
-          <View style={styles.presenceChip}>
-            <Text style={styles.presenceChipText} numberOfLines={1}>
-              {describeDayPresence(presence, language === 'he')}
-              {/* The street, when we have it and the state has not already
-                  named the place. "At home" and "At Tel Aviv University" are
-                  both more useful than an address; "In transit" is not. */}
-              {hereLabel && presence.state !== 'at-venue' ? ` · ${hereLabel}` : ''}
-            </Text>
-          </View>
-        )}
-
         {/* Why the times just changed. Without this a leave time that moves on
             its own reads as a bug, which is how she learned not to trust it. */}
         {showingToday && liveNote && (
-          <TouchableOpacity
-            style={styles.liveNote}
-            onPress={() => setLiveNote(null)}
-            accessibilityLabel={language === 'he' ? 'סגור' : 'Dismiss'}
-          >
-            <Text style={styles.liveNoteText}>{liveNote}</Text>
-          </TouchableOpacity>
+          <View style={styles.liveNote}>
+            <TouchableOpacity
+              onPress={() => { setLiveNote(null); setLiveNoteTaskId(null); }}
+              accessibilityLabel={language === 'he' ? 'סגור' : 'Dismiss'}
+            >
+              <Text style={styles.liveNoteText}>{liveNote}</Text>
+            </TouchableOpacity>
+            {missedTrip && liveNoteTaskId === missedTrip.task.id && !missedOptionsOpen && (
+              <TouchableOpacity onPress={() => setMissedOptionsOpen(true)} hitSlop={8} accessibilityRole="button">
+                <Text style={styles.liveNoteMore}>{language === 'he' ? 'עוד אפשרויות ›' : 'More options ›'}</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         )}
-
         {/* The departure has gone and she has not moved. Do not wait to be
             asked: the three next departures are already here, with their
             arrival times, and picking one rewrites the route and the alerts. */}
-        {showingToday && missedTrip && (
+        {showingToday && missedTrip && (missedOptionsOpen || !liveNote || liveNoteTaskId !== missedTrip.task.id) && (
           <View style={styles.missedBox}>
             <Text style={styles.missedTitle} numberOfLines={2}>
               {language === 'he'
@@ -1599,22 +1744,46 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
             </TouchableOpacity>
           </View>
         )}
-
-        {showingToday && focusTask && focusTask.id !== nextUp?.id && (
-          <TouchableOpacity
-            style={styles.focusSlim}
-            activeOpacity={0.85}
-            onPress={() => navigation.navigate('FocusNow', { task: focusTask })}
-          >
-            <Text style={styles.focusSlimLabel}>
-              {language === 'he' ? '🎯 להתחיל' : '🎯 Start'}
-            </Text>
-            <Text style={styles.focusSlimTitle} numberOfLines={1}>{focusTask.text}</Text>
-            <Text style={styles.focusSlimPct}>
-              {done}/{tasks.length}
-            </Text>
-          </TouchableOpacity>
+        {/* N2 (Koral, 28.9): the next important thing as one gold pill, in the
+            slot "Want to hear your day?" used to take. The ⏰ rides on it —
+            the NEXT UP card was the wake alarm's only home (rule 5). */}
+        {showingToday && pillTask && (
+          <NextImportantStrip
+            task={pillTask}
+            he={language === 'he'}
+            when={lateTrip ? (lateTrip.fixedTime || lateTrip.scheduledTime || '') : nextUpWhen}
+            wake={lateTrip ? null : nextUpWake}
+            leaveAt={lateTrip ? null : (asLoc(pillTask)?.leaveHomeBy ?? null)}
+            late={lateTrip ? {
+              minutes: lateBy,
+              arriveAt: asLoc(lateTrip)?.transitPlan?.arriveAt ?? null,
+            } : null}
+            briefReady={!lateTrip && Boolean((meetingBrief && briefTaskId === pillTask.id) || prep?.taskId === pillTask.id)}
+            briefLabel={!(meetingBrief && briefTaskId === pillTask.id) && prep?.taskId === pillTask.id
+              ? prepLabel(prep.result, language === 'he') : undefined}
+            // The task card — the same sheet a timeline tap opens. It used to
+            // open the Leave-now screen, which for a task with no journey was
+            // nearly empty (Koral, 29.9: "a screen I want to remove").
+            onPress={() => setSelectedTask(pillTask)}
+            onAlarm={() => handleAlarmPress(pillTask)}
+            onBrief={() => setBriefOpen(true)}
+          />
         )}
+
+        {/* What you didn't finish — collapsed, and you decide what happens
+            to it. Previously these tasks kept their old date and vanished. */}
+        {showingToday && <YesterdayCard
+          tasks={overdue}
+          today={getTodayString()}
+          language={language}
+          onMove={handleMoveOverdue}
+          onReschedule={(t) => setSelectedTask(t)}
+          onLetGo={handleLetGoOverdue}
+          onComplete={handleCompleteOverdue}
+          // The row's third button lets go (recoverable) — it deleted for ever,
+          // with no confirmation, 4px from Done (council review, 28.9).
+          onDelete={handleLetGoOverdue}
+        />}
 
         {/* Task list */}
         {loading ? (
@@ -1641,21 +1810,15 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
                 language={language}
                 onRequestIdeas={handleRequestGapIdeas}
                 onPick={handlePickGapIdea}
-                onAddOwn={(g) => navigation.navigate('AddTask', { initialTime: g.start } as any)}
+                // initialDate too: the empty-day branch dropped it, so a task
+                // added to an empty TOMORROW landed on today and vanished.
+                onAddOwn={(g) => navigation.navigate(
+                  'AddTask', { initialTime: g.start, initialDate: dateKey } as any)}
               />
             ))}
           </View>
         ) : (
-          <View style={styles.section}>
-            {/* The work, above the diary. It holds no hour, so it cannot be
-                drawn on a timeline without inventing one. */}
-            <FlexibleTasksCard
-              tasks={flexibleTasks}
-              language={language}
-              onToggle={handleComplete}
-              onTap={setSelectedTask}
-              onHold={setSelectedTask}
-            />
+          <View style={styles.section} onLayout={(e) => setTimelineY(e.nativeEvent.layout.y)}>
 
             <Text style={styles.sectionLabel}>UP NEXT</Text>
             {/* One timeline, shared with the Timeline tab: proportional spans,
@@ -1670,7 +1833,7 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
                 timeline the windowed list is what makes both the cap and the
                 button mean something. */}
             <DayTimeline
-              tasks={visibleDayOrder}
+              tasks={[...visibleDayOrder, ...flexibleTasks]}
               language={language}
               // The moment only exists on the day she is in. Marking "now" on
               // Thursday's timeline draws a red rule through an hour that has
@@ -1736,59 +1899,56 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
         />
       )}
 
-      {/* The header, lifted out of the scroll and floated over it.
-          It used to scroll away with the content, so there was nothing for a
-          blur to blur and the account badge left the screen the moment she
-          looked at her afternoon. The clash cards stay first INSIDE the
-          scroll — a day that claims you are in two places at once still
-          leads — they simply pass beneath the glass now. */}
-      <BlurView
-        intensity={40}
-        tint="light"
+      {/* H3 (Koral, 28.9): a warm, SOLID band — the design system allows no
+          backdrop blur. The L-clock is Meira's face; the location line sits
+          right under the greeting, the highest place on the screen, because
+          every leave time is counted from it. */}
+      <LinearGradient
+        colors={[BRAND.honey, BRAND.cream]}
         style={[styles.headerOverlay, { paddingTop: insets.top + 6 }]}
       >
         <View style={styles.header}>
-          <View>
-            <Text style={styles.greeting}>
-              {showingToday
-                ? `☀️ ${getGreeting()}`
-                : showingTomorrow
-                  ? (language === 'he' ? 'מחר' : 'Tomorrow')
-                  : formatDayLabel(dateKey, language)}
-            </Text>
-            <Text style={styles.userName}>Lumi</Text>
-          </View>
-          <View style={styles.headerActions}>
-            {/* 🔊 hear today's tasks read aloud */}
-            <TouchableOpacity
-              style={[styles.speakBtn, speaking && styles.speakBtnActive]}
-              onPress={toggleBriefing}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <Text style={styles.speakIcon}>{speaking ? '⏹' : '🔊'}</Text>
-            </TouchableOpacity>
-            {/* ☑️ end-of-day review: tick off the list, and give anything
-                left over an exit (move / archive / delete). */}
-            <TouchableOpacity
-              style={styles.speakBtn}
-              onPress={() => navigation.navigate('DayReview')}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <Text style={styles.speakIcon}>☑️</Text>
-            </TouchableOpacity>
-            {/* Was a decorative "L". A round badge in the top-right corner is
-                where every app puts the account, so it now IS the account —
-                and Profile gives up its tab-bar slot to the timeline. */}
-            <TouchableOpacity
-              style={styles.avatar}
-              onPress={() => navigation.navigate('ProfileEdit')}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              accessibilityLabel={language === 'he' ? 'פרופיל' : 'Profile'}
-            >
-              <Text style={styles.avatarText}>👤</Text>
-            </TouchableOpacity>
-          </View>
+          <MeiraCoin size={32} label="Meira" />
+          <Text style={styles.greetingBig} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+            {showingToday
+              ? getGreeting()
+              : showingTomorrow
+                ? (language === 'he' ? 'מחר' : 'Tomorrow')
+                : formatDayLabel(dateKey, language)}
+          </Text>
+          <TouchableOpacity
+            style={styles.headerIcon}
+            onPress={() => setEventsOpen((v) => !v)}
+            accessibilityLabel={language === 'he' ? 'אירועים מהמייל' : 'Events from your email'}
+          >
+            <Text style={styles.headerIconText}>📅</Text>
+            {suggestionCount > 0 && (
+              <View style={styles.badge}><Text style={styles.badgeText}>{suggestionCount}</Text></View>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.headerIcon}
+            onPress={() => navigation.navigate('SettingsMenu')}
+            accessibilityLabel={language === 'he' ? 'תפריט' : 'Menu'}
+          >
+            <Text style={[styles.headerIconText, { color: BRAND.warmInk }]}>☰</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.headerIcon}
+            onPress={() => navigation.navigate('ProfileEdit')}
+            accessibilityLabel={language === 'he' ? 'פרופיל' : 'Profile'}
+          >
+            <Text style={styles.headerIconText}>👤</Text>
+          </TouchableOpacity>
         </View>
+        <Text style={styles.headerSub} numberOfLines={1}>
+          {showingToday
+            ? `${presence.state !== 'unknown' ? '' : '📍 '}${presence.state !== 'unknown' || hereLabel
+              ? `${describeDayPresence(presence, language === 'he')}${hereLabel && presence.state !== 'at-venue' ? ` · ${hereLabel}` : ''}`
+              : (language === 'he' ? 'מיקום כבוי' : 'Location off')} · ${language === 'he' ? `נשארו ${pending.length}` : `${pending.length} left today`}`
+            : (language === 'he' ? `${dayTasks.length} מתוכננות` : `${dayTasks.length} planned`)}
+        </Text>
+
 
         {/* The day picker that used to be the whole point of the Timeline tab.
             Today and tomorrow are the two days she actually plans between, so
@@ -1827,7 +1987,7 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
             </Text>
           </TouchableOpacity>
         </View>
-      </BlurView>
+      </LinearGradient>
 
       {showDayPicker && (
         <DateTimePicker
@@ -1844,6 +2004,31 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
           }}
         />
       )}
+      <BottomSheet visible={briefOpen} onClose={() => setBriefOpen(false)} heightRatio={0.8}>
+        <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}>
+          {prep && !(meetingBrief && briefTaskId === prep.taskId) && (
+            <TaskPrepCard prep={prep.result} he={language === 'he'} taskText={prep.text} />
+          )}
+          {meetingBrief && briefTaskId === nextUp?.id && (
+            <MeetingBriefCard
+              brief={meetingBrief}
+              language={language}
+              refreshing={briefRefreshing}
+              onRefresh={async () => {
+                setBriefRefreshing(true);
+                try {
+                  const res = await nextMeetingBrief(true);
+                  setMeetingBrief(res?.brief ?? null);
+                  setBriefTaskId(res?.task.id ?? null);
+                } finally {
+                  setBriefRefreshing(false);
+                }
+              }}
+            />
+          )}
+        </ScrollView>
+      </BottomSheet>
+
 
       {selectedTask && (
         <TaskDetailBottomSheet
@@ -1878,9 +2063,36 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
  */
 const OPTIONS_TTL_MS = 4 * 60 * 1000;
 
-const HEADER_HEIGHT = 68 + 42;   // + the day-chip row
+const HEADER_HEIGHT = 74 + 42;   // + the day-chip row
 
 const styles = StyleSheet.create({
+  greetingBig: { flex: 1, fontFamily: FONTS.display, fontSize: 22, color: BRAND.warmInk },
+  headerIcon: {
+    width: 38, height: 38, borderRadius: 19, backgroundColor: BRAND.creamCard,
+    borderWidth: 1, borderColor: BRAND.line, alignItems: 'center', justifyContent: 'center',
+  },
+  headerIconText: { fontSize: 17 },
+  badge: {
+    position: 'absolute', top: -3, right: -3, minWidth: 17, height: 17, borderRadius: 9,
+    backgroundColor: BRAND.danger, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4,
+  },
+  badgeText: { color: BRAND.white, fontFamily: FONTS.bodyHeavy, fontSize: 10 },
+  headerSub: { fontFamily: FONTS.bodyBold, fontSize: 12, color: BRAND.inkSoft, marginTop: 4, marginLeft: 42 },
+  clashLink: {
+    backgroundColor: BRAND.creamCard, borderWidth: 1.5, borderColor: BRAND.danger, borderRadius: 14,
+    paddingVertical: 10, paddingHorizontal: 14, marginBottom: 10, minHeight: 44, justifyContent: 'center',
+  },
+  clashLinkText: { fontFamily: FONTS.bodyHeavy, fontSize: 13, color: BRAND.danger },
+  eventsBanner: {
+    backgroundColor: BRAND.honey, borderWidth: 1, borderColor: BRAND.sunGold, borderRadius: 16,
+    padding: 12, marginBottom: 12,
+  },
+  eventsRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  eventsTitle: { flex: 1, fontFamily: FONTS.bodyHeavy, fontSize: 14, color: BRAND.onGold },
+  eventsAddAll: { backgroundColor: BRAND.warmInk, borderRadius: 999, paddingVertical: 8, paddingHorizontal: 14, minHeight: 36, justifyContent: 'center' },
+  eventsAddAllText: { color: BRAND.white, fontFamily: FONTS.bodyHeavy, fontSize: 12 },
+  eventsSub: { fontFamily: FONTS.bodySemi, fontSize: 12, color: '#7A5A18', marginTop: 6 },
+  eventsReview: { fontFamily: FONTS.bodyHeavy, textDecorationLine: 'underline', color: BRAND.onGold },
   // Warm cream. Today and the timeline blocks inside it are one palette
   // again: the blocks were briefly moved to a clay-accented set while the
   // screen around them stayed cream-and-gold, so Today read as two designs
@@ -1888,7 +2100,7 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: BRAND.cream },
   scroll: { paddingHorizontal: 16 },
 
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   headerOverlay: {
     position: 'absolute', top: 0, left: 0, right: 0,
     paddingHorizontal: 16, paddingBottom: 10,
@@ -1974,6 +2186,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14, paddingVertical: 10, marginBottom: 12,
   },
   offlineText: { fontFamily: FONTS.bodyBold, fontSize: 13, color: '#A32B47' },
+  calErrorBanner: {
+    backgroundColor: '#FDECEF', borderRadius: RADIUS.card,
+    borderWidth: 1, borderColor: '#EF476F',
+    paddingHorizontal: 14, paddingVertical: 10, marginBottom: 12, gap: 4,
+  },
+  calErrorText: { fontFamily: FONTS.bodyBold, fontSize: 13, color: '#A32B47' },
+  calErrorHint: { fontFamily: FONTS.body, fontSize: 12, color: '#A32B47' },
   clashBox: {
     backgroundColor: '#FFF4E5', borderRadius: RADIUS.card,
     borderWidth: 1, borderColor: '#FF9F1C',
@@ -2028,6 +2247,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.chip, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 12,
   },
   liveNoteText: { fontFamily: FONTS.bodySemi, fontSize: 13, color: BRAND.warmInk, lineHeight: 19 },
+  liveNoteMore: { fontFamily: FONTS.bodyHeavy, fontSize: 13, color: BRAND.goldInk, marginTop: 6 },
   missedBox: {
     backgroundColor: BRAND.creamCard, borderWidth: 1.5, borderColor: BRAND.danger,
     borderRadius: RADIUS.chip + 4, padding: 12, gap: 10, marginBottom: 12,

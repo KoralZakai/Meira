@@ -22,11 +22,11 @@ import {
 } from 'react-native';
 import { Task, AppLanguage, TaskLocation, TransportType, TransitPlan } from '../types';
 import { DepartureOption } from '../utils/departureOptions';
-import { missedPlannedDeparture } from '../utils/liveRoutePlan';
-import { getTodayString } from '../utils/timeUtils';
+import { missedPlannedDeparture, stillWorthGoingUntil } from '../utils/liveRoutePlan';
+import { getTodayString, timeToMinutes } from '../utils/timeUtils';
 import TransitOptionsList from './TransitOptionsList';
 import { BRAND, FONTS, RADIUS } from '../constants/theme';
-import { travelRowState, describeTravelRow } from '../utils/travelRowState';
+import { travelRowState, describeTravelRow, routeFailureOf } from '../utils/travelRowState';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -194,7 +194,10 @@ export default function TimelineTravelLeg({
   // one of them was temporary; travelRowState tells them apart and says which.
   if (!loc?.leaveHomeBy && !plan) {
     const state = travelRowState(task);
-    const line = describeTravelRow(state, he);
+    // The recorded reason, when the chain wrote one. Without it this row has
+    // to guess, and it guessed 'no route' 107 times while Google was saying
+    // REQUEST_DENIED.
+    const line = describeTravelRow(state, he, routeFailureOf(task));
     if (!line) return null;   // genuinely nowhere to go — silence is correct
     return (
       <TouchableOpacity
@@ -250,8 +253,23 @@ export default function TimelineTravelLeg({
     || (he ? 'הבית' : 'Home');
   const toLabel = loc?.displayName || loc?.address || task.text;
   // "Haven't left" is only a real question once the departure has passed.
-  const departureGone = task.date === getTodayString()
+  //
+  // And only while it is still worth going. At 20:49 an 18:00–20:00 workout
+  // wore a red MISSED "tap for the next ones" — offering a bus to something
+  // that already happened (rule 6). But karaoke that started ten minutes ago
+  // while she is still home IS worth the next bus (Koral, 28.9): the same
+  // window the live re-plan uses, liveRoutePlan.stillWorthGoingUntil. An
+  // ended appointment's leg is not drawn at all.
+  const isToday = task.date === getTodayString();
+  const startAt = task.fixedTime || task.scheduledTime;
+  const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+  const startMin = startAt ? timeToMinutes(startAt) : NaN;
+  const started = isToday && Number.isFinite(startMin) && startMin <= nowMin;
+  const ended = started && startMin + (task.durationMinutes || 30) <= nowMin;
+  const worthGoing = !started || nowMin < stillWorthGoingUntil(startMin, task.durationMinutes || 30);
+  const departureGone = isToday && worthGoing && !task.verifiedArrival
     && missedPlannedDeparture(loc?.leaveHomeBy);
+  if (ended) return null;
 
   return (
     <View style={[styles.wrap, isNext && styles.wrapNext, departureGone && styles.wrapMissed]}>
@@ -287,7 +305,19 @@ export default function TimelineTravelLeg({
           >
             {departureGone
               ? (he ? 'היציאה עברה · לנסיעות הבאות' : 'Departure gone · tap for the next ones')
-              : summary}
+              // The wake time belongs in the SUMMARY, not only inside the card.
+              //
+              // Koral, 2026-09-17, on her own Tomorrow screen: "where is the
+              // clock alarm?" It was there — ⏰ and 🚿 rows, correct to the
+              // minute — behind a ▸ she had no reason to tap. The collapsed
+              // line said "Leave 10:43" and nothing about the morning, so the
+              // day read as though it started at 10:43.
+              //
+              // That is the failure alarmPlan's own doc names: "The alarm was
+              // never lost. It was invisible, which is worse: an alarm you
+              // cannot see is one you can neither trust nor turn off."
+              : [loc?.wakeUpBy ? `⏰ ${loc.wakeUpBy}` : '', summary]
+                .filter(Boolean).join(' · ')}
           </Text>
         </View>
         <Text style={[styles.chevron, departureGone && styles.chevronMissed]}>
@@ -402,27 +432,48 @@ export default function TimelineTravelLeg({
           {/* The chain, not just the vehicle. Wake and get-ready come from the
               route working backwards from the arrival time, and they are the
               part she actually acts on — a leave time with no "get up at" is
-              a number she has to do arithmetic on at 7am. */}
-          {loc?.wakeUpBy ? (
+              a number she has to do arithmetic on at 7am.
+
+              ONE ROW, NOT TWO. `wakeUpBy` IS leaveHomeBy minus the morning
+              routine, so "Wake up 12:38" and "Get ready" were the same instant
+              printed twice — and the get-ready row printed `leaveHomeBy`, when
+              it ENDS, so the same hour appeared twice as well:
+
+                  ⏰ Wake up      12:38
+                  🚿 Get ready    13:18   ← 40 min, ending here
+                  🚪 Leave home   13:18
+
+              Koral wrote the layout she wanted herself:
+
+                  ⏰🚿 Start getting ready   12:38
+                        40 minutes
+                  🚪    Leave home           13:18
+
+              Three rows for two events, and the one number she acts on was the
+              one that was not on screen. */}
+          {loc?.wakeUpBy && loc?.leaveHomeBy ? (
+            <View style={styles.legRow}>
+              <Text style={styles.legIcon}>⏰🚿</Text>
+              <View style={styles.legText}>
+                <Text style={styles.legTitle}>
+                  {he ? 'להתחיל להתארגן' : 'Start getting ready'}
+                </Text>
+                <Text style={styles.legSub}>
+                  {readyMinutes(loc.wakeUpBy, loc.leaveHomeBy)} {he ? 'דקות' : 'minutes'}
+                </Text>
+              </View>
+              <Text style={styles.legTime}>{loc.wakeUpBy}</Text>
+            </View>
+          ) : loc?.wakeUpBy ? (
+            /* A wake time with no journey behind it — an alarm and nothing to
+               count down to. It still has to be shown; it just cannot say how
+               long getting ready takes. */
             <View style={styles.legRow}>
               <Text style={styles.legIcon}>⏰</Text>
               <View style={styles.legText}>
                 <Text style={styles.legTitle}>{he ? 'לקום' : 'Wake up'}</Text>
-                <Text style={styles.legSub}>{he ? 'לפני ההתארגנות' : 'before getting ready'}</Text>
               </View>
               <Text style={styles.legTime}>{loc.wakeUpBy}</Text>
-            </View>
-          ) : null}
-          {loc?.wakeUpBy && loc?.leaveHomeBy ? (
-            <View style={styles.legRow}>
-              <Text style={styles.legIcon}>🚿</Text>
-              <View style={styles.legText}>
-                <Text style={styles.legTitle}>{he ? 'להתארגן' : 'Get ready'}</Text>
-                <Text style={styles.legSub}>
-                  {readyMinutes(loc.wakeUpBy, loc.leaveHomeBy)} {he ? 'דק׳' : 'min'}
-                </Text>
-              </View>
-              <Text style={styles.legTime}>{loc.leaveHomeBy}</Text>
             </View>
           ) : null}
           {loc?.leaveHomeBy ? (
@@ -447,7 +498,26 @@ export default function TimelineTravelLeg({
                   {leg.lineNumber ? `${leg.type === 'walk' ? '' : `${leg.lineNumber} · `}` : ''}
                   {leg.to || leg.stopName || (he ? 'המשך' : 'Continue')}
                 </Text>
-                {leg.stopName ? <Text style={styles.legSub} numberOfLines={1}>{leg.stopName}</Text> : null}
+                {/* The stop, and WHICH of the trains out of it.
+                    "for trains it's important מספר רציף. if we check many
+                    optionals of train they are from other platform." Google
+                    returns no platform number for any Israeli station, so the
+                    direction is what goes here — it is what the boards are
+                    signed with, and it is the thing that separates two trains
+                    leaving the same station minutes apart. Nothing is invented:
+                    when we have neither, the line simply says the stop. */}
+                {leg.stopName || leg.headsign || leg.platform ? (
+                  <Text style={styles.legSub} numberOfLines={1}>
+                    {[
+                      leg.stopName,
+                      leg.platform
+                        ? (he ? `רציף ${leg.platform}` : `platform ${leg.platform}`)
+                        : leg.headsign
+                          ? (he ? `לכיוון ${leg.headsign}` : `towards ${leg.headsign}`)
+                          : '',
+                    ].filter(Boolean).join(' · ')}
+                  </Text>
+                ) : null}
               </View>
               <Text style={styles.legTime} numberOfLines={1}>
                 {leg.arrivalTime && leg.arrivalTime !== leg.departureTime
