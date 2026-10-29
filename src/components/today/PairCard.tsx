@@ -13,10 +13,12 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import type { DragHandlers } from './TrayDock';
 import type { Task } from '../../types/index';
-import { BRAND, FONTS } from '../../constants/theme';
+import { BRAND, FONTS, surf } from '../../constants/theme';
 import { getCategoryMeta } from '../../constants/categories';
 import { addMinutes } from '../../utils/timeUtils';
 import { RIDE_ICON, ridesOf } from '../../utils/rideLine';
+import { useNight } from '../ui/SkyBackdrop';
+import { N } from '../../constants/nightTone';
 
 interface Props {
   a: Task;
@@ -32,6 +34,7 @@ interface Props {
 }
 
 function Half({ t, he, open, onOpen, onComplete, drag }: { t: Task; he: boolean; open: boolean; onOpen: () => void; onComplete: () => void; drag?: DragHandlers }) {
+  const night = useNight();
   const meta = getCategoryMeta(t.category);
   const start = t.fixedTime || t.scheduledTime || '';
   const end = start && t.durationMinutes ? addMinutes(start, t.durationMinutes) : '';
@@ -47,18 +50,18 @@ function Half({ t, he, open, onOpen, onComplete, drag }: { t: Task; he: boolean;
     .onEnd((e, success) => (success ? drag?.onDrop(e.absoluteX, e.absoluteY) : drag?.onCancel()));
   return (
     <GestureDetector gesture={pan}>
-    <TouchableOpacity style={[styles.half, open && styles.halfOpen]} onPress={onOpen} activeOpacity={0.85}
+    <TouchableOpacity style={[styles.half, night && N.chip, open && styles.halfOpen]} onPress={onOpen} activeOpacity={0.85}
       accessibilityRole="button" accessibilityState={{ expanded: open }} accessibilityLabel={`${start} ${t.text}`}>
       <View style={styles.halfHead}>
         <View style={[styles.icon, { backgroundColor: `${meta.color}22` }]}><Text style={styles.iconText}>{meta.icon}</Text></View>
-        <Text style={styles.when} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{end ? `${start}–${end}` : start}</Text>
+        <Text style={[styles.when, night && N.goldInk]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{end ? `${start}–${end}` : start}</Text>
         <TouchableOpacity style={[styles.check, done && styles.checkOn]} onPress={onComplete}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} accessibilityRole="checkbox"
           accessibilityState={{ checked: done }} accessibilityLabel={he ? 'בוצע' : 'Done'}>
           {done ? <Text style={styles.checkMark}>✓</Text> : null}
         </TouchableOpacity>
       </View>
-      <Text style={[styles.title, done && styles.strike]} numberOfLines={2}>{t.text}</Text>
+      <Text style={[styles.title, night && N.ink, done && styles.strike, done && night && N.inkSoft]} numberOfLines={2}>{t.text}</Text>
       {leave && !done ? (
         <View style={styles.leaveRow}>
           <View style={styles.leavePill}>
@@ -66,7 +69,7 @@ function Half({ t, he, open, onOpen, onComplete, drag }: { t: Task; he: boolean;
             <Text style={styles.leaveBig}>{leave}</Text>
           </View>
           {ride?.departureTime ? (
-            <Text style={styles.ride} numberOfLines={1}>{`${RIDE_ICON[ride.type] || '🚌'} ${ride.departureTime}`}</Text>
+            <Text style={[styles.ride, night && N.ink]} numberOfLines={1}>{`${RIDE_ICON[ride.type] || '🚌'} ${ride.departureTime}`}</Text>
           ) : null}
         </View>
       ) : null}
@@ -76,14 +79,15 @@ function Half({ t, he, open, onOpen, onComplete, drag }: { t: Task; he: boolean;
 }
 
 export default function PairCard({ a, b, overlapMinutes, he, openId, onOpen, onComplete, onResolve, drag }: Props) {
+  const night = useNight();
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, night && N.card]}>
       <View style={styles.top}>
         <Text style={styles.topText} numberOfLines={1}>
           {he ? `⚠️ חפיפה של ${overlapMinutes} דק׳ · איזו?` : `⚠️ ${overlapMinutes} min overlap · which one?`}
         </Text>
         <TouchableOpacity onPress={onResolve} hitSlop={10} accessibilityRole="button">
-          <Text style={styles.resolve}>{he ? 'לפתור ›' : 'Resolve ›'}</Text>
+          <Text style={[styles.resolve, night && N.goldInk]}>{he ? 'לפתור ›' : 'Resolve ›'}</Text>
         </TouchableOpacity>
       </View>
       <View style={styles.row}>
@@ -95,12 +99,12 @@ export default function PairCard({ a, b, overlapMinutes, he, openId, onOpen, onC
 }
 
 const styles = StyleSheet.create({
-  card: { backgroundColor: 'rgba(255,253,247,0.92)', borderRadius: 20, padding: 10, gap: 8 },
+  card: { backgroundColor: surf('rgba(255,253,247,0.92)'), borderRadius: 20, padding: 10, gap: 8 },
   top: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 4 },
   topText: { flex: 1, fontFamily: FONTS.bodyHeavy, fontSize: 13, color: BRAND.lateInk },
   resolve: { fontFamily: FONTS.bodyHeavy, fontSize: 13, color: BRAND.goldInk },
   row: { flexDirection: 'row', gap: 8 },
-  half: { flex: 1, minWidth: 0, backgroundColor: BRAND.white, borderRadius: 16, padding: 10, gap: 6 },
+  half: { flex: 1, minWidth: 0, backgroundColor: surf(BRAND.white), borderRadius: 16, padding: 10, gap: 6 },
   halfOpen: { borderWidth: 2, borderColor: BRAND.sunGold },
   halfHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   icon: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },

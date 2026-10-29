@@ -14,7 +14,7 @@ import { firstRideLine, ridesOf } from '../../utils/rideLine';
 import { moovitLinks } from '../../utils/moovitLink';
 import React from 'react';
 import { Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { BRAND, FONTS, SHADOWS } from '../../constants/theme';
+import { BRAND, FONTS, SHADOWS, surf, nink } from '../../constants/theme';
 import { getCategoryMeta } from '../../constants/categories';
 import { addMinutes } from '../../utils/timeUtils';
 import { OverlapProblem } from '../../utils/dayProblems';
@@ -118,7 +118,7 @@ const styles = StyleSheet.create({
   at: { fontFamily: FONTS.display, fontSize: 24, color: BRAND.danger, fontVariant: ['tabular-nums'] },
   badge: {
     flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 999,
-    paddingVertical: 5, paddingLeft: 8, paddingRight: 10, backgroundColor: '#F8ECE9',
+    paddingVertical: 5, paddingLeft: 8, paddingRight: 10, backgroundColor: surf('#F8ECE9'),
   },
   venn: { width: 22, height: 14 },
   ring: { position: 'absolute', left: 0, top: 0, width: 14, height: 14, borderRadius: 7, borderWidth: 2, borderColor: BRAND.danger },
@@ -140,7 +140,7 @@ const styles = StyleSheet.create({
   meta: { fontFamily: FONTS.bodyBold, fontSize: 12, color: BRAND.inkFaint },
   leave: { fontFamily: FONTS.bodyHeavy, fontSize: 12, color: BRAND.goldInk },
   route: { marginTop: 4, fontFamily: FONTS.bodyHeavy, fontSize: 11, color: BRAND.goldInk },
-  moovit: { marginTop: 6, fontFamily: FONTS.bodyHeavy, fontSize: 12, color: '#B25E00' },
+  moovit: { marginTop: 6, fontFamily: FONTS.bodyHeavy, fontSize: 12, color: nink('#B25E00') },
   or: {
     position: 'absolute', left: '50%', top: '50%', width: 32, height: 32, marginLeft: -16, marginTop: -16,
     borderRadius: 16, backgroundColor: BRAND.creamCard, borderWidth: 1.5, borderColor: BRAND.line,

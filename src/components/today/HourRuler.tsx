@@ -10,7 +10,7 @@
  */
 import React, { forwardRef, useImperativeHandle, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { BRAND, FONTS } from '../../constants/theme';
+import { BRAND, FONTS, surf, nink } from '../../constants/theme';
 import type { HourRow } from '../../utils/hourRows';
 
 export interface RulerHandle {
@@ -58,9 +58,9 @@ export const HourRuler = forwardRef<RulerHandle, Props>(({ rows, he, top, bottom
 const styles = StyleSheet.create({
   wrap: {
     position: 'absolute', left: 12, right: 12, zIndex: 40, elevation: 10, padding: 8, gap: 2, borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.96)', borderWidth: 2, borderColor: '#7B6CFF',
+    backgroundColor: surf('rgba(255,255,255,0.96)'), borderWidth: 2, borderColor: '#7B6CFF',
   },
-  cap: { fontFamily: FONTS.bodyHeavy, fontSize: 12, color: '#5A4FE0', marginBottom: 2, paddingHorizontal: 4 },
+  cap: { fontFamily: FONTS.bodyHeavy, fontSize: 12, color: nink('#5A4FE0'), marginBottom: 2, paddingHorizontal: 4 },
   rtl: { textAlign: 'right', writingDirection: 'rtl' },
   row: { flex: 1, minHeight: 22, alignItems: 'center', gap: 10, paddingHorizontal: 8, borderRadius: 10 },
   busy: { backgroundColor: 'rgba(20,27,46,0.06)' },

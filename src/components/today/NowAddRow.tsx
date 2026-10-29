@@ -15,6 +15,8 @@ import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { BRAND, FONTS, MIN_TOUCH } from '../../constants/theme';
 import { readingRow } from './readingRow';
+import { useNight } from '../ui/SkyBackdrop';
+import { N } from '../../constants/nightTone';
 
 interface Props {
   he: boolean;
@@ -37,6 +39,7 @@ export function formatSpan(minutes: number, he: boolean): string {
 }
 
 export default function NowAddRow({ he, freeUntil, freeMinutes, nextStart, nextMinutes, onPress, open }: Props) {
+  const night = useNight();
   const label = freeUntil
     ? (he ? 'פנוי עכשיו, עד' : 'Free now, until')
     : nextStart
@@ -45,15 +48,15 @@ export default function NowAddRow({ he, freeUntil, freeMinutes, nextStart, nextM
   const time = freeUntil ?? nextStart ?? '';
   const span = freeUntil ? freeMinutes : nextStart ? nextMinutes : undefined;
   return (
-    <TouchableOpacity style={styles.row} onPress={onPress} activeOpacity={0.7} accessibilityRole="button"
+    <TouchableOpacity style={[styles.row, night && N.goldSoft]} onPress={onPress} activeOpacity={0.7} accessibilityRole="button"
       accessibilityLabel={time ? `${label} ${time}` : label}>
       <View style={styles.plus}><Text style={styles.plusText}>{open ? '×' : '+'}</Text></View>
       {/* Label then time, in the order the language reads them. */}
       <View style={[styles.words, { flexDirection: readingRow(he) }]}>
-        <Text style={styles.label} numberOfLines={1}>{label}</Text>
-        {time ? <Text style={styles.time}>{time}</Text> : null}
+        <Text style={[styles.label, night && N.ink]} numberOfLines={1}>{label}</Text>
+        {time ? <Text style={[styles.time, night && N.ink]}>{time}</Text> : null}
       </View>
-      {span ? <Text style={styles.span}>{formatSpan(span, he)}</Text> : null}
+      {span ? <Text style={[styles.span, night && N.goldInk]}>{formatSpan(span, he)}</Text> : null}
     </TouchableOpacity>
   );
 }

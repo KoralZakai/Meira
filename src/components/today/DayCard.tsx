@@ -14,7 +14,7 @@
 import React, { useEffect, useState } from 'react';
 import { Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Task, TransitPlan, TransportType } from '../../types/index';
-import { BRAND, FONTS, MIN_TOUCH, SHADOWS } from '../../constants/theme';
+import { BRAND, FONTS, MIN_TOUCH, SHADOWS, surf, nink, nline } from '../../constants/theme';
 import { getCategoryMeta } from '../../constants/categories';
 import { addMinutes, timeToMinutes } from '../../utils/timeUtils';
 import { isRemoteTask } from '../../utils/meetingLink';
@@ -30,6 +30,8 @@ import { isStudyTask } from '../../utils/taskShape';
 import { RIDE_ICON, ridesOf, journeySteps, routeChips, walkRideWalkLine } from '../../utils/rideLine';
 import { StepDir, neighbourLine } from '../../utils/neighbourDeparture';
 import TripTimeline from './TripTimeline';
+import { useNight } from '../ui/SkyBackdrop';
+import { N } from '../../constants/nightTone';
 
 export const MODE_EMOJI: Record<string, string> = { walk: '🚶', bike: '🚴', bus: '🚌', train: '🚆', car: '🚗' };
 const MODE_LABEL: Record<string, [string, string]> = {
@@ -117,6 +119,7 @@ function shortPlace(text?: string): string {
 }
 
 export default function DayCard(props: Props) {
+  const night = useNight();
   const { task, he, now, isNext, late, expanded, nowAt } = props;
   const start = task.fixedTime || task.scheduledTime || '';
   const end = start ? addMinutes(start, task.durationMinutes || 30) : '';
@@ -224,20 +227,20 @@ export default function DayCard(props: Props) {
     );
   } else if (rowState === 'route' && leave) {
     pill = (
-      <View style={[styles.lv, done && styles.lvDone]}>
+      <View style={[styles.lv, done && styles.lvDone, done && night && N.chip]}>
         {/* "צאי 15:19" — her words for the moment to walk out (v3, 27.10). */}
-        <Text style={[styles.lvSmall, done && styles.lvDoneInk]}>{he ? 'צאי' : 'leave'}</Text>
-        <Text style={[styles.lvBig, done && styles.lvDoneInk]}>{leaveNow ? (he ? 'עכשיו' : 'now') : leave}</Text>
+        <Text style={[styles.lvSmall, done && styles.lvDoneInk, done && night && N.inkSoft]}>{he ? 'צאי' : 'leave'}</Text>
+        <Text style={[styles.lvBig, done && styles.lvDoneInk, done && night && N.inkSoft]}>{leaveNow ? (he ? 'עכשיו' : 'now') : leave}</Text>
         {/* 28.10 (Koral): only the leave time is marked; the train's exact minute
             is bold in the route line beside it, not on the yellow. */}
       </View>
     );
   } else if (remote) {
-    pill = <View style={styles.soft}><Text style={styles.softText}>{he ? '💻 אונליין' : '💻 online'}</Text></View>;
+    pill = <View style={[styles.soft, night && N.chip]}><Text style={[styles.softText, night && N.goldInk]}>{he ? '💻 אונליין' : '💻 online'}</Text></View>;
   } else if (rowState === 'pending' || rowState === 'unroutable') {
     pill = (
-      <View style={styles.soft}>
-        <Text style={styles.softText}>{rowState === 'pending' ? (he ? '🧭 מחשבת…' : '🧭 routing…') : (he ? '🚫 אין מסלול' : '🚫 no route')}</Text>
+      <View style={[styles.soft, night && N.chip]}>
+        <Text style={[styles.softText, night && N.goldInk]}>{rowState === 'pending' ? (he ? '🧭 מחשבת…' : '🧭 routing…') : (he ? '🚫 אין מסלול' : '🚫 no route')}</Text>
       </View>
     );
   } else if (rowState === 'none' && props.onAddPlace && !done && !over && !isFlexibleTask(task)) {
@@ -245,7 +248,7 @@ export default function DayCard(props: Props) {
       <TouchableOpacity style={styles.addPlace} onPress={props.onAddPlace} accessibilityRole="button"
         accessibilityLabel={he ? 'להוסיף מקום' : 'Add the place'}>
         <Text style={styles.addPlaceIcon}>📍</Text>
-        <Text style={styles.addPlaceText}>{he ? 'להוסיף מקום' : 'add place'}</Text>
+        <Text style={[styles.addPlaceText, night && N.goldInk]}>{he ? 'להוסיף מקום' : 'add place'}</Text>
       </TouchableOpacity>
     );
   }
@@ -260,12 +263,12 @@ export default function DayCard(props: Props) {
   const earlyBy = arrive && start ? timeToMinutes(start) - timeToMinutes(arrive) : undefined;
 
   return (
-    <View style={[styles.card, (isNext || nowAt) && styles.next, done && styles.done]}>
+    <View style={[styles.card, night && N.card, (isNext || nowAt) && styles.next, done && styles.done]}>
       <TouchableOpacity activeOpacity={0.85} onPress={props.onToggleExpand} onLongPress={props.onMove}
         accessibilityRole="button" accessibilityState={{ expanded }}>
         <View>
-        {nowAt && !done ? <Text style={styles.eyebrow}>{he ? 'עכשיו' : 'NOW'}</Text>
-          : isNext && !done ? <Text style={styles.eyebrow}>{he ? 'הבא בתור' : 'NEXT UP'}</Text> : null}
+        {nowAt && !done ? <Text style={[styles.eyebrow, night && N.goldInk]}>{he ? 'עכשיו' : 'NOW'}</Text>
+          : isNext && !done ? <Text style={[styles.eyebrow, night && N.goldInk]}>{he ? 'הבא בתור' : 'NEXT UP'}</Text> : null}
         <View style={styles.head}>
           {/* Did it or not — on the card itself, never behind the tap (Koral, 1.10). */}
           <TouchableOpacity style={[styles.check, done && styles.checkOn]} onPress={props.onToggleComplete}
@@ -273,11 +276,11 @@ export default function DayCard(props: Props) {
             accessibilityState={{ checked: done }} accessibilityLabel={he ? 'בוצע' : 'Done'}>
             {done ? <Text style={styles.checkMark}>✓</Text> : null}
           </TouchableOpacity>
-          <View style={styles.icon}><Text style={styles.iconText}>{icon}</Text></View>
+          <View style={[styles.icon, night && N.chip]}><Text style={styles.iconText}>{icon}</Text></View>
           <View style={styles.body}>
             {props.morningAlarm ? (
               <View style={[styles.whenRow, { flexDirection: readingRow(he) }]}>
-                <Text style={styles.when}>{end ? `${start}–${end}` : start}</Text>
+                <Text style={[styles.when, night && N.goldInk]}>{end ? `${start}–${end}` : start}</Text>
                 <TouchableOpacity onPress={props.morningAlarm.onToggle} onLongPress={props.morningAlarm.onLongPress}
                   delayLongPress={350} hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
                   style={[styles.alarmTag, !props.morningAlarm.on && styles.alarmTagOff]}
@@ -289,12 +292,12 @@ export default function DayCard(props: Props) {
                 </TouchableOpacity>
               </View>
             ) : (
-              <Text style={styles.when}>{end ? `${start}–${end}` : start}</Text>
+              <Text style={[styles.when, night && N.goldInk]}>{end ? `${start}–${end}` : start}</Text>
             )}
-            <Text style={[styles.title, done && styles.strike, HEBREW.test(task.text) && styles.rtl]} numberOfLines={2}>
+            <Text style={[styles.title, night && N.ink, done && styles.strike, done && night && N.inkSoft, HEBREW.test(task.text) && styles.rtl]} numberOfLines={2}>
               {task.text}
             </Text>
-            {place ? <Text style={styles.place} numberOfLines={1}>{place}</Text> : null}
+            {place ? <Text style={[styles.place, night && N.inkSoft]} numberOfLines={1}>{place}</Text> : null}
             {/* Every step whole, wrapping onto the next line when the card is
                 narrow — the bus NUMBER first. One cut sentence lost the second
                 bus's number and the stop (18.10: "missed the bus line!"). */}
@@ -302,23 +305,23 @@ export default function DayCard(props: Props) {
               <View accessible accessibilityLabel={routeLine} style={[styles.chips, { flexDirection: readingRow(he) }]}>
                 {route.chips.map((c, i) => (
                   <React.Fragment key={`${c.kind}-${i}`}>
-                    {i > 0 ? <Text style={styles.chipArrow}>{he ? '←' : '→'}</Text> : null}
+                    {i > 0 ? <Text style={[styles.chipArrow, night && N.goldInk]}>{he ? '←' : '→'}</Text> : null}
                     {c.kind === 'walk' ? (
-                      <Text style={styles.walkChip}>{`${c.icon} ${c.text}`}</Text>
+                      <Text style={[styles.walkChip, night && N.inkSoft]}>{`${c.icon} ${c.text}`}</Text>
                     ) : (
                       <View style={[styles.rideChip, { flexDirection: readingRow(he) }]}>
                         <Text style={styles.rideChipIcon}>{c.icon}</Text>
                         {c.line ? <Text style={styles.lineBadge}>{c.line}</Text> : null}
-                        {c.time ? <Text style={styles.rideChipTime}>{c.time}</Text> : null}
+                        {c.time ? <Text style={[styles.rideChipTime, night && N.ink]}>{c.time}</Text> : null}
                       </View>
                     )}
                   </React.Fragment>
                 ))}
               </View>
             ) : null}
-            {route.from ? <Text style={styles.routeFrom} numberOfLines={1}>{(he ? RLM : '') + route.from}</Text> : null}
+            {route.from ? <Text style={[styles.routeFrom, night && N.inkSoft]} numberOfLines={1}>{(he ? RLM : '') + route.from}</Text> : null}
             {readyAt && rowState === 'route' && !over ? (
-              <Text style={styles.routeLine} numberOfLines={1}>
+              <Text style={[styles.routeLine, night && N.goldInk]} numberOfLines={1}>
                 {`${he ? RLM : ''}${props.wake?.muted ? '🔕' : '⏰'} ${readyAt}`}
               </Text>
             ) : null}
@@ -338,15 +341,15 @@ export default function DayCard(props: Props) {
             <View style={styles.nowPill}><Text style={styles.nowPillText}>{nowAt}</Text></View>
             <Heartbeat size={22} />
             <View style={[styles.nowAhead, { flex: 100 - pct }]} />
-            <Text style={styles.leftText}>{he ? `עוד ${formatSpan(left, true)}` : `${formatSpan(left, false)} left`}</Text>
+            <Text style={[styles.leftText, night && N.goldInk]}>{he ? `עוד ${formatSpan(left, true)}` : `${formatSpan(left, false)} left`}</Text>
           </View>
         ) : null}
         </View>
       </TouchableOpacity>
-      {props.note ? <Text style={styles.note}>{props.note}</Text> : null}
+      {props.note ? <Text style={[styles.note, night && N.inkSoft]}>{props.note}</Text> : null}
       {props.brief && !done ? (
         <TouchableOpacity onPress={props.brief.onPress} style={styles.brief} accessibilityRole="button">
-          <Text style={styles.briefText} numberOfLines={2}>{props.brief.label}</Text>
+          <Text style={[styles.briefText, night && N.goldInk]} numberOfLines={2}>{props.brief.label}</Text>
         </TouchableOpacity>
       ) : null}
 
@@ -360,21 +363,21 @@ export default function DayCard(props: Props) {
                   wake up, get ready?"). The Today redesign of 1.10 kept only
                   the door; TimelineTravelLeg had both. */}
               {/* 28.10, her pick B — shared with the task page (TripTimeline). */}
-              <TripTimeline task={task} he={he} now={now} readyAt={readyAt} wakeMuted={props.wake?.muted} mode={mode} />
+              <TripTimeline task={task} he={he} now={now} readyAt={readyAt} wakeMuted={props.wake?.muted} mode={mode} night={night} />
             </>
           ) : null}
 
           {canStep && shown ? (
-            <View style={styles.stepper}>
+            <View style={[styles.stepper, night && N.goldSoft]}>
               {/* The journey she is looking at gets a row of its own: squeezed
                   between the two buttons it was cut to "10:34 → 12:…", and the
                   minutes early / late — the point of the line — went first. */}
-              <Text style={[styles.stepperLine, (shown.arriveAt > (task.fixedTime || '99:99')) && styles.lateInk]}>
+              <Text style={[styles.stepperLine, night && N.ink, (shown.arriveAt > (task.fixedTime || '99:99')) && styles.lateInk]}>
                 {(he ? RLM : '') + neighbourLine(shown, task.fixedTime || task.scheduledTime, he)}
               </Text>
               <View style={[styles.stepperRow, { flexDirection: readingRow(he) }]}>
                 {(['earlier', 'later'] as StepDir[]).map((dir) => {
-                  const arrow = <Text style={styles.stepArrow}>{stepArrow(dir, he)}</Text>;
+                  const arrow = <Text style={[styles.stepArrow, night && N.goldInk]}>{stepArrow(dir, he)}</Text>;
                   const word = dir === 'earlier' ? (he ? 'מוקדם' : 'Earlier') : (he ? 'מאוחר' : 'Later');
                   return (
                     <TouchableOpacity key={dir} style={[styles.stepBtn, { flexDirection: readingRow(he) }]}
@@ -383,7 +386,7 @@ export default function DayCard(props: Props) {
                         ? (he ? 'נסיעה מוקדמת יותר' : 'Earlier departure')
                         : (he ? 'נסיעה מאוחרת יותר' : 'Later departure')}>
                       {dir === 'earlier' ? arrow : null}
-                      <Text style={styles.stepBtnText}>{stepping === dir ? '…' : word}</Text>
+                      <Text style={[styles.stepBtnText, night && N.ink]}>{stepping === dir ? '…' : word}</Text>
                       {dir === 'later' ? arrow : null}
                     </TouchableOpacity>
                   );
@@ -391,29 +394,29 @@ export default function DayCard(props: Props) {
               </View>
               {peek && props.onPickDeparture ? (
                 <View style={styles.stepperRow}>
-                  <Text style={[styles.stepperHint, styles.stepperHintFlex]}>{he ? `יציאה ${peek.leaveHomeAt} · עוד לא נשמר` : `Leave ${peek.leaveHomeAt} · not saved yet`}</Text>
+                  <Text style={[styles.stepperHint, night && N.inkSoft, styles.stepperHintFlex]}>{he ? `יציאה ${peek.leaveHomeAt} · עוד לא נשמר` : `Leave ${peek.leaveHomeAt} · not saved yet`}</Text>
                   <TouchableOpacity style={[styles.btn, styles.btnGold, styles.btnTake]} accessibilityRole="button"
                     onPress={() => { Promise.resolve(props.onPickDeparture!(peek)).catch((e) => console.warn('[DayCard] pick failed', e)); }}>
                     <Text style={styles.btnGoldText}>{he ? 'לבחור את זו' : 'Take this one'}</Text>
                   </TouchableOpacity>
                 </View>
               ) : null}
-              {stepNote ? <Text style={styles.stepperHint}>{stepNote}</Text> : null}
+              {stepNote ? <Text style={[styles.stepperHint, night && N.inkSoft]}>{stepNote}</Text> : null}
             </View>
           ) : null}
 
           {why ? (
             <View style={styles.why}>
-              <Text style={styles.whyText}>{why.text}</Text>
+              <Text style={[styles.whyText, night && N.inkSoft]}>{why.text}</Text>
               {why.action && props.onRetryRoute ? (
                 <TouchableOpacity onPress={props.onRetryRoute} accessibilityRole="button" style={styles.whyBtn}>
-                  <Text style={styles.whyBtnText}>{why.action}</Text>
+                  <Text style={[styles.whyBtnText, night && N.goldInk]}>{why.action}</Text>
                 </TouchableOpacity>
               ) : null}
               {/* Google could not place it: Meira's suggestions, one tap away. */}
               {routeFailureOf(task)?.kind === 'not_found' && props.onWhereIs && !done ? (
                 <TouchableOpacity onPress={props.onWhereIs} accessibilityRole="button" style={styles.whyBtn}>
-                  <Text style={styles.whyBtnText}>{he ? '📍 איפה זה? הצעות ›' : '📍 Where is it? Suggestions ›'}</Text>
+                  <Text style={[styles.whyBtnText, night && N.goldInk]}>{he ? '📍 איפה זה? הצעות ›' : '📍 Where is it? Suggestions ›'}</Text>
                 </TouchableOpacity>
               ) : null}
             </View>
@@ -456,7 +459,7 @@ export default function DayCard(props: Props) {
                   accessibilityLabel={(MODE_LABEL[m] || [m, m])[he ? 1 : 0]}>
                   <Text style={styles.modeText}>{MODE_EMOJI[m]}</Text>
                   {quotes && quotes[m] ? (
-                    <Text style={[styles.modeMin, m === mode && styles.modeMinOn]}>{quotes[m]}′</Text>
+                    <Text style={[styles.modeMin, night && N.inkSoft, m === mode && styles.modeMinOn]}>{quotes[m]}′</Text>
                   ) : null}
                 </TouchableOpacity>
               ))}
@@ -464,13 +467,13 @@ export default function DayCard(props: Props) {
           ) : null}
           {props.onFromHere && place && !remote && !done ? (
             <TouchableOpacity onPress={props.onFromHere} style={styles.routeLink} accessibilityRole="button">
-              <Text style={styles.routeLinkText}>{he ? '📍 מהמקום שבו אני עכשיו' : '📍 From where I am now'}</Text>
+              <Text style={[styles.routeLinkText, night && N.goldInk]}>{he ? '📍 מהמקום שבו אני עכשיו' : '📍 From where I am now'}</Text>
             </TouchableOpacity>
           ) : null}
 
           {props.onOpenRoute && rowState === 'route' && !done ? (
             <TouchableOpacity onPress={props.onOpenRoute} style={styles.routeLink} accessibilityRole="link">
-              <Text style={styles.routeLinkText}>{he ? '🧭 כל הדרכים להגיע ›' : '🧭 See the way there ›'}</Text>
+              <Text style={[styles.routeLinkText, night && N.goldInk]}>{he ? '🧭 כל הדרכים להגיע ›' : '🧭 See the way there ›'}</Text>
             </TouchableOpacity>
           ) : null}
 
@@ -480,11 +483,11 @@ export default function DayCard(props: Props) {
                 <Text style={styles.btnGoldText}>{he ? '🚪 יצאתי' : '🚪 I left'}</Text>
               </TouchableOpacity>
             ) : null}
-            <TouchableOpacity style={[styles.btn, styles.btnSoft]} onPress={props.onToggleComplete} accessibilityRole="button">
-              <Text style={styles.btnSoftText}>{done ? (he ? '↺ לא בוצע' : '↺ Undo') : (he ? '✓ בוצע' : '✓ Done')}</Text>
+            <TouchableOpacity style={[styles.btn, styles.btnSoft, night && N.chip]} onPress={props.onToggleComplete} accessibilityRole="button">
+              <Text style={[styles.btnSoftText, night && N.ink]}>{done ? (he ? '↺ לא בוצע' : '↺ Undo') : (he ? '✓ בוצע' : '✓ Done')}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.btn, styles.btnSoft]} onPress={props.onMove} accessibilityRole="button">
-              <Text style={styles.btnSoftText}>{he ? 'להזיז' : 'Move'}</Text>
+            <TouchableOpacity style={[styles.btn, styles.btnSoft, night && N.chip]} onPress={props.onMove} accessibilityRole="button">
+              <Text style={[styles.btnSoftText, night && N.ink]}>{he ? 'להזיז' : 'Move'}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -523,8 +526,8 @@ const styles = StyleSheet.create({
   title: { fontFamily: FONTS.displaySemi, fontSize: 17, lineHeight: 21, color: BRAND.warmInk },
   rtl: { writingDirection: 'rtl' },
   strike: { textDecorationLine: 'line-through', color: BRAND.inkFaint },
-  moovit: { alignSelf: 'flex-start', marginTop: 10, paddingVertical: 8, paddingHorizontal: 14, borderRadius: 999, backgroundColor: '#FFF1E0', borderWidth: 1, borderColor: '#FF9F1C' },
-  moovitText: { fontFamily: FONTS.bodyHeavy, fontSize: 13, color: '#B25E00' },
+  moovit: { alignSelf: 'flex-start', marginTop: 10, paddingVertical: 8, paddingHorizontal: 14, borderRadius: 999, backgroundColor: surf('#FFF1E0'), borderWidth: 1, borderColor: '#FF9F1C' },
+  moovitText: { fontFamily: FONTS.bodyHeavy, fontSize: 13, color: nink('#B25E00') },
   routeLine: { marginTop: 3, fontFamily: FONTS.bodyHeavy, fontSize: 12, color: BRAND.goldInk },
   // The closed card's route: steps that wrap, so none is ever cut.
   chips: { flexWrap: 'wrap', alignItems: 'center', columnGap: 5, rowGap: 4, marginTop: 5 },
@@ -550,7 +553,7 @@ const styles = StyleSheet.create({
   heroMid: { fontFamily: FONTS.bodyHeavy, fontSize: 26, lineHeight: 30, color: BRAND.onGold, fontVariant: ['tabular-nums'] },
   heroSub: { fontFamily: FONTS.bodySemi, fontSize: 12, color: BRAND.onGold },
   lv: { minWidth: 64, alignItems: 'center', gap: 2, paddingVertical: 6, paddingHorizontal: 8, borderRadius: 14, backgroundColor: BRAND.sunGold },
-  lvLate: { backgroundColor: '#F8ECE9' },
+  lvLate: { backgroundColor: surf('#F8ECE9') },
   lvDone: { backgroundColor: BRAND.timeChipBg },
   lvDoneInk: { color: BRAND.inkSoft },
   lvSmall: { fontFamily: FONTS.bodyHeavy, fontSize: 11, color: BRAND.onGold },
@@ -622,6 +625,6 @@ const styles = StyleSheet.create({
   // "Take this one" sits beside its hint: it takes the room its label needs, no more.
   btnTake: { flex: 0, paddingHorizontal: 16 },
   btnGoldText: { fontFamily: FONTS.bodyHeavy, fontSize: 14, color: BRAND.onGold },
-  btnSoft: { backgroundColor: BRAND.creamCard, borderWidth: 1.5, borderColor: '#E6D9BC' },
+  btnSoft: { backgroundColor: BRAND.creamCard, borderWidth: 1.5, borderColor: nline('#E6D9BC') },
   btnSoftText: { fontFamily: FONTS.bodyHeavy, fontSize: 14, color: BRAND.warmInk },
 });

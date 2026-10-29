@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BRAND, FONTS, RADIUS, SHADOWS, getNoteStyle } from '../constants/theme';
+import { BRAND, FONTS, RADIUS, SHADOWS, getNoteStyle, surf, nink, nline } from '../constants/theme';
 import {
   addTask,
   deleteTasks,
@@ -219,13 +219,16 @@ export default function MyTasks({ navigation }: MyTasksProps) {
                   ? 'אפשר לגרור החוצה מתוך המשימה.'
                   : 'You can move it back out from the task itself.'}`,
               );
+              // Re-read once, without filing again (it used to recurse — and when a
+              // filing did not stick, Tasks spun and re-announced it for ever).
+              nestingAnsweredRef.current = true;
               await load();
               return;
             }
             const next = await nextParentSuggestion(await getAllTasks());
             setNesting(next);
           })
-          .catch(() => setNesting(null));
+          .catch((e) => { console.warn('[MyTasks] auto-file / nesting suggestion failed', e); setNesting(null); });
       }
     } finally {
       setLoading(false);
@@ -746,12 +749,12 @@ const styles = StyleSheet.create({
   // Expired-task cleanup banner
   expiredBanner: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: '#FDEFD9', borderColor: '#F1E0B8', borderWidth: 1,
+    backgroundColor: surf('#FDEFD9'), borderColor: nline('#F1E0B8'), borderWidth: 1,
     borderRadius: 14, paddingVertical: 10, paddingHorizontal: 14, marginBottom: 12,
   },
   expiredText: { flex: 1, fontSize: 13, fontFamily: FONTS.bodySemi, color: BRAND.warmInk },
   expiredBtn: { backgroundColor: BRAND.sunGold, borderRadius: 12, paddingVertical: 6, paddingHorizontal: 16 },
-  expiredBtnText: { fontSize: 13, fontFamily: FONTS.bodyBold, color: BRAND.warmInk },
+  expiredBtnText: { fontSize: 13, fontFamily: FONTS.bodyBold, color: BRAND.onGold },
 
   // Multi-select delete bar
   selectBar: {
@@ -826,7 +829,7 @@ const styles = StyleSheet.create({
   searchClear: { fontSize: 15, color: BRAND.inkSoft, paddingHorizontal: 2 },
   searchSummary: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    marginBottom: 8, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.8)',
+    marginBottom: 8, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, backgroundColor: surf('rgba(255,255,255,0.8)'),
   },
   searchSummaryText: { fontSize: 12.5, fontFamily: FONTS.bodySemi, color: BRAND.warmInk },
   searchSummaryClear: { fontSize: 12.5, fontFamily: FONTS.bodyBold, color: BRAND.sunGold },
@@ -841,7 +844,7 @@ const styles = StyleSheet.create({
   },
   chipActive: { backgroundColor: BRAND.warmInk, borderColor: BRAND.warmInk },
   chipText: { fontSize: 13, fontFamily: FONTS.bodyBold, color: BRAND.inkSoft },
-  chipTextActive: { color: BRAND.white },
+  chipTextActive: { color: BRAND.creamCard },
 
   actionBar: { flexDirection: 'row', gap: 8, marginBottom: 16 },
   buildBtn: {
@@ -853,7 +856,7 @@ const styles = StyleSheet.create({
     backgroundColor: BRAND.sunGold,
     ...SHADOWS.button,
   },
-  buildBtnText: { fontSize: 15, fontFamily: FONTS.bodyHeavy, color: BRAND.white },
+  buildBtnText: { fontSize: 15, fontFamily: FONTS.bodyHeavy, color: BRAND.onGold },
   aiBtn: {
     paddingHorizontal: 16,
     borderRadius: 14,
@@ -898,7 +901,7 @@ const styles = StyleSheet.create({
   },
   noteBody: { gap: 8, marginTop: 11 },
 
-  empty: { alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 28, borderRadius: 24, backgroundColor: 'rgba(255,255,255,0.82)' },
+  empty: { alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 28, borderRadius: 24, backgroundColor: surf('rgba(255,255,255,0.82)') },
   emptyIcon: { fontSize: 40 },
   emptyText: { fontSize: 14, fontFamily: FONTS.bodySemi, color: BRAND.inkSoft },
 });
@@ -920,8 +923,8 @@ const rowStyles = StyleSheet.create({
     height: 22,
     borderRadius: 11,
     borderWidth: 2,
-    borderColor: '#E6D9BC',
-    backgroundColor: '#fff',
+    borderColor: nline('#E6D9BC'),
+    backgroundColor: surf('#fff'),
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -929,7 +932,7 @@ const rowStyles = StyleSheet.create({
   checkmark: { fontSize: 13, color: BRAND.white, fontFamily: FONTS.bodyHeavy },
   selectDot: {
     width: 22, height: 22, borderRadius: 11, borderWidth: 2,
-    borderColor: '#EF476F', backgroundColor: '#fff',
+    borderColor: '#EF476F', backgroundColor: surf('#fff'),
     alignItems: 'center', justifyContent: 'center',
   },
   selectDotOn: { backgroundColor: '#EF476F', borderColor: '#EF476F' },

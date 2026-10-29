@@ -7,7 +7,7 @@
 import React, { useEffect, useRef } from 'react';
 import { Animated, Dimensions, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, View, ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BRAND } from '../../constants/theme';
+import { BRAND, THEME_NIGHT } from '../../constants/theme';
 
 interface Props {
   visible: boolean;
@@ -56,7 +56,8 @@ export default function BottomSheet({ visible, onClose, children, heightRatio, b
 
 const styles = StyleSheet.create({
   fill: { flex: 1, justifyContent: 'flex-end' },
-  scrim: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(252,247,236,0.82)' },
+  // Cream veil by day; at night a dark one (a light veil over the night app was the bell's glare).
+  scrim: { ...StyleSheet.absoluteFill, backgroundColor: THEME_NIGHT ? 'rgba(0,0,0,0.6)' : 'rgba(252,247,236,0.82)' },
   sheet: {
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,

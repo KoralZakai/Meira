@@ -15,6 +15,7 @@ A user-facing fix is not done until all of these are true (this is rule 12 of WH
 2. Any new regression test fails on the old code.
 3. The change is on `master` and Fly's `/health` check passes. The push is mine: until I run it, say "committed, not deployed" — never "deployed".
 4. The APK is built and installed with `adb install`, and the fix is verified on the phone.
+5. A fixed bug in how Meira or the app REACTS gets a case in `server/evals/datasets/golden.jsonl`: her real sentence(s), the right reaction, and the wrong one in `must_not` (`server/evals/GOLDEN.md`). If she hasn't confirmed the right reaction yet, mark it `draft` and ask her.
 
 If the phone is disconnected, say so explicitly instead of claiming the fix is done.
 When you change ranking or planning rules, bump `ROUTE_RULES_VERSION` (`src/services/GoogleSync.ts`) so stale plans are regenerated.
@@ -433,7 +434,7 @@ never as bare "Error: …" text, which the guard would have read as a success. A
 ("נשמר", "הוספתי ליומן", "Saved!") needs an action tool that SUCCEEDED, ticked or not;
 a route line needs a route tool that succeeded (`lumi_agent.strip_unbacked_*`).
 
-### The agent's tools (server/lumi_agent.py `_make_tools`)
+### The 21 tools (server/lumi_agent.py `_make_tools`)
 
 | Tool | What it does |
 |---|---|
@@ -452,10 +453,12 @@ a route line needs a route tool that succeeded (`lumi_agent.strip_unbacked_*`).
 | `list_reminders` | Reminders already scheduled, upcoming only |
 | `save_memory` | Remember a distilled fact for future conversations |
 | `web_search` | Live web search — **Tavily first**, Google Custom Search as fallback |
+
 | `ask_my_history` | HER past, opt-in only (`profile.historyOptIn`): workouts, learning minutes, road minutes, reschedules, tasks done — counted in code (`server/history_stats.py`) for a period, vs the one before, vs her target. Open questions ("the thesis") = vector search over `lumi_history` (`history_store.search`), counted in code. A failed lookup is a reason, never 0 |
 | `set_weekly_target` | Her weekly goal (`workouts` count / `learning_minutes`), stored in `profile.weeklyTargets`; the coach pushes against it |
 | `transit_disruptions` | NEWS of disruptions on her route — roadworks, closed train lines, strikes (Tavily news, last 3 days, Israeli sources). `server/transit_alerts.py` keeps a result only if it has a disruption word AND names her city/station/line; `checked:false` = couldn't look, never "clear". Also in the morning/evening brief and `POST /app/transit/alerts` |
 | `find_time_together` | A group poll for ONE slot (party, meeting): members from her shared contacts, 1–6 slots (dates via calculate_date). `server/group_time.py`: auto free/busy from each JOINED member's own tasks (✓/✗, never what the busy thing is), manual answers win, unreadable = ?, never ✗. Every member gets a `/g/{token}` link, so nobody learns who is on Meira. App: `/app/groups/*`, lock adds the slot to the yeses |
+
 | `find_place` | Where a named place or business actually is |
 | `find_best_place` | CHOOSES for her: the quickest place of a kind ("closest beach by car", "nearest post office", car vs bike vs bus), door to door — drive + parking estimate + walk, wait for the bus. `server/place_ranker.py`, read-only |
 | `route_now` | How to get to ONE known place leaving now ("how do I get home from here?"). Same ranker, no reminder |

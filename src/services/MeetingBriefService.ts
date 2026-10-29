@@ -126,7 +126,9 @@ async function eventForTask(task: Task): Promise<Partial<BriefEvent>> {
       attendees: match.attendees,
       location: match.location,
     };
-  } catch {
+  } catch (e) {
+    // The brief still goes out — but the log says the invite was not readable (rule 2).
+    console.warn('[MeetingBrief] calendar event unreadable — briefing without the invite', e);
     return {};
   }
 }

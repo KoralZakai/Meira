@@ -217,5 +217,5 @@ const styles = StyleSheet.create({
   sub: { fontFamily: FONTS.bodySemi, fontSize: 12, color: BRAND.goldInk, lineHeight: 17 },
   map: { fontSize: 18 },
   planBtn: { backgroundColor: BRAND.warmInk, borderRadius: 999, paddingVertical: 8, paddingHorizontal: 12, minHeight: 36, justifyContent: 'center' },
-  planText: { color: BRAND.white, fontFamily: FONTS.bodyHeavy, fontSize: 12 },
+  planText: { color: BRAND.creamCard, fontFamily: FONTS.bodyHeavy, fontSize: 12 },
 });

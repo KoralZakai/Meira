@@ -112,6 +112,41 @@ _PERSON_RE = re.compile(
 
 # "Phone Screen at Workday for JR-1", "Interview at Ceva (Open)" — stops at for/–/(.
 _AT_RE = re.compile(r"\b(?:at|@)\s+([A-Z][\w&'\-\.]*(?:\s+(?!for\b)[A-Z][\w&'\-\.]*){0,2})")
+# "I have an interview for AI Engineer in Nebuis on" — what she TYPES, not an
+# ATS invite: the employer after "in"/"at", the job after "for". 29.10: this
+# title had no company anywhere else, so the card said "why none?".
+_TYPED_EMPLOYER_RE = re.compile(
+    r"\b(?i:interview)\b(?:\s+(?i:for)\s+(?P<role>[\w/&+\- ]{2,60}?))?\s+(?i:in|at)\s+"
+    r"(?P<co>[A-Z][\w&'\-\.]*(?:\s+[A-Z][\w&'\-\.]*){0,2})")
+_TYPED_EMPLOYER_HE_RE = re.compile(
+    r"ראיון(?:\s+עבודה)?(?:\s+ל(?:תפקיד\s+)?(?P<role>[^\s]+(?:\s+[^\s]+)?))?\s+ב(?:חברת\s+)?(?P<co>[^\s,.]{2,30})")
+# A place is not an employer: "interview in Tel Aviv", "ראיון בחיפה".
+_NOT_EMPLOYER = {"tel", "tel aviv", "ramat gan", "givatayim", "herzliya", "raanana", "haifa",
+                 "jerusalem", "the", "person", "office", "zoom", "teams", "english", "hebrew",
+                 "תל", "חיפה", "ירושלים", "הרצליה", "רעננה", "זום", "משרד", "אנגלית", "עברית",
+                 "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+                 "january", "february", "march", "april", "may", "june", "july", "august",
+                 "september", "october", "november", "december", "the morning", "the evening",
+                 "יום", "ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת", "בוקר", "ערב"}
+
+
+def _typed_employer(title: str) -> tuple[str, str]:
+    """(company, role) from a title she typed herself, or ("", "")."""
+    for rx in (_TYPED_EMPLOYER_RE, _TYPED_EMPLOYER_HE_RE):
+        m = rx.search(title)
+        if not m:
+            continue
+        co = m.group("co").strip(" .")
+        if co.lower() in _NOT_EMPLOYER or co.split()[0].lower() in _NOT_EMPLOYER:
+            continue
+        # After ב almost any word follows ("בשבוע הבא", "בבאר שבע"): a Hebrew
+        # word is an employer only when we know it; a Latin name is one.
+        if rx is _TYPED_EMPLOYER_HE_RE and _HEBREW_RE.search(co) and not _alias_in(co):
+            continue
+        return co, (m.group("role") or "").strip()
+    return "", ""
+
+
 _CONTACT_MAIL_RE = re.compile(
     r"(?:recruiter|scheduling contact|interviewer|contact|coordinator)[^\n@]{0,60}?"
     r"([\w.+\-]+@[\w\-]+(?:\.[\w\-]+)+)", re.IGNORECASE)
@@ -324,6 +359,10 @@ def subjects(event: dict) -> dict:
         if cm:
             company = cm.group(1).strip(" .")
 
+    typed_role = ""
+    if not company and is_interview(event):
+        company, typed_role = _typed_employer(title)
+
     name_he = name_en = ""
     company_from = "invite" if company else ""
     if interview:
@@ -369,6 +408,9 @@ def subjects(event: dict) -> dict:
         tm = _TITLE_AFTER_REQ_RE.search(title)
         if tm:
             role_title = tm.group(1).strip()
+
+    if not role_title and typed_role:
+        role_title = typed_role
 
     kind = _interview_kind(title) if interview else ""
     return {"company": company, "person": person,

@@ -5,7 +5,7 @@
  */
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { BRAND, FONTS } from '../../constants/theme';
+import { BRAND, FONTS, surf, nink, nline } from '../../constants/theme';
 import LineIcon from '../ui/LineIcon';
 import { ProfileFact, knownCount } from '../../utils/profileFacts';
 
@@ -60,7 +60,7 @@ export default function WhatMeiraKnows({ facts, he, onTell }: Props) {
 const styles = StyleSheet.create({
   wrap: {
     padding: 14, gap: 10, borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.88)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.9)',
+    backgroundColor: surf('rgba(255,255,255,0.88)'), borderWidth: 1, borderColor: nline('rgba(255,255,255,0.9)'),
   },
   head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   rowRtl: { flexDirection: 'row-reverse' },
@@ -70,12 +70,12 @@ const styles = StyleSheet.create({
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   tile: {
     flexBasis: '48%', flexGrow: 1, minWidth: 0, minHeight: 92, padding: 10, gap: 3,
-    borderRadius: 16, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: BRAND.line,
+    borderRadius: 16, backgroundColor: surf('#FFFFFF'), borderWidth: 1, borderColor: BRAND.line,
   },
-  tileMissing: { borderStyle: 'dashed', backgroundColor: 'rgba(255,255,255,0.6)' },
+  tileMissing: { borderStyle: 'dashed', backgroundColor: surf('rgba(255,255,255,0.6)') },
   tileNeeded: { borderColor: BRAND.danger },
   iconTile: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginBottom: 2 },
   label: { fontFamily: FONTS.bodyBold, fontSize: 11.5, color: BRAND.inkSoft },
   value: { fontFamily: FONTS.bodyHeavy, fontSize: 13.5, color: BRAND.warmInk },
-  learned: { fontFamily: FONTS.bodyHeavy, fontSize: 10.5, color: '#3B3486' },
+  learned: { fontFamily: FONTS.bodyHeavy, fontSize: 10.5, color: nink('#3B3486') },
 });

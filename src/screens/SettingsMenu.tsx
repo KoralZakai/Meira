@@ -16,7 +16,7 @@ import { ActivityIndicator, Alert, Linking, ScrollView, StyleSheet, Text, Toucha
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
-import { BRAND, FONTS, MIN_TOUCH } from '../constants/theme';
+import { BRAND, FONTS, MIN_TOUCH, surf, nline } from '../constants/theme';
 import HistorySwitch from '../components/HistorySwitch';
 import { loadDemoDay, clearDemoDay } from '../services/DemoDay';
 import { loadProfile } from '../services/UserProfileStorage';
@@ -284,7 +284,7 @@ const styles = StyleSheet.create({
   quick: { flexDirection: 'row', gap: 10, marginBottom: 6 },
   quickBtn: { flex: 1, minHeight: MIN_TOUCH + 8, borderRadius: 16, backgroundColor: BRAND.goldSoft, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8, paddingVertical: 8 },
   quickText: { fontSize: 14, textAlign: 'center', fontFamily: FONTS.bodyHeavy, color: BRAND.goldInk },
-  door: { flexDirection: 'row', alignItems: 'center', gap: 14, minHeight: 78, padding: 14, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.92)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.9)' },
+  door: { flexDirection: 'row', alignItems: 'center', gap: 14, minHeight: 78, padding: 14, borderRadius: 22, backgroundColor: surf('rgba(255,255,255,0.92)'), borderWidth: 1, borderColor: nline('rgba(255,255,255,0.9)') },
   doorIcon: { width: 48, height: 48, borderRadius: 24, backgroundColor: BRAND.goldSoft, alignItems: 'center', justifyContent: 'center' },
   doorIconText: { fontSize: 24 },
   doorTitle: { fontSize: 18, fontFamily: FONTS.display, color: BRAND.warmInk },

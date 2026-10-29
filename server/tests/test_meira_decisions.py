@@ -90,6 +90,44 @@ class CheckAvailabilityNowTests(unittest.TestCase):
         self.assertEqual(res["verdict"], "fits")
 
 
+class CheckAvailabilityKnowsHerPlacesTests(unittest.TestCase):
+    """29.10, Koral on camera: "Do I have time for the gym tomorrow afternoon?"
+    → "Need place & time. Where & how long?". Her gym was in her routines and in
+    that day's "training · יגאל אלון 76". The tool now looks the activity up."""
+
+    def _ask(self, rows, profile, **args):
+
+        async def _rows(_phone, _a, _b, **_kw):
+
+
+            return rows
+        with _Clock(), \
+                mock.patch.object(lumi_agent.task_store, "fetch_task_rows", _rows), \
+                mock.patch.object(lumi_agent.known_places, "resolve", lambda *_a, **_k: None), \
+                mock.patch.object(lumi_agent.user_profile, "get_profile", lambda _p: profile):
+            return asyncio.run(_tool("check_availability").ainvoke(args))
+
+    BASE = {"defaultWakeTime": "07:00", "sleepTime": "22:00"}
+
+    def test_gym_from_her_routines(self):
+        prof = {**self.BASE, "routinesNotes": "חדר כושר 19:00-20:00 יגאל אלון 76, תל אביב"}
+        res = self._ask([], prof, date="2026-10-13", activity="gym")
+        self.assertEqual(res["place_from"], "routine", res)
+        self.assertIn("יגאל אלון 76", res["asked_for"]["place"])
+        self.assertEqual(res["asked_for"]["minutes"], 60)
+
+    def test_gym_from_a_recent_training_task(self):
+        rows = [_row("training", "19:00", location={"address": "יגאל אלון 76, תל אביב"})]
+        res = self._ask(rows, dict(self.BASE), date="2026-10-13", activity="gym")
+        self.assertEqual(res["place_from"], "recent_task", res)
+        self.assertIn("יגאל אלון 76", res["asked_for"]["place"])
+
+    def test_unknown_activity_says_unknown(self):
+        res = self._ask([], dict(self.BASE), date="2026-10-13", activity="pottery", minutes=90)
+        self.assertEqual(res["place_from"], "unknown")
+        self.assertIsNone(res["asked_for"]["place"])
+
+
 class ClashesNowTests(unittest.TestCase):
     def test_move_is_never_offered_before_now(self):
         day = [

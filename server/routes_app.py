@@ -668,15 +668,28 @@ async def geocode_route(request: Request, caller: dict = Depends(app_auth.requir
     which is the wrong direction. The server key already has Geocoding and
     never leaves the server.
     """
+    if not rate_limit.allow(f"geocode:{caller['key']}", rate_limit.CHAT_LIMIT, rate_limit.CHAT_WINDOW_S):
+        return JSONResponse({"ok": False, "reason": "rate_limited"}, status_code=429)
     body = await request.json() if await request.body() else {}
     address = str(body.get("address") or "").strip()
     if not address:
         return JSONResponse({"ok": False, "reason": "no_address"}, status_code=400)
     hit = await geo.geocode(address, bounds=str(body.get("bounds") or "") or None)
+    # A NAME, not an address (29.10: "an interview … in Nebuis" — the word itself
+    # was the saved place, so there was no route, no leave time, no alarm).
+    # Geocoding a company name finds nothing or a vague partial; Places Text
+    # Search takes the name — typos included — and returns the real office.
+    if (not hit or hit.get("partial")) and geo.looks_like_name(address):
+        place = await geo.find_place(address)
+        if place:
+            return {"ok": True, "source": "place", "name": place.get("name"),
+                    "formatted": place.get("formatted"), "lat": place["lat"], "lng": place["lng"],
+                    "place_id": place.get("place_id")}
     if not hit:
         # Not an error: the caller falls back to the device geocoder, and a
-        # plain "not found" is what tells it to.
-        return {"ok": False, "reason": "not_found"}
+        # plain "not found" is what tells it to. `tried_place` = Places was
+        # already asked, so the phone must not pay for the same search again.
+        return {"ok": False, "reason": "not_found", **({"tried_place": True} if geo.looks_like_name(address) else {})}
     return {"ok": True, **hit}
 
 

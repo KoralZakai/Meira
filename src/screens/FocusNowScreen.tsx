@@ -24,7 +24,7 @@
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BRAND, FONTS, RADIUS, SHADOWS } from '../constants/theme';
+import { BRAND, FONTS, RADIUS, SHADOWS, nink } from '../constants/theme';
 import { getCategoryMeta } from '../constants/categories';
 import { AppLanguage, Subtask, Task } from '../types';
 import {

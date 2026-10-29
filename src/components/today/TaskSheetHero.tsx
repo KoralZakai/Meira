@@ -10,7 +10,7 @@
  */
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { BRAND, FONTS, RADIUS } from '../../constants/theme';
+import { BRAND, FONTS, RADIUS, surf } from '../../constants/theme';
 import { getCategoryMeta } from '../../constants/categories';
 import { ridesOf, RIDE_ICON } from '../../utils/rideLine';
 import type { Task } from '../../types';
@@ -78,7 +78,7 @@ export default function TaskSheetHero({ task, he }: { task: Task; he: boolean })
 const styles = StyleSheet.create({
   wrap: {
     alignItems: 'center', gap: 12, padding: 12, marginBottom: 12,
-    borderRadius: 22, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: BRAND.line,
+    borderRadius: 22, backgroundColor: surf('#FFFFFF'), borderWidth: 1, borderColor: BRAND.line,
   },
   rtl: { textAlign: 'right', writingDirection: 'rtl' },
   // Numbers read left-to-right even on a Hebrew screen: 16:00–17:00, never 17:00–16:00.

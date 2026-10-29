@@ -16,11 +16,12 @@ import { RootStackParamList } from '../types/navigation';
 import { useLumiContext } from '../hooks/useLumiContext';
 import { SubtaskList } from '../components/SubtaskList';
 import RouteMap from '../components/RouteMap';
-import { BRAND, FONTS, MIN_TOUCH, SHADOWS } from '../constants/theme';
+import { BRAND, FONTS, MIN_TOUCH, SHADOWS, surf, nline } from '../constants/theme';
 import SkyBackdrop, { useSky } from '../components/ui/SkyBackdrop';
 import LineIcon from '../components/ui/LineIcon';
 import TaskSheetHero from '../components/today/TaskSheetHero';
 import TripTimeline from '../components/today/TripTimeline';
+import { N } from '../constants/nightTone';
 import { useAppLanguage } from '../hooks/useAppLanguage';
 import { getAllTasks } from '../services/TaskStorage';
 import { getTodayString } from '../utils/timeUtils';
@@ -28,6 +29,12 @@ import { moovitLinks } from '../utils/moovitLink';
 import { contactPhoneOf } from '../utils/lateNotice';
 import { isRemoteTask } from '../utils/meetingLink';
 import type { Task } from '../types/index';
+import MeetingBriefCard from '../components/MeetingBriefCard';
+import InterviewPrepHeader from '../components/today/InterviewPrepHeader';
+import { briefForTask, interviewBrief } from '../services/MeetingBriefService';
+import type { MeetingBriefResult } from '../services/LumiServer';
+import { isInterview } from '../utils/interviewPrep';
+import { FROM_CALENDAR_RE, prepSlotFor } from '../utils/interviewBrief';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'TaskDetail'>;
 
@@ -42,8 +49,40 @@ export default function TaskDetailScreen({ route, navigation }: Props) {
   const { he } = useAppLanguage();
   const insets = useSafeAreaInsets();
   const sky = useSky();
+  const night = sky.dark;
   const [task, setTask] = useState<Task | null>(null);
   const [missing, setMissing] = useState(false);
+  // The research for this meeting (server/meeting_brief.py via Tavily): the
+  // company, the role, who she is meeting, questions candidates were asked,
+  // what to prepare — every line with its source (28.10: "where is it? show it
+  // on the task"). Trigger: opening the task page; cached on both sides.
+  const [brief, setBrief] = useState<MeetingBriefResult | null>(null);
+  const [briefBusy, setBriefBusy] = useState(false);
+  // A forced refresh is a full paid rebuild — one a minute at most.
+  const lastForce = React.useRef(0);
+  const interview = task ? isInterview(task) : false;
+  const loadBrief = React.useCallback(async (t: Task, force = false) => {
+    setBriefBusy(true);
+    try {
+      const b = isInterview(t) ? await interviewBrief(t, force) : await briefForTask(t, force);
+      setBrief(b);
+    } catch (e) {
+      console.warn('[TaskDetail] brief failed', t.id, e);
+      setBrief({ ok: false, reason: 'unreachable' } as MeetingBriefResult);
+    } finally {
+      setBriefBusy(false);
+    }
+  }, []);
+  const briefFor = task?.id;
+  useEffect(() => {
+    if (!task) return;
+    // Interviews always; other meetings only when a calendar invite carries the
+    // company / people (a self-typed "call Mom" must not buy web searches).
+    const meeting = isInterview(task)
+      || ((Boolean(task.calendarEventId) || FROM_CALENDAR_RE.test(task.id)) && ['meeting', 'zoom', 'conference'].includes(String(task.category)));
+    if (meeting) void loadBrief(task);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [briefFor]);
 
   useEffect(() => {
     const found = tasksState.tasks.find((t: any) => t.id === taskId) as Task | undefined;
@@ -94,13 +133,13 @@ export default function TaskDetailScreen({ route, navigation }: Props) {
     <View style={styles.root}>
       <SkyBackdrop sky={sky} />
       <View style={[styles.top, { paddingTop: insets.top + 8, flexDirection: dir }]}>
-        <Pressable style={styles.round} onPress={() => navigation.goBack()} accessibilityRole="button" accessibilityLabel={he ? 'סגירה' : 'Close'}>
-          <Text style={styles.roundText}>×</Text>
+        <Pressable style={[styles.round, night && N.chip]} onPress={() => navigation.goBack()} accessibilityRole="button" accessibilityLabel={he ? 'סגירה' : 'Close'}>
+          <Text style={[styles.roundText, night && N.ink]}>×</Text>
         </Pressable>
         <Text style={[styles.title, { color: sky.ink }, rtl]} numberOfLines={2}>{task.text}</Text>
-        <Pressable style={styles.round} accessibilityRole="button" accessibilityLabel={he ? 'עריכה' : 'Edit'}
+        <Pressable style={[styles.round, night && N.chip]} accessibilityRole="button" accessibilityLabel={he ? 'עריכה' : 'Edit'}
           onPress={() => (navigation as any).navigate('MainTabs', { screen: 'Today', params: { editTask: task.id, nonce: Date.now() } })}>
-          <Text style={styles.roundText}>✏️</Text>
+          <Text style={[styles.roundText, night && N.ink]}>✏️</Text>
         </Pressable>
       </View>
 
@@ -108,14 +147,14 @@ export default function TaskDetailScreen({ route, navigation }: Props) {
         <TaskSheetHero task={task} he={he} />
 
         {loc?.leaveHomeBy || plan?.leaveHomeAt ? (
-          <View style={styles.card}>
-            <Text style={[styles.cap, rtl]}>{he ? 'הדרך לשם' : 'Getting there'}</Text>
-            <TripTimeline task={task} he={he} now={isToday ? nowHHMM() : undefined} readyAt={loc?.wakeUpBy} />
+          <View style={[styles.card, night && N.card]}>
+            <Text style={[styles.cap, night && N.goldInk, rtl]}>{he ? 'הדרך לשם' : 'Getting there'}</Text>
+            <TripTimeline task={task} he={he} now={isToday ? nowHHMM() : undefined} readyAt={loc?.wakeUpBy} night={night} />
           </View>
         ) : null}
 
         {plan && hasPoint ? (
-          <View style={styles.mapCard}>
+          <View style={[styles.mapCard, night && N.surface]}>
             <RouteMap plan={plan} destLat={loc.lat} destLng={loc.lng} destLabel={label} hideNavigate />
           </View>
         ) : null}
@@ -123,20 +162,39 @@ export default function TaskDetailScreen({ route, navigation }: Props) {
         {navs.length ? (
           <View style={[styles.navRow, { flexDirection: dir }]}>
             {navs.map((n, i) => (
-              <Pressable key={n.key} style={[styles.nav, i === 0 && styles.navMain]} onPress={n.go} accessibilityRole="button">
+              <Pressable key={n.key} style={[styles.nav, night && N.chip, i === 0 && styles.navMain]} onPress={n.go} accessibilityRole="button">
                 {i === 0 ? <LineIcon name="map" size={16} color={BRAND.onGold} /> : null}
-                <Text style={[styles.navText, i === 0 && styles.navMainText]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>{n.label}</Text>
+                <Text style={[styles.navText, night && N.ink, i === 0 && styles.navMainText]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>{n.label}</Text>
               </Pressable>
             ))}
           </View>
         ) : null}
 
+        {interview || brief ? (
+          <View style={styles.card}>
+            {interview ? (
+              <InterviewPrepHeader task={task} he={he}
+                prep={prepSlotFor(task, tasksState.tasks as Task[], getTodayString(), nowHHMM())} />
+            ) : null}
+            {brief ? (
+              <MeetingBriefCard brief={brief} language={he ? 'he' : 'en'} refreshing={briefBusy}
+                onRefresh={() => {
+                  if (Date.now() - lastForce.current < 60 * 1000) return;
+                  lastForce.current = Date.now();
+                  void loadBrief(task, true);
+                }} />
+            ) : (
+              <Text style={[styles.body, rtl]}>{he ? 'אוספת מידע על החברה, התפקיד והמראיין…' : 'Researching the company, the role and who you are meeting…'}</Text>
+            )}
+          </View>
+        ) : null}
+
         {task.contact?.name || phone ? (
-          <View style={[styles.card, styles.rowCard, { flexDirection: dir }]}>
+          <View style={[styles.card, night && N.card, styles.rowCard, { flexDirection: dir }]}>
             <Text style={styles.rowIcon}>👤</Text>
-            <Text style={[styles.rowText, rtl]} numberOfLines={1}>{task.contact?.name || phone}</Text>
+            <Text style={[styles.rowText, night && N.ink, rtl]} numberOfLines={1}>{task.contact?.name || phone}</Text>
             {phone ? (
-              <Pressable style={styles.call} onPress={() => open(`tel:${phone.replace(/[^\d+]/g, '')}`)} accessibilityRole="button"
+              <Pressable style={[styles.call, night && N.goldSoft]} onPress={() => open(`tel:${phone.replace(/[^\d+]/g, '')}`)} accessibilityRole="button"
                 accessibilityLabel={he ? 'להתקשר' : 'Call'}>
                 <Text style={styles.callText}>📞</Text>
               </Pressable>
@@ -145,22 +203,22 @@ export default function TaskDetailScreen({ route, navigation }: Props) {
         ) : null}
 
         {(task as any).how ? (
-          <View style={styles.card}>
-            <Text style={[styles.cap, rtl]}>{he ? 'להכין' : 'To prepare'}</Text>
-            <Text style={[styles.body, rtl]}>{(task as any).how}</Text>
+          <View style={[styles.card, night && N.card]}>
+            <Text style={[styles.cap, night && N.goldInk, rtl]}>{he ? 'להכין' : 'To prepare'}</Text>
+            <Text style={[styles.body, night && N.ink, rtl]}>{(task as any).how}</Text>
           </View>
         ) : null}
 
         {task.subtasks?.length ? (
-          <View style={styles.card}>
+          <View style={[styles.card, night && N.card]}>
             <SubtaskList subtasks={task.subtasks} onToggle={() => setTask(task)} />
           </View>
         ) : null}
 
         {task.deadline ? (
-          <View style={[styles.card, styles.rowCard, { flexDirection: dir }]}>
+          <View style={[styles.card, night && N.card, styles.rowCard, { flexDirection: dir }]}>
             <Text style={styles.rowIcon}>📅</Text>
-            <Text style={[styles.rowText, rtl]} numberOfLines={2}>{`${he ? 'עד' : 'Due'} ${task.deadline}${task.deadlineTime ? ` ${task.deadlineTime}` : ''}`}</Text>
+            <Text style={[styles.rowText, night && N.ink, rtl]} numberOfLines={2}>{`${he ? 'עד' : 'Due'} ${task.deadline}${task.deadlineTime ? ` ${task.deadlineTime}` : ''}`}</Text>
           </View>
         ) : null}
       </ScrollView>
@@ -174,20 +232,20 @@ const styles = StyleSheet.create({
   loading: { fontFamily: FONTS.bodyHeavy, fontSize: 16, textAlign: 'center', marginTop: 40 },
   top: { alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingBottom: 10 },
   title: { flex: 1, fontFamily: FONTS.display, fontSize: 20 },
-  round: { width: MIN_TOUCH, height: MIN_TOUCH, borderRadius: MIN_TOUCH / 2, backgroundColor: 'rgba(255,255,255,0.8)', alignItems: 'center', justifyContent: 'center' },
+  round: { width: MIN_TOUCH, height: MIN_TOUCH, borderRadius: MIN_TOUCH / 2, backgroundColor: surf('rgba(255,255,255,0.8)'), alignItems: 'center', justifyContent: 'center' },
   roundText: { fontSize: 20, fontFamily: FONTS.bodyHeavy, color: BRAND.warmInk },
   scroll: { paddingHorizontal: 16, gap: 12 },
   card: {
-    padding: 14, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.92)',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.9)', ...SHADOWS.card,
+    padding: 14, borderRadius: 22, backgroundColor: surf('rgba(255,255,255,0.92)'),
+    borderWidth: 1, borderColor: nline('rgba(255,255,255,0.9)'), ...SHADOWS.card,
   },
   cap: { fontFamily: FONTS.bodyHeavy, fontSize: 12, color: BRAND.goldInk, marginBottom: 8 },
   body: { fontFamily: FONTS.bodySemi, fontSize: 14, color: BRAND.warmInk, lineHeight: 20 },
-  mapCard: { borderRadius: 22, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.92)' },
+  mapCard: { borderRadius: 22, overflow: 'hidden', backgroundColor: surf('rgba(255,255,255,0.92)') },
   navRow: { gap: 8 },
   nav: {
     flex: 1, minWidth: 0, minHeight: MIN_TOUCH + 4, paddingHorizontal: 10, borderRadius: 999, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6,
-    backgroundColor: 'rgba(255,255,255,0.92)', borderWidth: 1, borderColor: BRAND.line,
+    backgroundColor: surf('rgba(255,255,255,0.92)'), borderWidth: 1, borderColor: BRAND.line,
   },
   navMain: { backgroundColor: BRAND.sunGold, borderColor: BRAND.sunGold },
   navText: { flexShrink: 1, fontFamily: FONTS.bodyHeavy, fontSize: 14, color: BRAND.warmInk },

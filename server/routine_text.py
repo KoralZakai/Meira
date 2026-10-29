@@ -76,10 +76,12 @@ def read_hours(clause: str) -> dict:
             if 15 <= minutes <= 12 * 60:
                 return {"time": _hhmm(sh, sm), "end": _hhmm(eh, em), "minutes": minutes}
     s = _SINGLE.search(text)
+
     # "21.10" after ב is a DATE (day.month), not 21:10, unless an hour marker says otherwise.
     if s and re.search(r"\d{1,2}\.\d{2}", s.group(0)) and int(s.group(2) or 99) <= 12 \
             and not re.search(r"בשעה|\bat\b", s.group(0), re.I):
         s = None
+
     if s:
         d = _DURATION.search(text[s.end():])
         # "8 בערב שעה וחצי" — the half belongs to the DURATION, not to the 8

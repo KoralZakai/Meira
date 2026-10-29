@@ -438,13 +438,18 @@ export async function errandsAlong(text: string, trips: ErrandTrip[]): Promise<E
  * `bounds` is "lat,lng|lat,lng" — a bias, not a filter. Returns null on any
  * failure so the caller can fall back to the device geocoder.
  */
+/** Names the server already searched as a business this run — the phone must not pay again. */
+export const triedPlaceOnServer = new Set<string>();
+
 export async function geocodeAddress(
   address: string,
   bounds?: string,
-): Promise<{ lat: number; lng: number; formatted?: string } | null> {
+): Promise<{ lat: number; lng: number; formatted?: string; name?: string; business?: boolean } | null> {
   const body = await call<any>('/app/geocode', { address, bounds }, EXTRACT_TIMEOUT_MS);
+  if (body && !body.ok && body.tried_place) triedPlaceOnServer.add(address);
   if (!body?.ok || typeof body.lat !== 'number' || typeof body.lng !== 'number') return null;
-  return { lat: body.lat, lng: body.lng, formatted: body.formatted };
+  // source 'place' = the text was a NAME ("Nebuis") and Google Places found the business.
+  return { lat: body.lat, lng: body.lng, formatted: body.formatted, name: body.name, business: body.source === 'place' };
 }
 
 // Upload plus Whisper. Groq answers in about a second; the rest is a phone

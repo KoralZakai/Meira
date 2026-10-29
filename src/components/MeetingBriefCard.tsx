@@ -166,7 +166,8 @@ export default function MeetingBriefCard({ brief, language, onRefresh, refreshin
                   key={s.n}
                   style={styles.sourceRow}
                   hitSlop={{ top: 3, bottom: 3 }}
-                  onPress={() => s.link && Linking.openURL(s.link).catch((e) => console.warn('[MeetingBrief] link', e))}
+                  // Only https: a poisoned search result must not open tel:/intent:/market: (security review 29.10).
+                  onPress={() => s.link && /^https:\/\//i.test(s.link) && Linking.openURL(s.link).catch((e) => console.warn('[MeetingBrief] link', e))}
                   accessibilityRole="link"
                 >
                   <Text style={[styles.sourceLine, he && styles.rtlText]} numberOfLines={1}>

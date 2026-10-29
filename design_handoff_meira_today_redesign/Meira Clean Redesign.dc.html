@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="stylesheet" href="_ds/lumi-ai-design-system-1a858d4f-e331-4928-b9fd-bc23aa88efed/styles.css">
+<script src="_ds/lumi-ai-design-system-1a858d4f-e331-4928-b9fd-bc23aa88efed/_ds_bundle.js"></script>
+<style>body{margin:0;background:#f0eee9;font-family:var(--font-body)}a{color:var(--text-time)}a:hover{color:var(--text-heading)}button{font-family:inherit}.dv-turn{padding:40px 44px 32px;border-bottom:1px solid rgba(0,0,0,.08);scroll-margin-top:16px}.dv-thd{display:flex;align-items:baseline;gap:10px;margin:0 0 20px}.dv-tid{font:600 10px ui-monospace,Menlo,monospace;padding:3px 7px;background:#1a1a1a;color:#fff;border-radius:4px;text-decoration:none}.dv-tname{font:600 13px/1.2 system-ui,sans-serif;color:#1a1a1a}.dv-opts{display:flex;flex-wrap:wrap;gap:28px;align-items:flex-start}.dv-opt{flex:none;display:flex;flex-direction:column;gap:9px;scroll-margin-top:16px}.dv-oid{font:600 10.5px ui-monospace,Menlo,monospace;padding:3px 7px;background:rgba(0,0,0,.08);color:#1a1a1a;border-radius:5px;text-decoration:none}.dv-olabel{display:flex;align-items:baseline;gap:8px;font:400 11px/1.3 system-ui,sans-serif;color:rgba(0,0,0,.55)}.dv-card{max-width:100%;background:#fff;border:1px solid rgba(0,0,0,.08);border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.06);overflow:hidden}.dv-opt:target .dv-oid{background:#2a78d6;color:#fff}.dv-next{margin:22px 0 0;font:12px/1.5 system-ui,sans-serif;color:rgba(0,0,0,.5)}.dv-row{font:600 12px/1.2 system-ui,sans-serif;color:#1a1a1a;margin:34px 0 14px;letter-spacing:.2px}</style>
+</helmet>
+<section class="dv-turn" id="t4">
+<div class="dv-thd"><a class="dv-tid" href="#t4">4</a><span class="dv-tname">＋ Add task with live AI fill-in, and a full profile in ☰ Menu</span></div>
+<div style="max-width:860px;font:13px/1.55 system-ui,sans-serif;color:rgba(0,0,0,.7);margin-bottom:24px">Tap ＋ on a free window or in Tasks. As you type, Meira fills in the time, completes the address with your home city, picks the transport (your habit for that place, or the fastest right now) and works out when to leave. Everything she filled in shows where it came from and can be changed with one tap. <a class="dv-oid" href="#4b">4b</a> types by itself when it loads. The Menu now holds what Meira knows, favourite transport, routines, Google (Calendar and Gmail), WhatsApp, Contacts and phone permissions.</div>
+<div class="dv-opts">
+<div class="dv-opt" id="4a"><div class="dv-olabel"><a class="dv-oid" href="#4a">4a</a>Today · tap ＋ Free 18:00–19:12</div><div class="dv-card" style="width:390px;border-radius:44px"><dc-import name="Meira App v3" talk-style="split" initial-tab="day" initial-day="today" style="display:block;width:390px;height:844px" hint-size="390px,844px"></dc-import></div></div>
+<div class="dv-opt" id="4b"><div class="dv-olabel"><a class="dv-oid" href="#4b">4b</a>Add · live analysis while typing</div><div class="dv-card" style="width:390px;border-radius:44px"><dc-import name="Meira App v3" talk-style="split" initial-add="live" style="display:block;width:390px;height:844px" hint-size="390px,844px"></dc-import></div></div>
+<div class="dv-opt" id="4c"><div class="dv-olabel"><a class="dv-oid" href="#4c">4c</a>Add · known place, habit transport</div><div class="dv-card" style="width:390px;border-radius:44px"><dc-import name="Meira App v3" talk-style="split" initial-add="filled" style="display:block;width:390px;height:844px" hint-size="390px,844px"></dc-import></div></div>
+<div class="dv-opt" id="4d"><div class="dv-olabel"><a class="dv-oid" href="#4d">4d</a>Add · new place, fastest transport</div><div class="dv-card" style="width:390px;border-radius:44px"><dc-import name="Meira App v3" talk-style="split" initial-add="newplace" style="display:block;width:390px;height:844px" hint-size="390px,844px"></dc-import></div></div>
+<div class="dv-opt" id="4e"><div class="dv-olabel"><a class="dv-oid" href="#4e">4e</a>☰ Menu · full profile</div><div class="dv-card" style="width:390px;border-radius:44px"><dc-import name="Meira App v3" talk-style="split" initial-menu="{{ true }}" style="display:block;width:390px;height:844px" hint-size="390px,844px"></dc-import></div></div>
+</div>
+<p class="dv-next">Try next: "Hebrew version of <a class="dv-oid" href="#4c">4c</a>" · "make each profile row open its edit screen" · "update the Claude Code handoff"</p>
+</section>
+<section class="dv-turn" id="t3">
+<div class="dv-thd"><a class="dv-tid" href="#t3">3</a><span class="dv-tname"><a class="dv-oid" href="#2a">2a</a> + <a class="dv-oid" href="#2b">2b</a> with ＋ free windows, voice and chat, profile in the menu</span></div>
+<div style="max-width:860px;font:13px/1.55 system-ui,sans-serif;color:rgba(0,0,0,.7);margin-bottom:24px">Free windows of 45 min or more show a ＋ on the timeline. Tapping one opens chat with Meira, who offers to fill it, and what you pick lands on the timeline. The centre of the tab bar has both ways in: 🎙️ talk and 💬 chat. Two treatments: one split pill (<a class="dv-oid" href="#3a">3a</a>) or two separate buttons (<a class="dv-oid" href="#3b">3b</a>). Profile moved out of the tabs into ☰ Menu.</div>
+<div class="dv-opts">
+<div class="dv-opt" id="3a"><div class="dv-olabel"><a class="dv-oid" href="#3a">3a</a>Today · split pill 🎙️ | 💬</div><div class="dv-card" style="width:390px;border-radius:44px"><dc-import name="Meira App v2" talk-style="split" initial-tab="day" initial-day="today" style="display:block;width:390px;height:844px" hint-size="390px,844px"></dc-import></div></div>
+<div class="dv-opt" id="3b"><div class="dv-olabel"><a class="dv-oid" href="#3b">3b</a>Tomorrow · two buttons</div><div class="dv-card" style="width:390px;border-radius:44px"><dc-import name="Meira App v2" talk-style="pair" initial-tab="day" initial-day="tomorrow" style="display:block;width:390px;height:844px" hint-size="390px,844px"></dc-import></div></div>
+<div class="dv-opt" id="3c"><div class="dv-olabel"><a class="dv-oid" href="#3c">3c</a>Tapped ＋ on a free window</div><div class="dv-card" style="width:390px;border-radius:44px"><dc-import name="Meira App v2" talk-style="split" initial-tab="day" initial-day="today" initial-chat="gap" style="display:block;width:390px;height:844px" hint-size="390px,844px"></dc-import></div></div>
+<div class="dv-opt" id="3d"><div class="dv-olabel"><a class="dv-oid" href="#3d">3d</a>Chat from 💬</div><div class="dv-card" style="width:390px;border-radius:44px"><dc-import name="Meira App v2" talk-style="split" initial-tab="day" initial-day="today" initial-chat="hello" style="display:block;width:390px;height:844px" hint-size="390px,844px"></dc-import></div></div>
+<div class="dv-opt" id="3e"><div class="dv-olabel"><a class="dv-oid" href="#3e">3e</a>☰ Menu · profile</div><div class="dv-card" style="width:390px;border-radius:44px"><dc-import name="Meira App v2" talk-style="split" initial-tab="day" initial-day="today" initial-menu="{{ true }}" style="display:block;width:390px;height:844px" hint-size="390px,844px"></dc-import></div></div>
+</div>
+<p class="dv-next">Try next: "go with <a class="dv-oid" href="#3a">3a</a>'s split pill" · "＋ should open a quick-add form, not chat" · "package this for Claude Code to apply to the app"</p>
+</section>
+<section class="dv-turn" id="t2">
+<div class="dv-thd"><a class="dv-tid" href="#t2">2</a><span class="dv-tname"><a class="dv-oid" href="#1a">1a</a> + <a class="dv-oid" href="#1c">1c</a>, with day picker, trips and the <a class="dv-oid" href="#1h">1h</a> profile</span></div>
+<div style="max-width:860px;font:13px/1.55 system-ui,sans-serif;color:rgba(0,0,0,.7);margin-bottom:24px">Each phone is the same working app, opened on a different state. Mic stays in the tab bar (Today · Trips · 🎙️ · Tasks · Me). Tap the title or the week strip to switch days. Travel legs sit on the timeline between events and open in full on Trips. Ask Meira to move the gym, then check Tomorrow.</div>
+<div class="dv-opts">
+<div class="dv-opt" id="2a"><div class="dv-olabel"><a class="dv-oid" href="#2a">2a</a>Today · rail with travel legs</div><div class="dv-card" style="width:390px;border-radius:44px"><dc-import name="Meira App" initial-tab="day" initial-day="today" style="display:block;width:390px;height:844px" hint-size="390px,844px"></dc-import></div></div>
+<div class="dv-opt" id="2b"><div class="dv-olabel"><a class="dv-oid" href="#2b">2b</a>Tomorrow · Meira's alarm on top</div><div class="dv-card" style="width:390px;border-radius:44px"><dc-import name="Meira App" initial-tab="day" initial-day="tomorrow" style="display:block;width:390px;height:844px" hint-size="390px,844px"></dc-import></div></div>
+<div class="dv-opt" id="2c"><div class="dv-olabel"><a class="dv-oid" href="#2c">2c</a>Pick a date</div><div class="dv-card" style="width:390px;border-radius:44px"><dc-import name="Meira App" initial-tab="day" initial-day="today" initial-picker="{{ true }}" style="display:block;width:390px;height:844px" hint-size="390px,844px"></dc-import></div></div>
+<div class="dv-opt" id="2d"><div class="dv-olabel"><a class="dv-oid" href="#2d">2d</a>Trips · every leg of the day</div><div class="dv-card" style="width:390px;border-radius:44px"><dc-import name="Meira App" initial-tab="trips" initial-day="today" style="display:block;width:390px;height:844px" hint-size="390px,844px"></dc-import></div></div>
+<div class="dv-opt" id="2e"><div class="dv-olabel"><a class="dv-oid" href="#2e">2e</a>Me · <a class="dv-oid" href="#1h">1h</a> as a tab</div><div class="dv-card" style="width:390px;border-radius:44px"><dc-import name="Meira App" initial-tab="me" initial-day="today" style="display:block;width:390px;height:844px" hint-size="390px,844px"></dc-import></div></div>
+</div>
+<p class="dv-next">Try next: "redesign the Tasks tab to match" · "show the way home on Today too" · "Hebrew / RTL version of <a class="dv-oid" href="#2a">2a</a>"</p>
+</section>
+<section class="dv-turn" id="t1">
+<div class="dv-thd"><a class="dv-tid" href="#t1">1</a><span class="dv-tname">A calmer Meira: five home screens, three profiles</span></div>
+
+<div style="max-width:860px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:20px;font:13px/1.55 system-ui,sans-serif;color:rgba(0,0,0,.7)">
+<div><div style="font-weight:600;color:#1a1a1a;margin-bottom:4px">Removed from Today</div>The hear-your-day banner, stats strip, yesterday card, transit chip, missed-departure banner and inline clash banners. Meira says those things when you ask, or they collapse into one line on the next card.</div>
+<div><div style="font-weight:600;color:#1a1a1a;margin-bottom:4px">One job per screen</div>Each home shows three things: what's next, when to leave, and the rest of the day. The mic is the main action on every screen. Trips fold into the leave time.</div>
+<div><div style="font-weight:600;color:#1a1a1a;margin-bottom:4px">Fewer destinations</div>Today · Tasks · Me. Profile keeps places, routine, voice and language and drops everything else. 🎙️ is a new glyph for the system; the product currently uses 💬.</div>
+</div>
+
+<div class="dv-row">Home · tap any mic to try the voice flow, tick rows to complete them</div>
+<div class="dv-opts">
+
+<div class="dv-opt" id="1a"><div class="dv-olabel"><a class="dv-oid" href="#1a">1a</a>Calm list · mic in the tab bar</div>
+<div class="dv-card" style="width:390px;border-radius:44px">
+<div style="width:390px;height:844px;position:relative;overflow:hidden;background:var(--surface-app);color:var(--text-body)">
+  <div style="height:54px;display:flex;align-items:flex-end;justify-content:space-between;padding:0 32px 8px;font-weight:800;font-size:15px;color:var(--text-heading)"><span>16:23</span><span style="width:26px;height:12px;border:1.5px solid var(--text-heading);border-radius:4px;box-sizing:border-box;padding:1.5px"><span style="display:block;width:70%;height:100%;background:var(--text-heading);border-radius:1.5px"></span></span></div>
+  <div style="padding:14px 20px 0;display:flex;flex-direction:column;gap:22px">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+      <div><div style="font-size:13px;font-weight:700;color:var(--text-secondary)">Sunday, 27 Sep</div><div style="font-family:var(--font-display);font-weight:700;font-size:26px;color:var(--text-heading);margin-top:2px">Good afternoon, Koral</div></div>
+      <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.Avatar" initial="K" size="{{ 40 }}" hint-size="40px,40px"></x-import>
+    </div>
+    <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.Card" tone="accent" padding="18px" style="box-shadow:var(--shadow-card);border-radius:20px" hint-size="100%,190px">
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div>
+          <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.SectionLabel" tone="time" hint-size="120px,14px">Next up · 17:00</x-import>
+          <div style="font-family:var(--font-display);font-weight:700;font-size:22px;color:var(--text-heading);margin-top:6px">⚕️ Dentist</div>
+          <div style="font-size:14px;color:var(--text-secondary);margin-top:2px">📍 Dizengoff 50</div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;background:var(--accent-primary);border-radius:14px;padding:12px 16px">
+          <div><div style="font-size:11px;font-weight:800;letter-spacing:1.2px;color:var(--lumi-label-on-gold)">LEAVE</div><div style="font-family:var(--font-display);font-weight:700;font-size:28px;line-height:1.1;color:var(--text-on-gold);font-variant-numeric:tabular-nums">16:35</div></div>
+          <div style="text-align:right"><div style="font-weight:800;font-size:15px;color:var(--text-on-gold)">in 12 min</div><div style="font-size:12px;font-weight:700;color:var(--lumi-label-on-gold);margin-top:2px">🚶 18 min walk</div></div>
+        </div>
+      </div>
+    </x-import>
+    <div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline">
+        <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.SectionLabel" hint-size="80px,14px">Rest of today</x-import>
+        <span style="font-size:12px;font-weight:800;color:var(--text-time)">{{ leftLabel }}</span>
+      </div>
+      <div style="margin-top:4px">
+        <sc-for list="{{ others }}" as="item" hint-placeholder-count="5">
+          <div style="display:flex;align-items:center;gap:14px;padding:12px 0;border-bottom:1px solid var(--border-hairline);opacity:{{ item.opacity }}">
+            <div style="width:42px;flex:none;font-weight:800;font-size:13px;color:var(--text-heading);font-variant-numeric:tabular-nums">{{ item.time }}</div>
+            <div style="flex:1;min-width:0">
+              <div dir="{{ item.dir }}" style="font-weight:700;font-size:15px;color:var(--text-heading);text-decoration:{{ item.strike }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ item.title }}</div>
+              <div style="font-size:12px;color:var(--text-tertiary);margin-top:2px">{{ item.icon }} {{ item.meta }}</div>
+            </div>
+            <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.Checkbox" checked="{{ item.done }}" on-change="{{ item.toggle }}" hint-size="22px,22px"></x-import>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+  <div style="position:absolute;left:0;right:0;bottom:0;height:92px;background:var(--surface-card);border-top:1px solid var(--border-hairline);display:grid;grid-template-columns:1fr 1fr 1fr;align-items:start;padding-top:10px">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:2px"><span style="font-size:22px">☀️</span><span style="font-size:10px;font-weight:800;color:var(--text-heading)">Today</span></div>
+    <div style="display:flex;justify-content:center"><button onClick="{{ openA }}" aria-label="Talk to Meira" style="width:68px;height:68px;margin-top:-38px;border-radius:50%;border:4px solid var(--surface-card);background:var(--gradient-primary);box-shadow:var(--shadow-orb);font-size:28px;cursor:pointer" style-active="transform:scale(0.95)">🎙️</button></div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:2px;opacity:0.6"><span style="font-size:22px">☑️</span><span style="font-size:10px;font-weight:800;color:var(--text-heading)">Tasks</span></div>
+  </div>
+  <sc-if value="{{ micA }}" hint-placeholder-val="{{ false }}"><dc-import name="VoiceSheet" listening="{{ listening }}" reply="{{ reply }}" level="{{ level }}" helper="{{ helper }}" on-close="{{ close }}" on-send="{{ send }}" on-undo="{{ undo }}" style="position:absolute;inset:0;z-index:30" hint-size="390px,844px"></dc-import></sc-if>
+</div>
+</div></div>
+
+<div class="dv-opt" id="1b"><div class="dv-olabel"><a class="dv-oid" href="#1b">1b</a>Voice first · Meira is the mic, day lives in a sheet</div>
+<div class="dv-card" style="width:390px;border-radius:44px">
+<div style="width:390px;height:844px;position:relative;overflow:hidden;background:var(--surface-app);color:var(--text-body)">
+  <div style="height:54px;display:flex;align-items:flex-end;justify-content:space-between;padding:0 32px 8px;font-weight:800;font-size:15px;color:var(--text-heading)"><span>16:23</span><span style="width:26px;height:12px;border:1.5px solid var(--text-heading);border-radius:4px;box-sizing:border-box;padding:1.5px"><span style="display:block;width:70%;height:100%;background:var(--text-heading);border-radius:1.5px"></span></span></div>
+  <div style="padding:10px 20px 0;display:flex;align-items:center;justify-content:space-between">
+    <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.MeiraWordmark" size="{{ 24 }}" show-a-i="{{ false }}" hint-size="100px,30px"></x-import>
+    <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.Avatar" initial="K" size="{{ 36 }}" hint-size="36px,36px"></x-import>
+  </div>
+  <div style="display:flex;flex-direction:column;align-items:center;text-align:center;padding:64px 36px 0">
+    <div style="font-family:var(--font-display);font-weight:700;font-size:34px;color:var(--text-heading)">Hey Koral.</div>
+    <div style="font-size:18px;line-height:1.45;color:var(--text-secondary);margin-top:10px;text-wrap:pretty">You leave for the dentist at <b style="color:var(--text-heading)">16:35</b>, in 12 min.</div>
+    <button onClick="{{ openB }}" aria-label="Talk to Meira" style="margin-top:52px;background:none;border:none;padding:0;cursor:pointer;border-radius:50%" style-active="transform:scale(0.95)">
+      <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.MeiraCoin" size="{{ 148 }}" glow="{{ true }}" hint-size="148px,148px"></x-import>
+    </button>
+    <div style="font-size:13px;font-weight:800;color:var(--text-tertiary);margin-top:18px">Tap Meira to talk</div>
+    <div style="display:flex;gap:8px;margin:28px -20px 0;flex-wrap:wrap;justify-content:center">
+      <span style="flex:none;white-space:nowrap"><x-import component-from-global-scope="LumiAIDesignSystem_1a858d.Button" tone="ghost" size="sm" on-click="{{ openB }}" hint-size="120px,30px">What's left today?</x-import></span>
+      <span style="flex:none;white-space:nowrap"><x-import component-from-global-scope="LumiAIDesignSystem_1a858d.Button" tone="ghost" size="sm" on-click="{{ openB }}" hint-size="140px,30px">Move gym to tomorrow</x-import></span>
+    </div>
+  </div>
+  <div style="position:absolute;left:0;right:0;bottom:0;height:{{ sheetBH }};transition:height 380ms cubic-bezier(.34,1.3,.64,1);background:var(--surface-card);border-radius:28px 28px 0 0;box-shadow:0 -10px 28px rgba(214,165,55,0.14);overflow:hidden;z-index:5">
+    <button onClick="{{ toggleB }}" style="width:100%;background:none;border:none;padding:10px 22px 6px;cursor:pointer;display:flex;flex-direction:column;align-items:stretch;gap:12px;text-align:left">
+      <span style="width:40px;height:5px;border-radius:999px;background:var(--border-hairline);align-self:center"></span>
+      <span style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-family:var(--font-display);font-weight:700;font-size:20px;color:var(--text-heading)">Today</span><span style="font-size:12px;font-weight:800;color:var(--text-time)">{{ leftLabel }} · {{ sheetBArrow }}</span></span>
+    </button>
+    <div style="padding:0 22px">
+      <div style="display:flex;align-items:center;gap:14px;padding:12px 14px;margin:0 -14px;border-radius:14px;background:var(--surface-chip)">
+        <div style="width:42px;flex:none;font-weight:800;font-size:13px;color:var(--text-heading)">17:00</div>
+        <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:15px;color:var(--text-heading)">Dentist</div><div style="font-size:12px;color:var(--text-time);font-weight:800;margin-top:2px">🚪 Leave 16:35 · in 12 min</div></div>
+      </div>
+      <sc-for list="{{ others }}" as="item" hint-placeholder-count="5">
+        <div style="display:flex;align-items:center;gap:14px;padding:12px 0;border-bottom:1px solid var(--border-hairline);opacity:{{ item.opacity }}">
+          <div style="width:42px;flex:none;font-weight:800;font-size:13px;color:var(--text-heading);font-variant-numeric:tabular-nums">{{ item.time }}</div>
+          <div style="flex:1;min-width:0">
+            <div dir="{{ item.dir }}" style="font-weight:700;font-size:15px;color:var(--text-heading);text-decoration:{{ item.strike }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ item.title }}</div>
+            <div style="font-size:12px;color:var(--text-tertiary);margin-top:2px">{{ item.icon }} {{ item.meta }}</div>
+          </div>
+          <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.Checkbox" checked="{{ item.done }}" on-change="{{ item.toggle }}" hint-size="22px,22px"></x-import>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+  <sc-if value="{{ micB }}" hint-placeholder-val="{{ false }}"><dc-import name="VoiceSheet" listening="{{ listening }}" reply="{{ reply }}" level="{{ level }}" helper="{{ helper }}" on-close="{{ close }}" on-send="{{ send }}" on-undo="{{ undo }}" style="position:absolute;inset:0;z-index:30" hint-size="390px,844px"></dc-import></sc-if>
+</div>
+</div></div>
+
+<div class="dv-opt" id="1c"><div class="dv-olabel"><a class="dv-oid" href="#1c">1c</a>Timeline rail · now-line, no tab bar, floating mic pill</div>
+<div class="dv-card" style="width:390px;border-radius:44px">
+<div style="width:390px;height:844px;position:relative;overflow:hidden;background:var(--surface-app);color:var(--text-body)">
+  <div style="height:54px;display:flex;align-items:flex-end;justify-content:space-between;padding:0 32px 8px;font-weight:800;font-size:15px;color:var(--text-heading)"><span>16:23</span><span style="width:26px;height:12px;border:1.5px solid var(--text-heading);border-radius:4px;box-sizing:border-box;padding:1.5px"><span style="display:block;width:70%;height:100%;background:var(--text-heading);border-radius:1.5px"></span></span></div>
+  <div style="padding:14px 24px 0;display:flex;align-items:flex-end;justify-content:space-between">
+    <div><div style="font-family:var(--font-display);font-weight:700;font-size:32px;line-height:1.1;color:var(--text-heading)">Today</div><div style="font-size:13px;font-weight:700;color:var(--text-secondary);margin-top:4px">Sun 27 Sep · {{ leftLabel }}</div></div>
+    <div style="display:flex;gap:10px;align-items:center">
+      <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.IconButton" icon="☑️" label="Tasks" size="{{ 40 }}" hint-size="40px,40px"></x-import>
+      <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.Avatar" initial="K" size="{{ 40 }}" hint-size="40px,40px"></x-import>
+    </div>
+  </div>
+  <div style="position:relative;padding:28px 24px 0">
+    <div style="position:absolute;left:85px;top:28px;bottom:0;width:2px;background:var(--border-hairline)"></div>
+    <sc-for list="{{ before }}" as="item" hint-placeholder-count="3">
+      <div style="display:flex;align-items:flex-start;padding:10px 0;opacity:{{ item.opacity }};position:relative">
+        <div style="width:42px;flex:none;font-weight:800;font-size:13px;color:var(--text-heading);text-align:right;padding-right:14px;padding-top:1px;font-variant-numeric:tabular-nums">{{ item.time }}</div>
+        <div style="width:12px;flex:none;display:flex;justify-content:center;padding-top:4px"><span style="width:10px;height:10px;border-radius:50%;background:var(--surface-app);border:2px solid var(--text-tertiary);box-sizing:border-box"></span></div>
+        <div style="flex:1;min-width:0;padding-left:16px;display:flex;gap:10px;align-items:flex-start">
+          <div style="flex:1;min-width:0"><div dir="{{ item.dir }}" style="font-weight:700;font-size:15px;color:var(--text-heading);text-decoration:{{ item.strike }}">{{ item.title }}</div><div style="font-size:12px;color:var(--text-tertiary);margin-top:2px">{{ item.meta }}</div></div>
+          <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.Checkbox" checked="{{ item.done }}" on-change="{{ item.toggle }}" size="{{ 20 }}" hint-size="20px,20px"></x-import>
+        </div>
+      </div>
+    </sc-for>
+    <div style="display:flex;align-items:center;padding:8px 0;position:relative">
+      <div style="width:42px;flex:none;text-align:right;padding-right:14px;font-size:11px;font-weight:800;letter-spacing:1.2px;color:var(--text-time)">NOW</div>
+      <div style="width:12px;flex:none;display:flex;justify-content:center"><span style="width:12px;height:12px;border-radius:50%;background:var(--accent-primary);box-shadow:var(--shadow-orb)"></span></div>
+      <div style="flex:1;height:2px;background:var(--accent-primary);margin-left:6px;border-radius:2px"></div>
+    </div>
+    <div style="display:flex;align-items:flex-start;padding:10px 0">
+      <div style="width:42px;flex:none;font-weight:800;font-size:13px;color:var(--text-heading);text-align:right;padding-right:14px;padding-top:4px">17:00</div>
+      <div style="width:12px;flex:none;display:flex;justify-content:center;padding-top:7px"><span style="width:12px;height:12px;border-radius:50%;background:var(--accent-primary)"></span></div>
+      <div style="flex:1;min-width:0;margin-left:16px;background:var(--surface-card);border:1.5px solid var(--accent-primary);border-radius:16px;padding:14px 16px;box-shadow:var(--shadow-card)">
+        <div style="font-family:var(--font-display);font-weight:700;font-size:20px;color:var(--text-heading)">⚕️ Dentist</div>
+        <div style="font-size:13px;color:var(--text-secondary);margin-top:2px">Dizengoff 50 · 🚶 18 min</div>
+        <div style="display:flex;gap:8px;margin-top:12px;align-items:center">
+          <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.TimeChip" tone="soft" hint-size="110px,26px">🚪 Leave 16:35</x-import>
+          <span style="font-size:13px;font-weight:800;color:var(--text-time)">in 12 min</span>
+        </div>
+      </div>
+    </div>
+    <sc-for list="{{ after }}" as="item" hint-placeholder-count="2">
+      <div style="display:flex;align-items:flex-start;padding:10px 0;opacity:{{ item.opacity }}">
+        <div style="width:42px;flex:none;font-weight:800;font-size:13px;color:var(--text-heading);text-align:right;padding-right:14px;padding-top:1px">{{ item.time }}</div>
+        <div style="width:12px;flex:none;display:flex;justify-content:center;padding-top:4px"><span style="width:10px;height:10px;border-radius:50%;background:var(--surface-app);border:2px solid var(--lumi-honey);box-sizing:border-box"></span></div>
+        <div style="flex:1;min-width:0;padding-left:16px;display:flex;gap:10px;align-items:flex-start">
+          <div style="flex:1;min-width:0"><div dir="{{ item.dir }}" style="font-weight:700;font-size:15px;color:var(--text-heading);text-decoration:{{ item.strike }}">{{ item.title }}</div><div style="font-size:12px;color:var(--text-tertiary);margin-top:2px">{{ item.icon }} {{ item.meta }}</div></div>
+          <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.Checkbox" checked="{{ item.done }}" on-change="{{ item.toggle }}" size="{{ 20 }}" hint-size="20px,20px"></x-import>
+        </div>
+      </div>
+    </sc-for>
+  </div>
+  <button onClick="{{ openC }}" style="position:absolute;left:24px;right:24px;bottom:34px;height:60px;border:none;border-radius:999px;background:var(--gradient-primary);box-shadow:var(--shadow-button);display:flex;align-items:center;justify-content:center;gap:10px;font-weight:800;font-size:17px;color:var(--text-on-gold);cursor:pointer" style-active="transform:scale(0.97)"><span style="font-size:22px">🎙️</span>Ask Meira</button>
+  <sc-if value="{{ micC }}" hint-placeholder-val="{{ false }}"><dc-import name="VoiceSheet" listening="{{ listening }}" reply="{{ reply }}" level="{{ level }}" helper="{{ helper }}" on-close="{{ close }}" on-send="{{ send }}" on-undo="{{ undo }}" style="position:absolute;inset:0;z-index:30" hint-size="390px,844px"></dc-import></sc-if>
+</div>
+</div></div>
+
+<div class="dv-opt" id="1d"><div class="dv-olabel"><a class="dv-oid" href="#1d">1d</a>Sunny hero · one big number, mic on the horizon</div>
+<div class="dv-card" style="width:390px;border-radius:44px">
+<div style="width:390px;height:844px;position:relative;overflow:hidden;background:var(--surface-app);color:var(--text-body)">
+  <div style="height:468px;background:var(--gradient-sunny);border-radius:0 0 40px 40px;position:relative">
+    <div style="height:54px;display:flex;align-items:flex-end;justify-content:space-between;padding:0 32px 8px;font-weight:800;font-size:15px;color:var(--text-on-gold)"><span>16:23</span><span style="width:26px;height:12px;border:1.5px solid var(--text-on-gold);border-radius:4px;box-sizing:border-box;padding:1.5px"><span style="display:block;width:70%;height:100%;background:var(--text-on-gold);border-radius:1.5px"></span></span></div>
+    <div style="padding:12px 22px 0;display:flex;justify-content:space-between;align-items:center">
+      <span style="font-size:14px;font-weight:800;color:var(--lumi-label-on-gold)">Sunday, 27 Sep</span>
+      <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.Avatar" initial="K" size="{{ 36 }}" style="background:var(--surface-card)" hint-size="36px,36px"></x-import>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;text-align:center;padding-top:62px">
+      <div style="font-size:12px;font-weight:800;letter-spacing:1.2px;color:var(--lumi-label-on-gold)">LEAVE FOR THE DENTIST IN</div>
+      <div style="font-family:var(--font-display);font-weight:700;font-size:96px;line-height:1;color:var(--text-on-gold);margin-top:10px;font-variant-numeric:tabular-nums">12<span style="font-size:36px;margin-left:6px">min</span></div>
+      <div style="font-size:15px;font-weight:700;color:var(--lumi-label-on-gold);margin-top:14px">🚪 16:35 · 🚶 18 min · Dizengoff 50</div>
+    </div>
+    <button onClick="{{ openD }}" aria-label="Talk to Meira" style="position:absolute;left:50%;bottom:-44px;transform:translateX(-50%);width:88px;height:88px;border-radius:50%;border:none;background:var(--surface-card);box-shadow:var(--shadow-orb);font-size:36px;cursor:pointer" style-active="transform:translateX(-50%) scale(0.95)">🎙️</button>
+  </div>
+  <div style="padding:70px 22px 0">
+    <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.SectionLabel" hint-size="80px,14px">Later today</x-import>
+    <div style="margin-top:4px">
+      <sc-for list="{{ after }}" as="item" hint-placeholder-count="2">
+        <div style="display:flex;align-items:center;gap:14px;padding:12px 0;border-bottom:1px solid var(--border-hairline);opacity:{{ item.opacity }}">
+          <div style="width:42px;flex:none;font-weight:800;font-size:13px;color:var(--text-heading)">{{ item.time }}</div>
+          <div dir="{{ item.dir }}" style="flex:1;min-width:0;font-weight:700;font-size:15px;color:var(--text-heading);text-decoration:{{ item.strike }}">{{ item.icon }} {{ item.title }}</div>
+          <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.Checkbox" checked="{{ item.done }}" on-change="{{ item.toggle }}" hint-size="22px,22px"></x-import>
+        </div>
+      </sc-for>
+    </div>
+    <div style="font-size:13px;font-weight:800;color:var(--text-time);margin-top:14px">See the full day ›</div>
+  </div>
+  <div style="position:absolute;left:0;right:0;bottom:0;height:84px;display:grid;grid-template-columns:1fr 1fr 1fr;padding-top:12px;border-top:1px solid var(--border-hairline);background:var(--surface-app)">
+    <div style="text-align:center;font-size:12px;font-weight:800;color:var(--text-heading)">Today</div>
+    <div style="text-align:center;font-size:12px;font-weight:800;color:var(--text-tertiary)">Tasks</div>
+    <div style="text-align:center;font-size:12px;font-weight:800;color:var(--text-tertiary)">Me</div>
+  </div>
+  <sc-if value="{{ micD }}" hint-placeholder-val="{{ false }}"><dc-import name="VoiceSheet" listening="{{ listening }}" reply="{{ reply }}" level="{{ level }}" helper="{{ helper }}" on-close="{{ close }}" on-send="{{ send }}" on-undo="{{ undo }}" style="position:absolute;inset:0;z-index:30" hint-size="390px,844px"></dc-import></sc-if>
+</div>
+</div></div>
+
+<div class="dv-opt" id="1e"><div class="dv-olabel"><a class="dv-oid" href="#1e">1e</a>Now · Then · Tonight · hold-to-talk bar</div>
+<div class="dv-card" style="width:390px;border-radius:44px">
+<div style="width:390px;height:844px;position:relative;overflow:hidden;background:var(--surface-app);color:var(--text-body)">
+  <div style="height:54px;display:flex;align-items:flex-end;justify-content:space-between;padding:0 32px 8px;font-weight:800;font-size:15px;color:var(--text-heading)"><span>16:23</span><span style="width:26px;height:12px;border:1.5px solid var(--text-heading);border-radius:4px;box-sizing:border-box;padding:1.5px"><span style="display:block;width:70%;height:100%;background:var(--text-heading);border-radius:1.5px"></span></span></div>
+  <div style="padding:14px 24px 0;display:flex;justify-content:flex-end;gap:10px">
+    <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.IconButton" icon="☑️" label="Tasks" size="{{ 40 }}" hint-size="40px,40px"></x-import>
+    <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.Avatar" initial="K" size="{{ 40 }}" hint-size="40px,40px"></x-import>
+  </div>
+  <div style="padding:10px 24px 0;display:flex;flex-direction:column;gap:34px">
+    <div>
+      <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.SectionLabel" tone="faint" hint-size="40px,14px">Now</x-import>
+      <div style="font-family:var(--font-display);font-weight:700;font-size:30px;line-height:1.15;color:var(--text-heading);margin-top:8px">Finish the presentation</div>
+      <div style="height:8px;border-radius:999px;background:var(--lumi-honey);margin-top:16px;overflow:hidden"><div style="width:96%;height:100%;background:var(--accent-primary);border-radius:999px"></div></div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;font-weight:800;color:var(--text-tertiary);margin-top:8px"><span>13:00</span><span style="color:var(--text-time)">7 min left</span><span>16:30</span></div>
+    </div>
+    <div>
+      <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.SectionLabel" tone="faint" hint-size="40px,14px">Then</x-import>
+      <div style="display:flex;align-items:flex-end;justify-content:space-between;margin-top:8px;gap:12px">
+        <div><div style="font-family:var(--font-display);font-weight:700;font-size:24px;color:var(--text-heading)">⚕️ Dentist</div><div style="font-size:14px;color:var(--text-secondary);margin-top:2px">17:00 · Dizengoff 50</div></div>
+        <div style="text-align:right;background:var(--surface-chip);border-radius:14px;padding:10px 14px"><div style="font-size:11px;font-weight:800;letter-spacing:1.2px;color:var(--text-time)">LEAVE</div><div style="font-family:var(--font-display);font-weight:700;font-size:22px;color:var(--text-heading)">16:35</div></div>
+      </div>
+    </div>
+    <div>
+      <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.SectionLabel" tone="faint" hint-size="60px,14px">Tonight</x-import>
+      <div style="margin-top:4px">
+        <sc-for list="{{ after }}" as="item" hint-placeholder-count="2">
+          <div style="display:flex;align-items:center;gap:14px;padding:11px 0;border-bottom:1px solid var(--border-hairline);opacity:{{ item.opacity }}">
+            <div style="width:42px;flex:none;font-weight:800;font-size:13px;color:var(--text-heading)">{{ item.time }}</div>
+            <div dir="{{ item.dir }}" style="flex:1;min-width:0;font-weight:700;font-size:15px;color:var(--text-heading);text-decoration:{{ item.strike }}">{{ item.title }}</div>
+            <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.Checkbox" checked="{{ item.done }}" on-change="{{ item.toggle }}" hint-size="22px,22px"></x-import>
+          </div>
+        </sc-for>
+      </div>
+      <div style="font-size:13px;font-weight:800;color:var(--text-time);margin-top:14px">Full day ›</div>
+    </div>
+  </div>
+  <button onPointerDown="{{ holdE }}" style="position:absolute;left:20px;right:20px;bottom:30px;height:72px;border:none;border-radius:24px;background:var(--surface-inverse);box-shadow:var(--shadow-button);display:flex;align-items:center;justify-content:center;gap:12px;font-weight:800;font-size:16px;color:var(--text-on-inverse);cursor:pointer;touch-action:none;user-select:none" style-active="transform:scale(0.97)"><span style="font-size:24px">🎙️</span>Hold to talk to Meira</button>
+  <sc-if value="{{ micE }}" hint-placeholder-val="{{ false }}"><dc-import name="VoiceSheet" listening="{{ listening }}" reply="{{ reply }}" level="{{ level }}" helper="{{ helper }}" on-close="{{ close }}" on-send="{{ send }}" on-undo="{{ undo }}" style="position:absolute;inset:0;z-index:30" hint-size="390px,844px"></dc-import></sc-if>
+</div>
+</div></div>
+
+</div>
+
+<div class="dv-row">Profile · only what's in use: places, routine, voice, language</div>
+<div class="dv-opts">
+
+<div class="dv-opt" id="1f"><div class="dv-olabel"><a class="dv-oid" href="#1f">1f</a>Essentials · four settings in three groups</div>
+<div class="dv-card" style="width:390px;border-radius:44px">
+<div style="width:390px;height:844px;position:relative;overflow:hidden;background:var(--surface-app);color:var(--text-body)">
+  <div style="height:54px;display:flex;align-items:flex-end;justify-content:space-between;padding:0 32px 8px;font-weight:800;font-size:15px;color:var(--text-heading)"><span>16:23</span><span style="width:26px;height:12px;border:1.5px solid var(--text-heading);border-radius:4px;box-sizing:border-box;padding:1.5px"><span style="display:block;width:70%;height:100%;background:var(--text-heading);border-radius:1.5px"></span></span></div>
+  <div style="padding:10px 20px 0;display:flex;flex-direction:column;gap:22px">
+    <div style="font-size:14px;font-weight:800;color:var(--text-time)">‹ Today</div>
+    <div style="display:flex;align-items:center;gap:14px">
+      <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.Avatar" initial="K" size="{{ 60 }}" hint-size="60px,60px"></x-import>
+      <div><div style="font-family:var(--font-display);font-weight:700;font-size:24px;color:var(--text-heading)">Koral Zakai</div><div style="font-size:13px;color:var(--text-tertiary);margin-top:2px">koral.zakai@gmail.com</div></div>
+    </div>
+    <div>
+      <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.SectionLabel" hint-size="60px,14px">Places</x-import>
+      <div style="background:var(--surface-card);border-radius:20px;box-shadow:var(--shadow-card);margin-top:8px;padding:0 16px">
+        <div style="display:flex;align-items:center;gap:12px;padding:15px 0;border-bottom:1px solid var(--border-hairline)"><span style="font-size:18px">🏠</span><span style="flex:1;font-weight:700;font-size:15px;color:var(--text-heading)">Home</span><span style="font-size:14px;color:var(--text-secondary)">Rothschild 22</span><span style="color:var(--text-tertiary)">›</span></div>
+        <div style="display:flex;align-items:center;gap:12px;padding:15px 0"><span style="font-size:18px">💼</span><span style="flex:1;font-weight:700;font-size:15px;color:var(--text-heading)">Work</span><span style="font-size:14px;color:var(--text-secondary)">Azrieli Center</span><span style="color:var(--text-tertiary)">›</span></div>
+      </div>
+    </div>
+    <div>
+      <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.SectionLabel" hint-size="60px,14px">Routine</x-import>
+      <div style="background:var(--surface-card);border-radius:20px;box-shadow:var(--shadow-card);margin-top:8px;padding:0 16px">
+        <div style="display:flex;align-items:center;gap:12px;padding:15px 0;border-bottom:1px solid var(--border-hairline)"><span style="font-size:18px">⏰</span><span style="flex:1;min-width:0"><span style="display:block;font-weight:700;font-size:15px;color:var(--text-heading)">Getting ready</span><span style="display:block;font-size:12px;color:var(--text-tertiary);margin-top:1px">Learned from your last 14 mornings</span></span><span style="font-size:14px;font-weight:800;color:var(--text-time)">45 min</span></div>
+        <div style="display:flex;align-items:center;gap:12px;padding:15px 0"><span style="font-size:18px">🚪</span><span style="flex:1;font-weight:700;font-size:15px;color:var(--text-heading)">Leave buffer</span><span style="font-size:14px;font-weight:800;color:var(--text-time)">10 min</span></div>
+      </div>
+    </div>
+    <div>
+      <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.SectionLabel" hint-size="60px,14px">Meira</x-import>
+      <div style="background:var(--surface-card);border-radius:20px;box-shadow:var(--shadow-card);margin-top:8px;padding:0 16px">
+        <button onClick="{{ toggleVoice }}" style="width:100%;background:none;border:none;border-bottom:1px solid var(--border-hairline);display:flex;align-items:center;gap:12px;padding:13px 0;cursor:pointer;text-align:left"><span style="font-size:18px">🔊</span><span style="flex:1;font-weight:700;font-size:15px;color:var(--text-heading)">Read replies aloud</span><span style="width:46px;height:28px;border-radius:999px;background:{{ switchBg }};position:relative;transition:background 200ms;flex:none"><span style="position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:var(--lumi-white);box-shadow:var(--shadow-row);transform:{{ knobX }};transition:transform 200ms cubic-bezier(.34,1.3,.64,1)"></span></span></button>
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 0"><span style="flex:1;font-weight:700;font-size:15px;color:var(--text-heading);padding-left:30px">Language</span>
+          <div style="display:flex;background:var(--surface-chip);border-radius:12px;padding:3px">
+            <button onClick="{{ setEn }}" style="border:none;border-radius:10px;padding:6px 12px;font-weight:800;font-size:13px;cursor:pointer;background:{{ enBg }};color:var(--text-heading)">English</button>
+            <button onClick="{{ setHe }}" style="border:none;border-radius:10px;padding:6px 12px;font-weight:800;font-size:13px;cursor:pointer;background:{{ heBg }};color:var(--text-heading)">עברית</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div style="text-align:center;font-size:14px;font-weight:700;color:var(--text-tertiary)">Sign out</div>
+  </div>
+</div>
+</div></div>
+
+<div class="dv-opt" id="1g"><div class="dv-olabel"><a class="dv-oid" href="#1g">1g</a>What Meira knows · settings as sentences</div>
+<div class="dv-card" style="width:390px;border-radius:44px">
+<div style="width:390px;height:844px;position:relative;overflow:hidden;background:var(--surface-app);color:var(--text-body)">
+  <div style="height:54px;display:flex;align-items:flex-end;justify-content:space-between;padding:0 32px 8px;font-weight:800;font-size:15px;color:var(--text-heading)"><span>16:23</span><span style="width:26px;height:12px;border:1.5px solid var(--text-heading);border-radius:4px;box-sizing:border-box;padding:1.5px"><span style="display:block;width:70%;height:100%;background:var(--text-heading);border-radius:1.5px"></span></span></div>
+  <div style="padding:10px 22px 0">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <span style="font-size:14px;font-weight:800;color:var(--text-time)">‹ Today</span>
+      <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.Avatar" initial="K" size="{{ 36 }}" hint-size="36px,36px"></x-import>
+    </div>
+    <div style="font-family:var(--font-display);font-weight:700;font-size:30px;line-height:1.15;color:var(--text-heading);margin-top:26px">What I know about you</div>
+    <div style="font-size:15px;color:var(--text-secondary);margin-top:8px">Tap anything to change it, or just tell me.</div>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-top:26px">
+      <div style="background:var(--surface-card);border-radius:20px;box-shadow:var(--shadow-card);padding:16px 18px;display:flex;gap:12px;align-items:flex-start"><span style="font-size:20px">🏠</span><span style="flex:1;font-size:16px;line-height:1.4;color:var(--text-secondary)">Home is <b style="color:var(--text-heading)">Rothschild 22</b>, work is <b style="color:var(--text-heading)">Azrieli Center</b>.</span></div>
+      <div style="background:var(--surface-card);border-radius:20px;box-shadow:var(--shadow-card);padding:16px 18px;display:flex;gap:12px;align-items:flex-start"><span style="font-size:20px">⏰</span><span style="flex:1;font-size:16px;line-height:1.4;color:var(--text-secondary)">Your mornings take about <b style="color:var(--text-heading)">45 min</b>. I add <b style="color:var(--text-heading)">10 min</b> before you leave.<span style="display:block;font-size:12px;color:var(--text-tertiary);margin-top:4px">Learned from your last 14 mornings</span></span></div>
+      <div style="background:var(--surface-card);border-radius:20px;box-shadow:var(--shadow-card);padding:16px 18px;display:flex;gap:12px;align-items:flex-start"><span style="font-size:20px">🚶</span><span style="flex:1;font-size:16px;line-height:1.4;color:var(--text-secondary)">You walk anything under <b style="color:var(--text-heading)">20 min</b>, otherwise the bus.</span></div>
+      <div style="background:var(--surface-card);border-radius:20px;box-shadow:var(--shadow-card);padding:16px 18px;display:flex;gap:12px;align-items:flex-start"><span style="font-size:20px">🔊</span><span style="flex:1;font-size:16px;line-height:1.4;color:var(--text-secondary)">I reply out loud, in <b style="color:var(--text-heading)">English</b>.</span></div>
+    </div>
+  </div>
+  <div style="position:absolute;left:22px;right:22px;bottom:34px;display:flex;flex-direction:column;gap:14px;align-items:stretch">
+    <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.Button" tone="gradient" size="lg" block="{{ true }}" icon="🎙️" hint-size="100%,50px">Tell Meira something new</x-import>
+    <div style="text-align:center;font-size:14px;font-weight:700;color:var(--text-tertiary)">Sign out</div>
+  </div>
+</div>
+</div></div>
+
+<div class="dv-opt" id="1h"><div class="dv-olabel"><a class="dv-oid" href="#1h">1h</a>Four tiles · glanceable, one tap deep</div>
+<div class="dv-card" style="width:390px;border-radius:44px">
+<div style="width:390px;height:844px;position:relative;overflow:hidden;background:var(--surface-app);color:var(--text-body)">
+  <div style="height:54px;display:flex;align-items:flex-end;justify-content:space-between;padding:0 32px 8px;font-weight:800;font-size:15px;color:var(--text-heading)"><span>16:23</span><span style="width:26px;height:12px;border:1.5px solid var(--text-heading);border-radius:4px;box-sizing:border-box;padding:1.5px"><span style="display:block;width:70%;height:100%;background:var(--text-heading);border-radius:1.5px"></span></span></div>
+  <div style="padding:10px 20px 0">
+    <div style="font-size:14px;font-weight:800;color:var(--text-time)">‹ Today</div>
+    <div style="display:flex;flex-direction:column;align-items:center;margin-top:28px">
+      <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.Avatar" initial="K" size="{{ 84 }}" hint-size="84px,84px"></x-import>
+      <div style="font-family:var(--font-display);font-weight:700;font-size:24px;color:var(--text-heading);margin-top:14px">Koral</div>
+      <div style="font-size:13px;color:var(--text-tertiary);margin-top:2px">With Meira since March</div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:34px">
+      <div style="background:var(--surface-card);border-radius:20px;box-shadow:var(--shadow-card);padding:18px;min-height:120px;display:flex;flex-direction:column;justify-content:space-between"><span style="font-size:24px">📍</span><div><div style="font-size:12px;font-weight:800;color:var(--text-tertiary)">Places</div><div style="font-family:var(--font-display);font-weight:600;font-size:18px;color:var(--text-heading);margin-top:2px">Home, Work</div></div></div>
+      <div style="background:var(--surface-card);border-radius:20px;box-shadow:var(--shadow-card);padding:18px;min-height:120px;display:flex;flex-direction:column;justify-content:space-between"><span style="font-size:24px">⏰</span><div><div style="font-size:12px;font-weight:800;color:var(--text-tertiary)">Mornings</div><div style="font-family:var(--font-display);font-weight:600;font-size:18px;color:var(--text-heading);margin-top:2px">45 min</div></div></div>
+      <button onClick="{{ toggleVoice }}" style="border:none;text-align:left;cursor:pointer;background:{{ voiceTileBg }};border-radius:20px;box-shadow:var(--shadow-card);padding:18px;min-height:120px;display:flex;flex-direction:column;justify-content:space-between;transition:background 200ms"><span style="font-size:24px">🔊</span><span><span style="display:block;font-size:12px;font-weight:800;color:var(--text-secondary)">Voice replies</span><span style="display:block;font-family:var(--font-display);font-weight:600;font-size:18px;color:var(--text-heading);margin-top:2px">{{ voiceLabel }}</span></span></button>
+      <button onClick="{{ toggleLang }}" style="border:none;text-align:left;cursor:pointer;background:var(--surface-card);border-radius:20px;box-shadow:var(--shadow-card);padding:18px;min-height:120px;display:flex;flex-direction:column;justify-content:space-between"><span style="font-family:var(--font-display);font-weight:700;font-size:22px;color:var(--text-time)">Aa</span><span><span style="display:block;font-size:12px;font-weight:800;color:var(--text-tertiary)">Language</span><span style="display:block;font-family:var(--font-display);font-weight:600;font-size:18px;color:var(--text-heading);margin-top:2px">{{ langLabel }}</span></span></button>
+    </div>
+    <div style="text-align:center;font-size:14px;font-weight:700;color:var(--text-tertiary);margin-top:40px">Sign out</div>
+  </div>
+</div>
+</div></div>
+
+</div>
+<p class="dv-next">Try next: "take <a class="dv-oid" href="#1c">1c</a>'s rail into <a class="dv-oid" href="#1a">1a</a>" · "build the Tasks screen in the style of <a class="dv-oid" href="#1e">1e</a>" · "pair <a class="dv-oid" href="#1b">1b</a> with <a class="dv-oid" href="#1g">1g</a> and make it a full clickable flow"</p>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { done: { review: true, call: true }, mic: null, phase: 'listen', hold: false, level: 0.55, sheetB: false, gymMoved: false, voiceOn: true, lang: 'en' };
+  componentWillUnmount() { this.clear(); }
+  clear() { clearInterval(this.iv); clearTimeout(this.to); if (this.up) window.removeEventListener('pointerup', this.up); this.up = null; }
+  openMic(id, hold) {
+    this.clear();
+    this.setState({ mic: id, phase: 'listen', hold: !!hold });
+    this.iv = setInterval(() => this.setState({ level: 0.25 + Math.random() * 0.65 }), 150);
+    if (!hold) this.to = setTimeout(() => this.send(), 3200);
+    else { this.up = () => this.send(); window.addEventListener('pointerup', this.up, { once: true }); }
+  }
+  send() { this.clear(); this.setState({ phase: 'reply', gymMoved: true }); }
+  close() { this.clear(); this.setState({ mic: null }); }
+  renderVals() {
+    const s = this.state;
+    const base = [
+      { id: 'review', time: '09:00', title: 'Design review', icon: '💼', meta: '1h 30m' },
+      { id: 'call', time: '11:30', title: 'Call with Noa', icon: '📞', meta: '30 min' },
+      { id: 'deck', time: '13:00', title: 'Finish the presentation', icon: '💼', meta: '7 min left' },
+      { id: 'gym', time: '19:30', title: 'Gym', icon: '💪', meta: '1h' },
+      { id: 'mom', time: '21:00', title: 'להתקשר לאמא', icon: '📞', meta: '15 min', rtl: true },
+    ].filter(i => !(s.gymMoved && i.id === 'gym'));
+    const items = base.map(i => {
+      const done = !!s.done[i.id];
+      return { ...i, done, dir: i.rtl ? 'rtl' : 'ltr', opacity: done ? '0.55' : '1', strike: done ? 'line-through' : 'none',
+        toggle: () => this.setState(st => ({ done: { ...st.done, [i.id]: !st.done[i.id] } })) };
+    });
+    const left = items.filter(i => !i.done).length + 1;
+    const mic = s.mic;
+    return {
+      others: items,
+      before: items.slice(0, 3),
+      after: items.slice(3),
+      leftLabel: left + ' left',
+      micA: mic === 'a', micB: mic === 'b', micC: mic === 'c', micD: mic === 'd', micE: mic === 'e',
+      openA: () => this.openMic('a'), openB: () => this.openMic('b'), openC: () => this.openMic('c'), openD: () => this.openMic('d'),
+      holdE: (e) => { e.preventDefault(); this.openMic('e', true); },
+      listening: s.phase === 'listen', reply: s.phase === 'reply', level: s.level,
+      helper: s.hold ? 'Release to send' : 'Tap Send when you’re done',
+      close: () => this.close(), send: () => this.send(),
+      undo: () => { this.clear(); this.setState({ gymMoved: false, mic: null }); },
+      sheetBH: s.sheetB ? '600px' : '150px', sheetBArrow: s.sheetB ? '▾' : '▴',
+      toggleB: () => this.setState({ sheetB: !s.sheetB }),
+      toggleVoice: () => this.setState({ voiceOn: !s.voiceOn }),
+      switchBg: s.voiceOn ? 'var(--accent-primary)' : 'var(--border-hairline)',
+      knobX: s.voiceOn ? 'translateX(18px)' : 'translateX(0)',
+      voiceTileBg: s.voiceOn ? 'var(--lumi-honey)' : 'var(--surface-card)',
+      voiceLabel: s.voiceOn ? 'On' : 'Off',
+      setEn: () => this.setState({ lang: 'en' }), setHe: () => this.setState({ lang: 'he' }),
+      toggleLang: () => this.setState({ lang: s.lang === 'en' ? 'he' : 'en' }),
+      enBg: s.lang === 'en' ? 'var(--surface-card)' : 'transparent',
+      heBg: s.lang === 'he' ? 'var(--surface-card)' : 'transparent',
+      langLabel: s.lang === 'en' ? 'English' : 'עברית',
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -30,7 +30,7 @@ import {
   DepartureOption, changesLabel, slackLabel, vehicleLabel, boardLabel, urgencyLabel,
   minutesToDecide, departureUncatchable, superlativeLabel,
 } from '../utils/departureOptions';
-import { BRAND, FONTS, MIN_TOUCH, RADIUS } from '../constants/theme';
+import { BRAND, FONTS, MIN_TOUCH, RADIUS, nline } from '../constants/theme';
 import { flowArrow } from './today/readingRow';
 
 interface Props {
@@ -234,7 +234,7 @@ const styles = StyleSheet.create({
   // well as in words, because at that point she is scanning, not reading.
   rowUrgent: { borderColor: BRAND.danger, borderWidth: 1.5 },
   rowCurrent: { borderColor: BRAND.sunGold, backgroundColor: BRAND.goldSoft },
-  rowLate: { borderColor: '#E4C7BC' },
+  rowLate: { borderColor: nline('#E4C7BC') },
   timesLine: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   // flexShrink: 0 is the whole fix — these were what got squeezed away.
   depart: {

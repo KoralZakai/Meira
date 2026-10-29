@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { Task, AppLanguage } from '../types';
-import { BRAND, FONTS, RADIUS } from '../constants/theme';
+import { BRAND, FONTS, RADIUS, surf } from '../constants/theme';
 import { getCategoryMeta } from '../constants/categories';
 import { formatDuration } from '../utils/timeUtils';
 
@@ -88,7 +88,7 @@ const styles = StyleSheet.create({
   wrap: {
     borderTopWidth: 1, borderTopColor: BRAND.line,
     borderTopLeftRadius: RADIUS.card, borderTopRightRadius: RADIUS.card,
-    overflow: 'hidden', backgroundColor: 'rgba(255,253,247,0.55)',
+    overflow: 'hidden', backgroundColor: surf('rgba(255,253,247,0.55)'),
   },
   handleArea: { paddingTop: 9, paddingHorizontal: 16, paddingBottom: 11 },
   handle: {

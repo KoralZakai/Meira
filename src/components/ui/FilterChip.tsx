@@ -28,5 +28,5 @@ const styles = StyleSheet.create({
   honey: { backgroundColor: BRAND.goldSoft, borderColor: BRAND.goldSoft },
   active: { backgroundColor: BRAND.warmInk, borderColor: BRAND.warmInk },
   text: { fontFamily: FONTS.bodyHeavy, fontSize: 13, color: BRAND.goldInk },
-  activeText: { color: BRAND.white },
+  activeText: { color: BRAND.creamCard },
 });

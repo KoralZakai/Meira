@@ -21,7 +21,7 @@ import time
 from typing import Optional
 
 import httpx
-from datetime import date
+from datetime import date, timedelta as _timedelta
 from openai import AsyncOpenAI, APIConnectionError, APITimeoutError
 from react_loop import ChatOpenAI, tool, ToolMessage, AIMessage, AgentCallError, create_react_agent
 
@@ -1052,6 +1052,60 @@ def _make_tools(phone: str, content: str, wa_phone: Optional[str] = None,
         # "where is it?" though the row held the address (27.10 live).
         return await task_store.fetch_task_rows(phone, date_from, date_to, include_location=True)
 
+    async def _place_from_recent_tasks(activity: str, around: str) -> tuple:
+        """Where she went for this kind of thing lately — "training · יגאל אלון 76"
+        answers "the gym?". Same concept (gym ≈ training ≈ yoga) or a shared word;
+        the last 14 days up to `around`. (address|None, read_failed) — a dead
+        read must not look like "nothing matched"."""
+        try:
+            end = date.fromisoformat(around)
+        except (TypeError, ValueError):
+            return None, False
+        start = (end - _timedelta(days=14)).isoformat()
+        try:
+            rows = await _fetch_task_rows(start, end.isoformat())
+        except Exception as exc:
+            logger.warning("check_availability: recent tasks unreadable: %s", exc)
+            return None, True
+        want = known_places.concept_of(activity)
+        words = known_places._tokens(activity)
+        for r in sorted(rows, key=lambda r: str(r.get("date") or ""), reverse=True):
+            loc = r.get("location")
+            addr = loc.get("address") if isinstance(loc, dict) else loc
+            if not isinstance(addr, str) or not addr.strip():
+                continue
+            text = str(r.get("text") or "")
+            if (want and known_places.concept_of(text) == want) or (words & known_places._tokens(text)):
+                return addr.strip(), False
+        return None, False
+
+    async def _place_from_recent_tasks(activity: str, around: str) -> tuple:
+        """Where she went for this kind of thing lately — "training · יגאל אלון 76"
+        answers "the gym?". Same concept (gym ≈ training ≈ yoga) or a shared word;
+        the last 14 days up to `around`. (address|None, read_failed) — a dead
+        read must not look like "nothing matched"."""
+        try:
+            end = date.fromisoformat(around)
+        except (TypeError, ValueError):
+            return None, False
+        start = (end - _timedelta(days=14)).isoformat()
+        try:
+            rows = await _fetch_task_rows(start, end.isoformat())
+        except Exception as exc:
+            logger.warning("check_availability: recent tasks unreadable: %s", exc)
+            return None, True
+        want = known_places.concept_of(activity)
+        words = known_places._tokens(activity)
+        for r in sorted(rows, key=lambda r: str(r.get("date") or ""), reverse=True):
+            loc = r.get("location")
+            addr = loc.get("address") if isinstance(loc, dict) else loc
+            if not isinstance(addr, str) or not addr.strip():
+                continue
+            text = str(r.get("text") or "")
+            if (want and known_places.concept_of(text) == want) or (words & known_places._tokens(text)):
+                return addr.strip(), False
+        return None, False
+
     async def _saved_row(destination: str, arrival: Optional[str], date: str) -> Optional[dict]:
         """The saved appointment `destination` names, if one does — matched by the
         hour (the strongest signal — 'רופא שיניים' and 'Dentist — Dr. Levi' share no
@@ -1254,12 +1308,20 @@ def _make_tools(phone: str, content: str, wa_phone: Optional[str] = None,
     @tool
     async def check_availability(
         date: str,
-        minutes: int,
+        minutes: int = 0,
         place: Optional[str] = None,
         start_time: Optional[str] = None,
+        activity: Optional[str] = None,
     ) -> dict:
         """Can something of `minutes` length fit on `date` (YYYY-MM-DD) — optionally
         at `place` and at a specific `start_time` (HH:MM)?
+
+        `activity` = what it is in her words ("gym", "yoga", "חדר כושר"). ALWAYS
+        pass it. When `place` is empty the tool looks the activity up in her saved
+        places, her routines and her recent tasks, and fills place (and minutes,
+        when 0) itself — `place_from` says where it came from. Never ask her where
+        her gym / class / usual place is before calling this; ask only when
+        place_from is 'unknown'.
 
         Use for "can I have a 2-hour meeting in Haifa on Tuesday at 14:00?", "יש לי
         זמן לפגישה של שעתיים בחיפה ב-3.9?" — ANY question about whether something
@@ -1289,6 +1351,28 @@ def _make_tools(phone: str, content: str, wa_phone: Optional[str] = None,
 
         def _hhmm(total: int) -> str:
             return f"{total // 60 % 24:02d}:{total % 60:02d}"
+
+        # "Do I have time for the gym?" — she has told us where the gym is.
+        # Asking "where & how long?" back is the chat not reading what it knows.
+        place_from = "said" if place else "unknown"
+        if not place and activity:
+            known = _recall_place(activity)
+            routine = routine_match.find(activity, routine_match.notes_of(prof), date)
+            if known and known.get("address"):
+                place, place_from = known["address"], "known_place"
+            elif routine and routine.get("address"):
+                place = routine_match.complete_address(routine["address"], prof.get("homeAddress"))
+                place_from = "routine"
+            if not minutes and routine and routine.get("minutes"):
+                minutes = int(routine["minutes"])
+            if not place:
+                place, failed = await _place_from_recent_tasks(activity, date)
+                if place:
+                    place_from = "recent_task"
+                elif failed:
+                    place_from = "lookup_failed"
+        if not minutes:
+            minutes = int(categorize.infer(activity)["duration_minutes"]) if activity else 60
 
         rows = [r for r in await _fetch_task_rows(date, date)
                 if r.get("status") not in ("complete", "moved")]
@@ -1381,6 +1465,7 @@ def _make_tools(phone: str, content: str, wa_phone: Optional[str] = None,
                 "ok": True, "date": date, "verdict": verdict, "conflicts": reasons,
                 "busy": busy, "free_windows": free, "travel": travel,
                 "routines_note": routine_match.notes_of(prof) or None,
+                "place_from": place_from,
                 "asked_for": {"start": start_time, "end": _hhmm(end_m), "place": place},
             }
 
@@ -1394,6 +1479,7 @@ def _make_tools(phone: str, content: str, wa_phone: Optional[str] = None,
             "conflicts": [], "busy": busy,
             "free_windows": options or free, "travel": travel,
             "routines_note": routine_match.notes_of(prof) or None,
+            "place_from": place_from,
             "asked_for": {"minutes": minutes, "place": place},
         }
 
@@ -2382,7 +2468,9 @@ _STATIC_RULES = (
         "(result.recalled). A task named after one of her routines already HAS its hour and "
         "address — never ask for them; say them back in a few words ('19:00, הרצל 10 ✓').\n"
         "- 'Can I fit X on <day>?' / 'יש לי זמן ל…?' is a QUESTION, not a new task: call "
-        "check_availability (after calculate_date) and answer from what it returns. Give the "
+        "check_availability (after calculate_date) with activity=<what it is, her words> and answer "
+        "from what it returns. It finds her usual place and length itself (place_from) — never ask "
+        "'where?' or 'how long?' before calling it; ask only if place_from is 'unknown' or 'lookup_failed'. Give the "
         "verdict AND its reason — a clash, not enough travel time between the appointment "
         "before and the one after, or one of her standing routines (routines_note: the school "
         "run, a fixed class — hours nobody writes down as tasks). If it does not fit, offer the "

@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/lumi-ai-design-system-1a858d4f-e331-4928-b9fd-bc23aa88efed/styles.css">
+<script src="_ds/lumi-ai-design-system-1a858d4f-e331-4928-b9fd-bc23aa88efed/_ds_bundle.js"></script>
+</helmet>
+<div style="position:absolute;inset:0;display:flex;flex-direction:column;justify-content:flex-end;background:rgba(252,247,236,0.82);font-family:var(--font-body)">
+  <div style="background:var(--surface-card);border-radius:28px 28px 44px 44px;padding:12px 22px 34px;box-shadow:0 -10px 30px rgba(214,165,55,0.18);display:flex;flex-direction:column;gap:14px">
+    <div style="width:40px;height:5px;border-radius:999px;background:var(--border-hairline);align-self:center"></div>
+    <sc-if value="{{ listening }}" hint-placeholder-val="{{ true }}">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:4px;padding-top:6px">
+        <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.SectionLabel" tone="time" hint-size="80px,14px">Listening</x-import>
+        <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.Waveform" active="{{ true }}" level="{{ level }}" hint-size="100%,88px"></x-import>
+        <div style="font-family:var(--font-display);font-weight:600;font-size:20px;line-height:1.3;color:var(--text-heading);text-align:center;text-wrap:pretty">“Move the gym to tomorrow morning”</div>
+        <div style="font-size:13px;font-weight:700;color:var(--text-tertiary);margin-top:6px">{{ helper }}</div>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:4px">
+        <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.Button" tone="ghost" size="lg" block="{{ true }}" on-click="{{ onClose }}" style="flex:1" hint-size="100%,46px">Cancel</x-import>
+        <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.Button" tone="primary" size="lg" block="{{ true }}" on-click="{{ onSend }}" style="flex:1" hint-size="100%,46px">Send ›</x-import>
+      </div>
+    </sc-if>
+    <sc-if value="{{ reply }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:10px;padding-top:6px">
+        <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.ChatBubble" dc-props="{{ userBubble }}" hint-size="100%,44px">Move the gym to tomorrow morning</x-import>
+        <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.ChatBubble" dc-props="{{ lumiBubble }}" hint-size="100%,64px">Done. I moved Gym to tomorrow at 07:30, before your first meeting 💪</x-import>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:4px">
+        <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.Button" tone="ghost" size="lg" block="{{ true }}" on-click="{{ onUndo }}" style="flex:1" hint-size="100%,46px">Undo</x-import>
+        <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.Button" tone="primary" size="lg" block="{{ true }}" on-click="{{ onClose }}" style="flex:1" hint-size="100%,46px">Done</x-import>
+      </div>
+    </sc-if>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:390,&quot;height&quot;:844},&quot;listening&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;},&quot;reply&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;level&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:0.6,&quot;min&quot;:0,&quot;max&quot;:1,&quot;step&quot;:0.05,&quot;tsType&quot;:&quot;number&quot;},&quot;helper&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Tap Send when you're done&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;onClose&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;},&quot;onSend&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;},&quot;onUndo&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;}}">class Component extends DCLogic {
+  renderVals() { return { userBubble: { from: 'user' }, lumiBubble: { from: 'lumi' } }; }
+}</script>
+</body>
+</html>

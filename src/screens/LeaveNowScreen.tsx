@@ -8,7 +8,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BRAND, FONTS, RADIUS, SHADOWS } from '../constants/theme';
+import { BRAND, FONTS, RADIUS, SHADOWS, nink } from '../constants/theme';
 import { getCategoryMeta } from '../constants/categories';
 import { Task, UserProfile, AppLanguage } from '../types';
 import { timeToMinutes } from '../utils/timeUtils';
@@ -381,7 +381,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     marginTop: 4,
   },
-  leftNoteText: { fontFamily: FONTS.bodyHeavy, fontSize: 14, color: '#0B3D2E' },
+  leftNoteText: { fontFamily: FONTS.bodyHeavy, fontSize: 14, color: nink('#0B3D2E') },
   replanNote: {
     backgroundColor: BRAND.honey,
     borderRadius: RADIUS.chip,

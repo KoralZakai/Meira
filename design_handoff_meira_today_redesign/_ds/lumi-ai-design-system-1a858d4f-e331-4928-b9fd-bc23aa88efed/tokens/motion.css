@@ -1,0 +1,20 @@
+:root {
+  /* Short, springy, and only where something changed. Meira deliberately has
+     NO ambient/idle animation: two infinite orb pulses were removed from the
+     tab bar and splash because they animated on every screen forever. */
+  --duration-tap: 100ms; /* @kind other */      /* press scale on a card */
+  --duration-fast: 150ms; /* @kind other */
+  --duration-toast: 200ms; /* @kind other */    /* RewardToast fade in/out */
+  --duration-pop: 500ms; /* @kind other */      /* checkbox success bounce */
+  --duration-burst: 650ms; /* @kind other */    /* particles + floating "+10" */
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1); /* @kind other */
+  --ease-standard: ease-out; /* @kind other */
+  --spring-pop: cubic-bezier(0.34, 1.56, 0.64, 1); /* @kind other */
+
+  --press-opacity: 0.85; /* @kind other */      /* activeOpacity on most rows */
+  --press-opacity-strong: 0.7; /* @kind other *//* cards, list rows */
+  --press-scale: 0.95; /* @kind other */
+  --disabled-opacity: 0.4; /* @kind other */
+  --done-opacity: 0.55; /* @kind other */       /* completed task rows */
+}

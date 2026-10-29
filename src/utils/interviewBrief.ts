@@ -201,7 +201,7 @@ export function prepBlockChipLabel(he: boolean, ok: boolean): string {
 
 /** Every other calendar event of tomorrow and the rest of today, for the day-before brief (see MeetingBriefService.upcomingEventBriefs). */
 export const MAX_EVENT_BRIEFS = 6;
-const FROM_CALENDAR_RE = /^(gcal|dcal|ocal)-/;
+export const FROM_CALENDAR_RE = /^(gcal|dcal|ocal)-/;
 
 export function pickEventsToBrief(all: Task[], today: string, tomorrow: string, nowHHMM: string): Task[] {
   return all

@@ -1,0 +1,104 @@
+:root {
+  /* ── Brand fills (BRAND in src/constants/theme.ts) ───────────────── */
+  --lumi-sun-gold: #F1C24E;      /* primary brand, buttons, accents */
+  --lumi-amber: #E5A93A;         /* gradient end, pressed states */
+  --lumi-honey: #FBE6A0;         /* soft fills, focus cards, chips */
+  --lumi-peach: #F6B98C;         /* secondary accent */
+  --lumi-cream: #FCF7EC;         /* app background */
+  --lumi-cream-card: #FFFDF7;    /* cards / surfaces */
+  --lumi-line: #F1E8D6;          /* borders / dividers */
+  --lumi-white: #FFFFFF;
+  --lumi-time-chip-bg: #FCF1D6;  /* clock-time chip fill */
+
+  /* ── Ink. Each tier has its own contrast target so the hierarchy
+        survives; all clear WCAG AA on the surface it sits on. ──────── */
+  --lumi-warm-ink: #574326;      /* headings / primary      9.23:1 on card */
+  --lumi-ink-soft: #645843;      /* secondary text          6.84:1 */
+  --lumi-ink-faint: #807252;     /* tertiary text           4.64:1 */
+  --lumi-time-chip-text: #8B6721;/* clock times on chips    4.60:1 */
+  --lumi-success: #458052;       /* done / arrived on time  4.63:1 */
+  --lumi-danger: #B9526B;        /* late / urgent           4.61:1 */
+  --lumi-warning: #FF9F1C;
+
+  /* Ink used ON gold fills (leave-time box, primary pill labels). */
+  --lumi-ink-on-gold: #4A3512;
+  --lumi-label-on-gold: #7A5A18;
+
+  /* ── Semantic aliases — prefer these in new work ─────────────────── */
+  --surface-app: var(--lumi-cream);
+  --surface-card: var(--lumi-cream-card);
+  --surface-soft: var(--lumi-honey);
+  --surface-chip: var(--lumi-time-chip-bg);
+  --surface-inverse: var(--lumi-warm-ink);
+
+  --border-hairline: var(--lumi-line);
+  --border-accent: var(--lumi-sun-gold);
+
+  --text-heading: var(--lumi-warm-ink);
+  --text-body: var(--lumi-warm-ink);
+  --text-secondary: var(--lumi-ink-soft);
+  --text-tertiary: var(--lumi-ink-faint);
+  --text-time: var(--lumi-time-chip-text);
+  --text-on-gold: var(--lumi-ink-on-gold);
+  --text-on-inverse: var(--lumi-honey);
+
+  --accent-primary: var(--lumi-sun-gold);
+  --accent-pressed: var(--lumi-amber);
+  --accent-soft: var(--lumi-honey);
+  --accent-secondary: var(--lumi-peach);
+
+  --state-success: var(--lumi-success);
+  --state-danger: var(--lumi-danger);
+  --state-warning: var(--lumi-warning);
+
+  /* ── Attention banners (Today screen) ───────────────────────────── */
+  --banner-offline-bg: #FDECEF;
+  --banner-offline-border: #EF476F;
+  --banner-offline-text: #A32B47;
+  --banner-clash-bg: #FFF4E5;
+  --banner-clash-border: #FF9F1C;
+  --banner-clash-text: #8A5300;
+  --banner-clash-option-border: #E8C89A;
+  --banner-clash-option-text: #7A4A00;
+
+  /* ── Sticky-note palette (NOTE_PALETTE) — cycles by group index ─── */
+  --note-1-tint: #FDEFD9; --note-1-border: #F1E0B8; --note-1-tape: #F6CF67;
+  --note-2-tint: #FCEADC; --note-2-border: #F3D3B8; --note-2-tape: #F6B98C;
+  --note-3-tint: #FEF3DC; --note-3-border: #F3E1B4; --note-3-tape: #FBE6A0;
+  --note-4-tint: #FBEFE3; --note-4-border: #F0DFC7; --note-4-tape: #F1C24E;
+  --note-5-tint: #FDF1E6; --note-5-border: #F2DFC3; --note-5-tape: #EAB23F;
+
+  /* ── Category colors (CATEGORY_META) ────────────────────────────── */
+  --cat-interview: #9B5DE5;
+  --cat-course: #4361EE;
+  --cat-conference: #F77F00;
+  --cat-class: #FFD166;
+  --cat-work: #023E8A;
+  --cat-meeting: #118AB2;
+  --cat-call: #06D6A0;
+  --cat-doctor: #EF476F;
+  --cat-gym: #FF9F1C;
+  --cat-aspiration: #FFD166;
+  --cat-leisure: #FF85A1;
+  --cat-general: #8A8A9A;
+  --cat-zoom: #2D8CFF;
+  --cat-hobby-class: #06D6A0;
+
+  /* ── Priority colors (PRIORITY_META) ────────────────────────────── */
+  --prio-must: #EF476F;
+  --prio-have-to: #FF9F1C;
+  --prio-need-to: #FFD166;
+  --prio-nice-to-do: #06D6A0;
+
+  /* ── Gradients ──────────────────────────────────────────────────── */
+  --gradient-primary: linear-gradient(160deg, #F6CF67, #E9AE3C); /* @kind color */
+  --gradient-sunny: radial-gradient(120% 80% at 50% 8%, #FFF4CE, #FBE6A6 40%, #F6CF6E); /* @kind color */
+  --gradient-gold-puff: linear-gradient(180deg, #FFF3C4, #F7D069, #EAB23F); /* @kind color */
+}
+
+/* Category tint helpers: soft fill + border from a category color, mirroring
+   tint()/tintBorder() in theme.ts (hex + 14 / 55 alpha). */
+:root {
+  --tint-alpha: 0.08; /* @kind other */
+  --tint-border-alpha: 0.33; /* @kind other */
+}

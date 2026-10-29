@@ -13,7 +13,8 @@ import { completeAddress } from '../utils/addressCompletion';
 import { Task } from '../types/models';
 import { arrivedOnTime, learnTravelProfileFromTask } from './MorningRoutineService';
 import { sendInstantNotification } from './NotificationService';
-import { geocodeAddress } from './LumiServer';
+import { geocodeAddress, triedPlaceOnServer } from './LumiServer';
+import { askServerForPlaces } from './RouteGateway';
 import { distanceMeters, NEARBY_RADIUS_METERS, nearbyDue, nearbyMessage } from '../utils/nearbyDue';
 
 const HOME_DEPARTURE_RADIUS_METERS = 180;
@@ -111,7 +112,9 @@ export async function openLocationInMaps(label: string, coords?: { lat: number; 
  *      the comment always claimed;
  *   3. fall back to the device geocoder, so this never gets WORSE than before.
  */
-export async function geocodeTaskLocation(location: string): Promise<{ lat: number; lng: number } | null> {
+const askedPlaces = new Set<string>();
+
+export async function geocodeTaskLocation(location: string): Promise<{ lat: number; lng: number; business?: { name?: string; address?: string } } | null> {
   const raw = String(location || '').trim();
   if (!raw) return null;
 
@@ -141,10 +144,30 @@ export async function geocodeTaskLocation(location: string): Promise<{ lat: numb
       ? `${home.lat - 0.35},${home.lng - 0.35}|${home.lat + 0.35},${home.lng + 0.35}`
       : undefined;
     const hit = await geocodeAddress(query, around);
-    if (hit) return { lat: hit.lat, lng: hit.lng };
+    if (hit) {
+      return hit.business
+        ? { lat: hit.lat, lng: hit.lng, business: { name: hit.name, address: hit.formatted } }
+        : { lat: hit.lat, lng: hit.lng };
+    }
     console.warn('[LOCATION] server geocode found nothing for', query);
   } catch (e) {
     console.warn('[LOCATION] server geocode failed, falling back', e);
+  }
+
+  // A NAME, not an address ("Nebuis", "Intel Haifa" — no house number): look
+  // it up as a BUSINESS (Places, typo-tolerant) before the device geocoder,
+  // which would place a company name in the wrong city or nowhere (29.10).
+  if (!/\d/.test(raw) && raw.length <= 60 && !triedPlaceOnServer.has(query) && !askedPlaces.has(raw)) {
+    askedPlaces.add(raw);   // once per run: a name that never resolves is not searched every sweep
+    try {
+      const [best] = await askServerForPlaces({ query: raw });
+      if (best && Number.isFinite(best.lat) && Number.isFinite(best.lng)) {
+        console.warn('[LOCATION] placed a name as a business', raw, '→', best.name);
+        return { lat: best.lat, lng: best.lng, business: { name: best.name, address: best.address } };
+      }
+    } catch (e) {
+      console.warn('[LOCATION] business lookup failed for', raw, e);
+    }
   }
 
   if (!Location) return null;

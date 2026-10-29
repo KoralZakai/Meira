@@ -23,6 +23,8 @@ import { Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-nativ
 import { BRAND, FONTS, MIN_TOUCH, RADIUS, SHADOWS } from '../constants/theme';
 import { getCategoryMeta } from '../constants/categories';
 import { AppLanguage, Task } from '../types/index';
+import { useNight } from './ui/SkyBackdrop';
+import { N } from './../constants/nightTone';
 
 /** Rows shown before "+ N more ›" — the rest open on her tap, never by themselves. */
 const VISIBLE_LIMIT = 5;
@@ -100,6 +102,7 @@ function previousDay(date: string): string {
 export default function YesterdayCard({
   tasks, today, language, onMove, onLetGo, onComplete, onReschedule,
 }: Props) {
+  const night = useNight();
   // Open by default when something needs a yes/no answer: an event that has
   // already happened is a question, not a leftover, and a question hidden
   // behind a chevron is a question never asked.
@@ -180,14 +183,14 @@ export default function YesterdayCard({
   const allIds = live.map((t) => t.id);
 
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, night && N.card]}>
       <TouchableOpacity
         style={styles.header}
         onPress={() => setOpen((v) => !v)}
         activeOpacity={0.8}
       >
-        <Text style={styles.title}>{title}</Text>
-        <Text style={styles.chevron}>{open ? '⌃' : '⌄'}</Text>
+        <Text style={[styles.title, night && N.ink]}>{title}</Text>
+        <Text style={[styles.chevron, night && N.inkSoft]}>{open ? '⌃' : '⌄'}</Text>
       </TouchableOpacity>
 
       {open && (
@@ -213,10 +216,10 @@ export default function YesterdayCard({
                   accessibilityState={{ expanded: isOpen }}
                   accessibilityHint={he ? 'פותח את כל הטקסט' : 'Shows the whole text'}
                 >
-                  <Text style={styles.rowText} numberOfLines={isOpen ? undefined : 2}>{task.text}</Text>
+                  <Text style={[styles.rowText, night && N.ink]} numberOfLines={isOpen ? undefined : 2}>{task.text}</Text>
                   {/* The date, always. Without it a four-day-old task is
                       indistinguishable from one of today's. */}
-                  <Text style={styles.rowWhen} numberOfLines={1}>
+                  <Text style={[styles.rowWhen, night && N.inkSoft]} numberOfLines={1}>
                     {whenLabel(task.date, today, he)}
                     {task.fixedTime ? ` · ${task.fixedTime}` : ''}
                   </Text>
@@ -246,15 +249,15 @@ export default function YesterdayCard({
                   accessibilityRole="button"
                   accessibilityLabel={label('Remove from the list', 'להסיר מהרשימה')}
                 >
-                  <Text style={styles.dropGlyph}>×</Text>
+                  <Text style={[styles.dropGlyph, night && N.ink]}>×</Text>
                 </Pressable>
               </View>
             );
           })}
 
           {lastPending && (
-            <View style={styles.undoRow}>
-              <Text style={styles.undoText} numberOfLines={1}>
+            <View style={[styles.undoRow, night && N.card]}>
+              <Text style={[styles.undoText, night && N.ink]} numberOfLines={1}>
                 {he ? `הוסר: ${lastPending.text}` : `Removed: ${lastPending.text}`}
               </Text>
               <Pressable
@@ -262,7 +265,7 @@ export default function YesterdayCard({
                 onPress={() => undo(lastPending.id)}
                 accessibilityRole="button"
               >
-                <Text style={styles.undoBtnText}>{he ? 'ביטול' : 'Undo'}</Text>
+                <Text style={[styles.undoBtnText, night && N.goldInk]}>{he ? 'ביטול' : 'Undo'}</Text>
               </Pressable>
             </View>
           )}
@@ -273,7 +276,7 @@ export default function YesterdayCard({
               onPress={() => setShowAll((v) => !v)}
               accessibilityRole="button"
             >
-              <Text style={styles.moreText}>
+              <Text style={[styles.moreText, night && N.goldInk]}>
                 {extra > 0
                   ? he ? `+ עוד ${extra}  ⌄` : `+ ${extra} more  ⌄`
                   : he ? 'פחות  ⌃' : 'Show less  ⌃'}
@@ -295,7 +298,7 @@ export default function YesterdayCard({
                 <Text style={styles.moveAllText}>{he ? '↻ תזמני הכל מחדש' : '↻ Reschedule all'}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.letGo} onPress={() => onLetGo(allIds)} activeOpacity={0.85}>
-                <Text style={styles.letGoText}>{he ? 'שחררי' : 'Let them go'}</Text>
+                <Text style={[styles.letGoText, night && N.inkSoft]}>{he ? 'שחררי' : 'Let them go'}</Text>
               </TouchableOpacity>
             </View>
           )}

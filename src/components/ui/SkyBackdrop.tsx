@@ -13,7 +13,10 @@
 import React from 'react';
 import { AppState, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { FALLBACK_PLACE, INK, Sky, skyFor, sunTimes, washedSky } from '../../utils/skyGradient';
+import { StatusBar } from 'expo-status-bar';
+import { FALLBACK_PLACE, INK, NIGHT, Sky, skyFor, sunTimes, washedSky } from '../../utils/skyGradient';
+import { nightNow, THEME_NIGHT } from '../../constants/theme';
+import { reloadAppAsync } from 'expo';
 import { loadProfile } from '../../services/UserProfileStorage';
 
 /** Five-minute steps: a colour change per minute is invisible, a re-render per minute is not free. */
@@ -43,29 +46,90 @@ function home(): Promise<Place> {
   return homePlace;
 }
 
+/**
+ * ONE clock for every screen and row (night mode reaches into each list row,
+ * so a timer per caller would be dozens): a minute tick while the app is
+ * active, a tick at once when it comes back, none in the background.
+ */
+const listeners = new Set<() => void>();
+let shared = nowMinutes();
+let timer: ReturnType<typeof setInterval> | null = null;
+let appSub: { remove: () => void } | null = null;
+function tick() {
+  const m = nowMinutes();
+  if (m !== shared) { shared = m; listeners.forEach((l) => l()); }
+}
+function subscribe(l: () => void) {
+  listeners.add(l);
+  if (!appSub) {
+    timer = setInterval(tick, 60 * 1000);
+    appSub = AppState.addEventListener('change', (s) => {
+      if (s === 'active') { tick(); if (!timer) timer = setInterval(tick, 60 * 1000); }
+      else if (timer) { clearInterval(timer); timer = null; }
+    });
+  }
+  return () => {
+    listeners.delete(l);
+    if (!listeners.size) { if (timer) clearInterval(timer); timer = null; appSub?.remove(); appSub = null; }
+  };
+}
+
+let placeNow: Place = FALLBACK_PLACE;
 export function useSky(): Sky & { ink: string } {
-  const [minute, setMinute] = React.useState(nowMinutes);
-  const [place, setPlace] = React.useState<Place>(FALLBACK_PLACE);
+  const minute = React.useSyncExternalStore(subscribe, () => shared);
+  const [place, setPlace] = React.useState<Place>(placeNow);
   React.useEffect(() => {
     let alive = true;
-    home().then((p) => { if (alive) setPlace(p); });
-    const tick = () => setMinute((m) => (m === nowMinutes() ? m : nowMinutes()));
-    // A minute-resolution sky: one tick a minute, none while the app is in the background.
-    let t: ReturnType<typeof setInterval> | null = setInterval(tick, 60 * 1000);
-    const sub = AppState.addEventListener('change', (s) => {
-      if (s === 'active') { tick(); if (!t) t = setInterval(tick, 60 * 1000); }
-      else if (t) { clearInterval(t); t = null; }
-    });
-    return () => { alive = false; if (t) clearInterval(t); sub.remove(); };
+    home().then((p) => { placeNow = p; if (alive) setPlace(p); });
+    return () => { alive = false; };
   }, []);
   return React.useMemo(() => {
     const sky = skyFor(minute, sunTimes(new Date(), place.lat, place.lng));
-    return { ...sky, ink: sky.dark ? INK.light : INK.dark };
+    // The palette of this run decides light vs dark (constants/theme), so the
+    // sky can never be dark under day cards or light under night ones.
+    const out = THEME_NIGHT && !sky.dark ? { ...sky, phase: 'night' as const, colors: NIGHT } : sky;
+    return { ...out, dark: THEME_NIGHT, ink: THEME_NIGHT ? INK.light : INK.dark };
   }, [minute, place.lat, place.lng]);
 }
 
+/** True while the sky is dark — the screens switch to the night palette (constants/nightTone). */
+export function useNight(): boolean {
+  return THEME_NIGHT;
+}
+
 export default function SkyBackdrop({ sky }: { sky: Sky }) {
-  return <LinearGradient colors={sky.colors} style={StyleSheet.absoluteFill} pointerEvents="none" />;
+  return (
+    <>
+      <LinearGradient colors={sky.colors} style={StyleSheet.absoluteFill} pointerEvents="none" />
+    </>
+  );
+}
+
+/**
+ * The phone's own status bar (clock, battery) follows the sky: dark icons by
+ * day, light ones at night — 28.10 "you cannot see the clock" (dark on navy).
+ * Screens drawn on cream (WashedSky) push dark icons over it while open.
+ */
+export function SkyStatusBar() {
+  // Trigger (rule 7): when she comes back to the app after at least a minute
+  // away — if the sky crossed dusk or dawn since this run's palette was chosen,
+  // reload once so every screen changes together. A quick hop out (Google
+  // sign-in, a picker, the camera) never reloads: its result would be lost.
+  React.useEffect(() => {
+    let leftAt = 0;
+    const check = () => {
+      if (Date.now() - leftAt < 60 * 1000) return;
+      if (nightNow() === THEME_NIGHT) return;
+      // Expo's own reload — it works in a release build (RN's DevSettings.reload does not).
+      reloadAppAsync(THEME_NIGHT ? 'theme:day' : 'theme:night')
+        .catch((e) => console.warn('[Theme] could not switch day/night', e));
+    };
+    const sub = AppState.addEventListener('change', (st) => {
+      if (st === 'active') check(); else if (st === 'background') leftAt = Date.now();
+    });
+    return () => sub.remove();
+  }, []);
+  return <StatusBar style={THEME_NIGHT ? 'light' : 'dark'} />;
 }
 
 /**
@@ -76,5 +140,8 @@ export default function SkyBackdrop({ sky }: { sky: Sky }) {
 export function WashedSky() {
   const sky = useSky();
   const colors = React.useMemo(() => washedSky(sky), [sky]);
-  return <LinearGradient colors={colors} style={StyleSheet.absoluteFill} pointerEvents="none" />;
+  // At night the whole palette is dark, so these screens get the night ground too.
+  return <LinearGradient colors={THEME_NIGHT ? NIGHT : colors} style={StyleSheet.absoluteFill} pointerEvents="none" />;
 }
+
+

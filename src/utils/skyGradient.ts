@@ -60,7 +60,9 @@ export function sunTimes(date: Date, lat: number, lng: number, tzOffsetMinutes =
 }
 
 type Stops = [string, string, string, string];
-const NIGHT: Stops = ['#050919', '#0E1538', '#1A1D4F', '#2A2160'];
+// Night = WhatsApp's dark (Koral's pick A, 28.10): one calm near-black with a
+// hint of blue, no navy-to-purple gradient ("the colours are too much").
+export const NIGHT: Stops = ['#0B141A', '#0B141A', '#0C161D', '#0E1A21'];
 const MORNING: Stops = ['#7DB9F0', '#AED6F7', '#E4F1FA', '#FFF0C2'];
 const NOON: Stops = ['#A6D1F4', '#D6EBF8', '#FFF6D2', '#FFE69C'];
 const SUNSET: Stops = ['#B8C9F2', '#E2D5F1', '#FFDCD2', '#FFE9BC'];

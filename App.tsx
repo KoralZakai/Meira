@@ -21,6 +21,7 @@ import type { Session } from '@supabase/supabase-js';
 import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
+import { SkyStatusBar } from './src/components/ui/SkyBackdrop';
 import MainTabs from './src/navigation/MainTabs';
 import SettingsMenu from './src/screens/SettingsMenu';
 import AgentsScreen from './src/screens/AgentsScreen';
@@ -34,6 +35,7 @@ import StatsScreen from './src/screens/StatsScreen';
 import AddTaskScreen from './src/screens/AddTaskScreen';
 import TaskDetailScreen from './src/screens/TaskDetailScreen';
 import CoachChatScreen from './src/screens/CoachChatScreen';
+import { onShare, takeShared } from './modules/share-in';
 import PersonalityHandoffScreen from './src/screens/PersonalityHandoffScreen';
 import PersonalityQuizScreen from './src/screens/PersonalityQuizScreen';
 import PlanTomorrow from './src/screens/PlanTomorrow';
@@ -282,6 +284,29 @@ function LumiAppShell() {
 
     setup();
 
+    // "Share → Meira" (27.10): a Clalit SMS shared from the SMS app opens the
+    // chat, which reads it on the phone. Triggers: the share that launched the
+    // app (cold start), coming back to the app, and a share while it is open.
+    // The same text twice within a minute is one share (a launch intent can be
+    // read again on resume).
+    let lastShare = { text: '', at: 0 };
+    const openShared = (text: string) => {
+      if (text === lastShare.text && Date.now() - lastShare.at < 60_000) return;
+      lastShare = { text, at: Date.now() };
+      const go = (tries: number) => {
+        if (navRef.isReady()) navRef.navigate('CoachChat', { shared: { id: String(Date.now()), text } });
+        else if (tries > 0) setTimeout(() => go(tries - 1), 300);
+        else console.warn('[App] a shared message arrived before navigation was ready');
+      };
+      go(20);
+    };
+    const pullShare = () => {
+      const r = takeShared();
+      if (r.ok && r.text) openShared(r.text);
+    };
+    pullShare();
+    const offShare = onShare(openShared);
+
     // App-open moments: wake-alarm / first-of-the-morning briefing spoken
     // aloud (day, date, hour, today's tasks), evening plan-tomorrow nudge.
     runDailyMoments().catch(() => {});
@@ -291,6 +316,7 @@ function LumiAppShell() {
     const appStateSub = AppState.addEventListener('change', (s) => {
       if (s !== 'active') return;
       warmServer('foreground');
+      pullShare();
       runDailyMoments().catch(() => {});
       // …and sweep the alarms again. armDueAlarms only ever ran at COLD START,
       // so a phone that stays open all day never re-checked: an alarm planned
@@ -367,6 +393,7 @@ function LumiAppShell() {
       mounted = false;
       sub.remove();
       appStateSub.remove();
+      offShare();
     };
   }, []);
 
@@ -396,7 +423,7 @@ function LumiAppShell() {
         openFirstMeetingIfNeeded().catch((e) => console.warn('[App] first meeting check failed', e));
       }}
     >
-      <StatusBar style="dark" />
+      <SkyStatusBar />
       <Stack.Navigator initialRouteName="MainTabs">
         <Stack.Screen name="MainTabs" component={MainTabs} options={{ headerShown: false }} />
         <Stack.Screen name="SettingsMenu" component={SettingsMenu} options={{ headerShown: false, presentation: 'modal' }} />

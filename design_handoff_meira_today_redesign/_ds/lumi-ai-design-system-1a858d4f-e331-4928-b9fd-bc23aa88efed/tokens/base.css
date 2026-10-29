@@ -1,0 +1,27 @@
+/* Minimal page defaults so a bare HTML file picks up the brand. */
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--surface-app);
+  color: var(--text-body);
+  font-family: var(--font-body);
+  font-weight: var(--weight-body);
+  font-size: var(--text-body-sm);
+  line-height: var(--leading-body);
+  -webkit-font-smoothing: antialiased;
+  text-wrap: pretty;
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-display);
+  font-weight: var(--weight-display);
+  color: var(--text-heading);
+  margin: 0;
+  line-height: var(--leading-tight);
+}
+
+a { color: var(--lumi-time-chip-text); text-decoration: none; font-weight: var(--weight-body-bold); }
+a:hover { color: var(--lumi-warm-ink); text-decoration: underline; }
+
+button { font-family: inherit; cursor: pointer; }

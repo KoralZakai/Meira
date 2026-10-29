@@ -10,7 +10,7 @@
  */
 import React from 'react';
 import { Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { BRAND, FONTS, MIN_TOUCH } from '../../constants/theme';
+import { BRAND, FONTS, MIN_TOUCH, surf, nink, nline } from '../../constants/theme';
 import TaskSheetHero from './TaskSheetHero';
 import { sourceLinkOf } from '../../utils/sourceLink';
 import type { PrepSlot } from '../../utils/interviewBrief';
@@ -65,10 +65,10 @@ const styles = StyleSheet.create({
   row: { flexWrap: 'wrap', gap: 8 },
   chip: {
     minHeight: MIN_TOUCH, justifyContent: 'center', paddingHorizontal: 14, borderRadius: 999,
-    backgroundColor: '#EEF0FF', borderWidth: 1, borderColor: '#D9DCFF', maxWidth: '100%',
+    backgroundColor: surf('#EEF0FF'), borderWidth: 1, borderColor: nline('#D9DCFF'), maxWidth: '100%',
   },
-  chipPrep: { backgroundColor: '#E6FAF3', borderColor: '#9FE6CC' },
-  chipText: { fontFamily: FONTS.bodyHeavy, fontSize: 13, color: '#3B3486' },
+  chipPrep: { backgroundColor: surf('#E6FAF3'), borderColor: nline('#9FE6CC') },
+  chipText: { fontFamily: FONTS.bodyHeavy, fontSize: 13, color: nink('#3B3486') },
   chipOff: { backgroundColor: 'rgba(20,27,46,0.04)', borderColor: BRAND.line, borderStyle: 'dashed' },
   chipOffText: { fontFamily: FONTS.bodySemi, fontSize: 13, color: BRAND.inkSoft },
 });

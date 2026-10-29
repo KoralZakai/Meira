@@ -31,6 +31,7 @@ import { getAllTasks, updateTaskFields } from './TaskStorage';
 import {
   canBeParent, relatednessScore, SUGGEST_THRESHOLD, AUTO_FILE_THRESHOLD,
 } from '../utils/taskRelations';
+import { sameText } from '../utils/sameText';
 
 /** The parent most recently filed into, and when. */
 const ACTIVE_PARENT_KEY = 'lumi.activeParent.v1';
@@ -110,11 +111,13 @@ export async function suggestParent(
 
 /** Children the user has already declined to file. Never ask twice. */
 const DECLINED_KEY = 'lumi.parentDeclined.v1';
+const TWIN_REPAIR_KEY = 'lumi.twinRepair.v1';
 
 async function declinedIds(): Promise<string[]> {
   try {
     return JSON.parse((await AsyncStorage.getItem(DECLINED_KEY)) || '[]');
-  } catch {
+  } catch (e) {
+    console.warn('[TaskHierarchy] declined list unreadable — treating as empty', e);
     return [];
   }
 }
@@ -124,7 +127,7 @@ export async function declineParent(childId: string): Promise<void> {
   const ids = await declinedIds();
   if (ids.includes(childId)) return;
   await AsyncStorage.setItem(DECLINED_KEY, JSON.stringify([...ids, childId].slice(-200)))
-    .catch(() => {});
+    .catch((e) => console.warn('[TaskHierarchy] declined list not stored', childId, e));
 }
 
 /**
@@ -172,19 +175,48 @@ export async function autoFileConfident(tasks: Task[]): Promise<AutoFiled[]> {
   const declined = new Set(await declinedIds());
   const filed: AutoFiled[] = [];
 
+  // Repair (28.10), ONCE: copies that an earlier version filed under their own
+  // twin come back out. One run only, so a same-named child she nests herself
+  // later is never undone behind her back.
+  const repaired = await AsyncStorage.getItem(TWIN_REPAIR_KEY).catch(() => null);
+  const byId = new Map(tasks.map((t) => [t.id, t]));
+  if (!repaired) for (const t of tasks) {
+    const parent = t.parentId ? byId.get(t.parentId) : undefined;
+    if (parent && sameText(t.text, parent.text)) {
+      await updateTaskFields(t.id, { parentId: undefined })
+        .catch((e) => console.warn('[TaskHierarchy] twin not detached', t.id, e));
+    }
+  }
+  if (!repaired) {
+    await AsyncStorage.setItem(TWIN_REPAIR_KEY, '1')
+      .catch((e) => console.warn('[TaskHierarchy] twin repair flag not stored', e));
+  }
+
   for (const child of tasks) {
     if (child.parentId || child.status !== 'pending' || declined.has(child.id)) continue;
 
     let best: { parent: Task; score: number } | null = null;
     for (const parent of tasks) {
       if (!canBeParent(parent) || parent.id === child.id) continue;
+      // Same words = a duplicate of the task, not a part of it (28.10: six copies
+      // of «חופשה במדבר» were filed under a seventh, every time Tasks opened).
+      if (sameText(child.text, parent.text)) continue;
       const score = relatednessScore(child, parent);
       if (score >= AUTO_FILE_THRESHOLD && (!best || score > best.score)) {
         best = { parent, score };
       }
     }
     if (best) {
-      await updateTaskFields(child.id, { parentId: best.parent.id }).catch(() => {});
+      // Only what was really saved is reported (rule 1/2: a failed write is not "filed").
+      try {
+        await updateTaskFields(child.id, { parentId: best.parent.id });
+      } catch (e) {
+        console.warn('[TaskHierarchy] auto-file not saved', child.id, e);
+        continue;
+      }
+      // Never filed twice: if parentId does not survive a sync round trip, the
+      // next open must not file it — and announce it — all over again.
+      await declineParent(child.id).catch((e) => console.warn('[TaskHierarchy] decline not stored', child.id, e));
       filed.push({ child, parent: best.parent });
     }
   }

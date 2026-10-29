@@ -8,7 +8,7 @@
  */
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { BRAND, FONTS, MIN_TOUCH } from '../../constants/theme';
+import { BRAND, FONTS, MIN_TOUCH, surf } from '../../constants/theme';
 import BottomSheet from '../ui/BottomSheet';
 import type { WaitingItem } from '../../utils/waitingList';
 import { ChangeCard } from '../ChangeCards';
@@ -31,12 +31,12 @@ interface Props {
 }
 
 const SECTION: Record<WaitingItem['kind'], { icon: string; en: string; he: string; bg: string; act: [string, string] }> = {
-  change: { icon: '🔄', en: 'What changed', he: 'מה השתנה', bg: '#FFF6E0', act: ['Open', 'לפתוח'] },
-  followup: { icon: '⏳', en: 'Waiting for a new date', he: 'מחכה למועד חדש', bg: '#EEF0FF', act: ['Set date', 'לקבוע'] },
-  unscheduled: { icon: '🕐', en: 'When will you do it?', he: 'מתי תעשי?', bg: '#E6FAF3', act: ['Find a time', 'למצוא זמן'] },
-  clash: { icon: '⚠️', en: 'Needs a decision', he: 'צריך החלטה', bg: '#FDE7EC', act: ['Resolve', 'לפתור'] },
-  unclosed: { icon: '🕓', en: 'Not closed', he: 'לא נסגר', bg: '#FFF1C7', act: ['Did you go?', 'הלכת?'] },
-  place: { icon: '📍', en: 'Missing a place', he: 'חסר מקום', bg: '#E5F0FF', act: ['Add', 'להוסיף'] },
+  change: { icon: '🔄', en: 'What changed', he: 'מה השתנה', bg: surf('#FFF6E0'), act: ['Open', 'לפתוח'] },
+  followup: { icon: '⏳', en: 'Waiting for a new date', he: 'מחכה למועד חדש', bg: surf('#EEF0FF'), act: ['Set date', 'לקבוע'] },
+  unscheduled: { icon: '🕐', en: 'When will you do it?', he: 'מתי תעשי?', bg: surf('#E6FAF3'), act: ['Find a time', 'למצוא זמן'] },
+  clash: { icon: '⚠️', en: 'Needs a decision', he: 'צריך החלטה', bg: surf('#FDE7EC'), act: ['Resolve', 'לפתור'] },
+  unclosed: { icon: '🕓', en: 'Not closed', he: 'לא נסגר', bg: surf('#FFF1C7'), act: ['Did you go?', 'הלכת?'] },
+  place: { icon: '📍', en: 'Missing a place', he: 'חסר מקום', bg: surf('#E5F0FF'), act: ['Add', 'להוסיף'] },
 };
 
 const DAY_HE = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳'];

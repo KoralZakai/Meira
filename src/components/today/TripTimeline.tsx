@@ -19,6 +19,7 @@ import { RIDE_ICON, ridesOf, journeySteps } from '../../utils/rideLine';
 import { formatSpan } from './NowAddRow';
 import { readingRow } from './readingRow';
 import { originText, shortPlace } from '../../utils/tripPlaces';
+import { N } from '../../constants/nightTone';
 
 export const MODE_EMOJI: Record<string, string> = { walk: '🚶', bike: '🚴', bus: '🚌', train: '🚆', car: '🚗' };
 export const MODE_LABEL: Record<string, [string, string]> = {
@@ -37,11 +38,13 @@ interface Props {
   /** Wake / get-ready time, when there is one. */
   readyAt?: string;
   wakeMuted?: boolean;
+  /** Drawn on a night card (the caller's surface decides — a light sheet passes nothing). */
+  night?: boolean;
   /** The transport she just picked, before the route is stored. */
   mode?: string;
 }
 
-export default function TripTimeline({ task, he, now, readyAt, wakeMuted, mode: modeOverride }: Props) {
+export default function TripTimeline({ task, he, now, readyAt, wakeMuted, mode: modeOverride, night }: Props) {
   const loc: any = task.location && typeof task.location === 'object' ? task.location : undefined;
   const place = shortPlace(loc?.displayName || loc?.address);
   const leave: string | undefined = loc?.leaveHomeBy || loc?.transitPlan?.leaveHomeAt;
@@ -95,15 +98,15 @@ export default function TripTimeline({ task, he, now, readyAt, wakeMuted, mode: 
     <View style={styles.tl}>
       {rows.map((row, k) => (
         <View key={k} style={[styles.row, { flexDirection: readingRow(he) }]}>
-          <Text style={[styles.time, row.leaveRow && styles.leave, row.soft && styles.softTime]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>{row.at ?? ''}</Text>
+          <Text style={[styles.time, night && N.ink, row.leaveRow && styles.leave, row.soft && styles.softTime, row.soft && night && N.inkSoft]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>{row.at ?? ''}</Text>
           <Text style={styles.icon}>{row.icon}</Text>
-          <Text style={[styles.text, row.strong && styles.strong, row.soft && styles.soft, he && styles.rtl]} numberOfLines={2}>
+          <Text style={[styles.text, night && N.ink, row.strong && styles.strong, row.soft && styles.soft, row.soft && night && N.inkSoft, he && styles.rtl]} numberOfLines={2}>
             {(he ? RLM : LRM) + row.text}
           </Text>
         </View>
       ))}
       {checked ? (
-        <Text style={[styles.checked, he && styles.rtl]} numberOfLines={1}>
+        <Text style={[styles.checked, night && N.inkSoft, he && styles.rtl]} numberOfLines={1}>
           {he ? `לפי Google · נבדק ב-${checked}` : `Per Google · checked ${checked}`}
         </Text>
       ) : null}

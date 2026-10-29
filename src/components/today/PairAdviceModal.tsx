@@ -10,7 +10,7 @@
  */
 import React, { useEffect, useState } from 'react';
 import { Linking, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { BRAND, FONTS, SHADOWS } from '../../constants/theme';
+import { BRAND, FONTS, SHADOWS, surf } from '../../constants/theme';
 import { GoogleService } from '../../services/GoogleService';
 import { sourceLinkOf } from '../../utils/sourceLink';
 import type { PairAdvice, SideAdvice } from '../../utils/pairAdvice';
@@ -101,7 +101,7 @@ const styles = StyleSheet.create({
   sheet: { backgroundColor: BRAND.creamCard, borderRadius: 22, padding: 16, ...SHADOWS.card },
   head: { fontFamily: FONTS.display, fontSize: 18, color: BRAND.warmInk, marginBottom: 10 },
   close: { fontFamily: FONTS.bodyBold, fontSize: 12, color: BRAND.inkFaint, marginBottom: 6 },
-  block: { borderRadius: 16, borderWidth: 1.5, borderColor: BRAND.line, backgroundColor: BRAND.white, padding: 12, marginBottom: 10 },
+  block: { borderRadius: 16, borderWidth: 1.5, borderColor: BRAND.line, backgroundColor: surf(BRAND.white), padding: 12, marginBottom: 10 },
   blockPick: { borderColor: BRAND.sunGold, backgroundColor: BRAND.honey },
   tag: { fontFamily: FONTS.bodyHeavy, fontSize: 12, color: BRAND.goldInk },
   title: { fontFamily: FONTS.bodyHeavy, fontSize: 16, color: BRAND.warmInk, marginTop: 2 },

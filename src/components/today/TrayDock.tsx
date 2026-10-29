@@ -16,8 +16,10 @@ import React, { forwardRef, useImperativeHandle, useRef, useState } from 'react'
 import { Animated, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import type { Task } from '../../types/index';
-import { BRAND, FONTS, MIN_TOUCH } from '../../constants/theme';
+import { BRAND, FONTS, MIN_TOUCH, surf, nink } from '../../constants/theme';
 import { getCategoryMeta } from '../../constants/categories';
+import { useNight } from '../ui/SkyBackdrop';
+import { N } from '../../constants/nightTone';
 
 export interface DragHandlers {
   onLift: (task: Task, x: number, y: number) => void;
@@ -34,6 +36,7 @@ interface Props extends DragHandlers {
 }
 
 function TrayChip({ task, he, onOpen, ...h }: { task: Task; he: boolean; onOpen: (t: Task) => void } & DragHandlers) {
+  const night = useNight();
   const meta = getCategoryMeta(task.category);
   const pan = Gesture.Pan()
     .activateAfterLongPress(300)
@@ -44,22 +47,23 @@ function TrayChip({ task, he, onOpen, ...h }: { task: Task; he: boolean; onOpen:
   const tap = Gesture.Tap().runOnJS(true).onEnd((_e, success) => { if (success) onOpen(task); });
   return (
     <GestureDetector gesture={Gesture.Exclusive(pan, tap)}>
-      <View style={[styles.chip, { flexDirection: he ? 'row-reverse' : 'row' }]} accessible
+      <View style={[styles.chip, night && N.card, { flexDirection: he ? 'row-reverse' : 'row' }]} accessible
         accessibilityLabel={he ? `${task.text} — לחיצה ארוכה וגרירה לשעה` : `${task.text} — long-press and drag to an hour`}>
         <Text style={styles.grip}>⋮⋮</Text>
         <View style={[styles.icon, { backgroundColor: `${meta.color}22` }]}><Text>{meta.icon}</Text></View>
-        <Text style={styles.chipText} numberOfLines={1}>{task.text}</Text>
-        <Text style={styles.mins}>{`${task.durationMinutes || 30}′`}</Text>
+        <Text style={[styles.chipText, night && N.ink]} numberOfLines={1}>{task.text}</Text>
+        <Text style={[styles.mins, night && N.inkSoft]}>{`${task.durationMinutes || 30}′`}</Text>
       </View>
     </GestureDetector>
   );
 }
 
 export default function TrayDock({ tasks, he, onOpen, ...h }: Props) {
+  const night = useNight();
   if (!tasks.length) return null;
   return (
     <View style={styles.wrap}>
-      <Text style={[styles.cap, he && styles.rtl]}>
+      <Text style={[styles.cap, night && N.ink, he && styles.rtl]}>
         {he ? `לשבץ היום · ${tasks.length} · לחיצה ארוכה וגרירה לשעה` : `To fit in today · ${tasks.length} · long-press and drag to an hour`}
       </Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
@@ -100,7 +104,7 @@ const styles = StyleSheet.create({
   row: { gap: 8, paddingVertical: 2 },
   chip: {
     alignItems: 'center', gap: 8, minHeight: MIN_TOUCH + 4, paddingHorizontal: 10, borderRadius: 16, maxWidth: 260,
-    backgroundColor: 'rgba(255,253,247,0.95)', borderWidth: 1, borderColor: BRAND.line,
+    backgroundColor: surf('rgba(255,253,247,0.95)'), borderWidth: 1, borderColor: BRAND.line,
   },
   grip: { fontSize: 14, color: BRAND.inkFaint, letterSpacing: -2 },
   icon: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
@@ -108,7 +112,7 @@ const styles = StyleSheet.create({
   mins: { fontFamily: FONTS.bodySemi, fontSize: 11, color: BRAND.inkSoft },
   ghost: {
     position: 'absolute', top: 0, left: 0, width: 180, padding: 10, borderRadius: 16, zIndex: 50, elevation: 12,
-    backgroundColor: BRAND.white, borderWidth: 2, borderColor: '#7B6CFF',
+    backgroundColor: surf(BRAND.white), borderWidth: 2, borderColor: '#7B6CFF',
   },
-  ghostHint: { fontFamily: FONTS.bodySemi, fontSize: 11, color: '#5A4FE0', marginTop: 2 },
+  ghostHint: { fontFamily: FONTS.bodySemi, fontSize: 11, color: nink('#5A4FE0'), marginTop: 2 },
 });

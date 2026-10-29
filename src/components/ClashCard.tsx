@@ -30,7 +30,7 @@ import { Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { GoogleService } from '../services/GoogleService';
 import { sourceLinkOf } from '../utils/sourceLink';
 import { briefFor } from '../utils/clashTradeoffs';
-import { BRAND, FONTS, RADIUS, SHADOWS } from '../constants/theme';
+import { BRAND, FONTS, RADIUS, SHADOWS, surf, nink } from '../constants/theme';
 import { getCategoryMeta } from '../constants/categories';
 import { AppLanguage, Task } from '../types/index';
 import { Clash, ClashOption, ClashResolutionKind } from '../utils/resolveClashes';
@@ -198,7 +198,7 @@ const styles = StyleSheet.create({
   side: {
     flex: 1, flexDirection: 'row', gap: 8,
     borderWidth: 1, borderColor: BRAND.line, borderRadius: RADIUS.chip,
-    padding: 8, backgroundColor: BRAND.white,
+    padding: 8, backgroundColor: surf(BRAND.white),
   },
   sideStripe: { width: 4, alignSelf: 'stretch', borderRadius: 2 },
   sideTime: { fontFamily: FONTS.bodyHeavy, fontSize: 13, color: BRAND.timeChipText },

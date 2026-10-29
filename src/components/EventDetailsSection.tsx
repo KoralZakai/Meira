@@ -9,23 +9,39 @@
  * It never says nothing: while loading it says so, and when the calendar
  * could not be asked it says why and offers a retry (silent-state rule 3).
  */
+
+/**
+ * EventDetailsSection — the calendar event behind a task, one tap from the card.
+ *
+ * Link to the event, video-call join link, dial-in, organiser, guests,
+ * invitation text and attachments. Read live from Google Calendar.
+ */
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { BRAND, FONTS } from '../constants/theme';
+import { BRAND, FONTS, surf } from '../constants/theme';
 import { GoogleService } from '../services/GoogleService';
 import type { EventDetails, GuestAnswer } from '../utils/eventDetails';
+
+/** Per session: opening the same card twice does not ask Google twice. */
+const cache = new Map<string, EventDetails>();
 
 interface Props { eventId: string; he: boolean }
 
 const MARK: Record<GuestAnswer, string> = { yes: '✓', no: '✗', maybe: '?', none: '·' };
 const SHOW_GUESTS = 8;
 
-// The error text of a failed open can carry the number or address, so only the
-// kind of link is logged.
+// Log only the link scheme, never the full URL or any sensitive query parameters.
 const open = (url: string) =>
-  Linking.openURL(url).catch(() => console.warn('[EventDetails] could not open a', url.split(':')[0], 'link'));
-const hostOf = (url: string): string => { const m = /^https:\/\/([^/?#]+)/i.exec(url); return m ? m[1].replace(/^www\./, '') : ''; };
-// A dial-in is digits and dialler symbols only; an organiser address is checked and encoded.
+  Linking.openURL(url).catch(() =>
+    console.warn('[EventDetails] could not open a', url.split(':')[0], 'link')
+  );
+
+const hostOf = (url: string): string => {
+  const m = /^https:\/\/([^/?#]+)/i.exec(url);
+  return m ? m[1].replace(/^www\./, '') : '';
+};
+
+// Restrict dial-in links to phone dialler symbols.
 const dialable = (p: string): string => p.replace(/[^0-9+*#,;]/g, '');
 const EMAIL = /^[^\s@?&=]+@[^\s@?&=]+\.[^\s@?&=]+$/;
 
@@ -37,24 +53,40 @@ function why(error: string, he: boolean): string {
 }
 
 export default function EventDetailsSection({ eventId, he }: Props) {
-  const [details, setDetails] = useState<EventDetails | undefined>();
+  const [details, setDetails] = useState<EventDetails | undefined>(() => cache.get(eventId));
   const [error, setError] = useState<string | undefined>();
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !cache.has(eventId));
   const [allGuests, setAllGuests] = useState(false);
   const [fullText, setFullText] = useState(false);
 
   const load = useCallback(() => {
     let alive = true;
-    setLoading(true); setError(undefined);
+    setLoading(true);
+    setError(undefined);
+
     GoogleService.getEventDetails(eventId).then((r) => {
       if (!alive) return;
-      if (r.details) setDetails(r.details); else setError(r.error || 'not_found');
+      if (r.details) {
+        cache.set(eventId, r.details);
+        setDetails(r.details);
+      } else {
+        setError(r.error || 'not_found');
+      }
       setLoading(false);
-    }).catch((e) => { if (alive) { setError(`network: ${String(e?.message || e)}`); setLoading(false); } });
+    }).catch((e) => {
+      if (alive) {
+        setError(`network: ${String(e?.message || e)}`);
+        setLoading(false);
+      }
+    });
+
     return () => { alive = false; };
   }, [eventId]);
 
-  useEffect(() => load(), [load]);
+  useEffect(() => {
+    if (cache.has(eventId)) return;
+    return load();
+  }, [eventId, load]);
 
   const row = (icon: string, label: string, onPress?: () => void, sub?: string) => (
     <TouchableOpacity key={icon + label} style={styles.row} disabled={!onPress} onPress={onPress} activeOpacity={0.7}>
@@ -69,6 +101,7 @@ export default function EventDetailsSection({ eventId, he }: Props) {
   if (loading) {
     return <View style={styles.box}><ActivityIndicator color={BRAND.sunGold} /><Text style={styles.sub}>{he ? 'טוען את פרטי האירוע…' : 'Loading event details…'}</Text></View>;
   }
+
   if (error || !details) {
     return (
       <View style={styles.box}>
@@ -77,7 +110,9 @@ export default function EventDetailsSection({ eventId, he }: Props) {
       </View>
     );
   }
+
   const guests = allGuests ? details.guests : details.guests.slice(0, SHOW_GUESTS);
+
   return (
     <View style={styles.box}>
       <Text style={styles.head}>{he ? 'פרטי האירוע' : 'Event details'}</Text>
@@ -112,7 +147,7 @@ export default function EventDetailsSection({ eventId, he }: Props) {
 }
 
 const styles = StyleSheet.create({
-  box: { marginTop: 8, borderRadius: 16, backgroundColor: BRAND.white, borderWidth: 1, borderColor: BRAND.line, padding: 12, gap: 8 },
+  box: { marginTop: 8, borderRadius: 16, backgroundColor: surf(BRAND.white), borderWidth: 1, borderColor: BRAND.line, padding: 12, gap: 8 },
   head: { fontFamily: FONTS.bodyHeavy, fontSize: 13, color: BRAND.goldInk },
   row: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
   icon: { fontSize: 16, width: 24, textAlign: 'center' },

@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/lumi-ai-design-system-1a858d4f-e331-4928-b9fd-bc23aa88efed/styles.css">
+<script src="_ds/lumi-ai-design-system-1a858d4f-e331-4928-b9fd-bc23aa88efed/_ds_bundle.js"></script>
+</helmet>
+<div style="width:390px;height:844px;position:relative;overflow:hidden;background:var(--surface-app);color:var(--text-body);font-family:var(--font-body)">
+  <div style="position:absolute;top:0;left:0;right:0;height:54px;z-index:6;background:var(--surface-app);display:flex;align-items:flex-end;justify-content:space-between;padding:0 32px 8px;font-weight:800;font-size:15px;color:var(--text-heading);box-sizing:border-box"><span>16:23</span><span style="width:26px;height:12px;border:1.5px solid var(--text-heading);border-radius:4px;box-sizing:border-box;padding:1.5px"><span style="display:block;width:70%;height:100%;background:var(--text-heading);border-radius:1.5px"></span></span></div>
+
+  <div style="position:absolute;top:54px;left:0;right:0;bottom:0;overflow-y:auto;padding-bottom:120px;box-sizing:border-box">
+
+    <sc-if value="{{ isDay }}" hint-placeholder-val="{{ true }}">
+      <div style="padding:14px 20px 0">
+        <button onClick="{{ openPicker }}" style="background:none;border:none;padding:0;cursor:pointer;text-align:left;display:flex;align-items:baseline;gap:8px">
+          <span style="font-family:var(--font-display);font-weight:700;font-size:32px;line-height:1.1;color:var(--text-heading)">{{ dayTitle }}</span>
+          <span style="font-size:14px;font-weight:800;color:var(--text-time)">▾</span>
+        </button>
+        <div style="font-size:13px;font-weight:700;color:var(--text-secondary);margin-top:4px">{{ daySub }}</div>
+        <div style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;margin-top:18px">
+          <sc-for list="{{ week }}" as="d" hint-placeholder-count="7">
+            <button onClick="{{ d.pick }}" style="background:none;border:none;padding:0;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px">
+              <span style="font-size:11px;font-weight:800;color:var(--text-tertiary)">{{ d.letter }}</span>
+              <span style="width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;box-sizing:border-box;background:{{ d.bg }};color:{{ d.color }};border:{{ d.border }};box-shadow:{{ d.shadow }};font-variant-numeric:tabular-nums">{{ d.num }}</span>
+            </button>
+          </sc-for>
+        </div>
+      </div>
+
+      <sc-if value="{{ hasRows }}" hint-placeholder-val="{{ true }}">
+        <div style="position:relative;padding:22px 20px 0">
+          <div style="position:absolute;left:81px;top:22px;bottom:0;width:2px;background:var(--border-hairline)"></div>
+          <sc-for list="{{ rows }}" as="r" hint-placeholder-count="6">
+            <sc-if value="{{ r.isWake }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;align-items:flex-start;padding:10px 0">
+                <div style="width:56px;box-sizing:border-box;flex:none;text-align:right;padding-right:14px;font-weight:800;font-size:13px;color:var(--text-time)">{{ r.time }}</div>
+                <div style="width:12px;flex:none;display:flex;justify-content:center"><span style="font-size:13px;line-height:18px;background:var(--surface-app)">⏰</span></div>
+                <div style="flex:1;min-width:0;padding-left:14px"><div style="font-weight:700;font-size:15px;color:var(--text-heading)">Wake up</div><div style="font-size:12px;color:var(--text-tertiary);margin-top:2px">{{ r.meta }}</div></div>
+              </div>
+            </sc-if>
+            <sc-if value="{{ r.isTravel }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;align-items:center;padding:4px 0;opacity:{{ r.opacity }}">
+                <div style="width:56px;box-sizing:border-box;flex:none"></div>
+                <div style="width:12px;flex:none;display:flex;justify-content:center"><span style="font-size:12px;line-height:22px;background:var(--surface-app)">{{ r.modeIcon }}</span></div>
+                <div style="flex:1;min-width:0;padding-left:14px;display:flex;align-items:center;gap:8px">
+                  <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.TimeChip" hint-size="120px,24px">{{ r.text }}</x-import>
+                  <span style="font-size:12px;font-weight:700;color:var(--text-tertiary)">{{ r.sub }}</span>
+                </div>
+              </div>
+            </sc-if>
+            <sc-if value="{{ r.isNow }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;align-items:center;padding:8px 0">
+                <div style="width:56px;box-sizing:border-box;flex:none;text-align:right;padding-right:14px;font-size:11px;font-weight:800;letter-spacing:1.2px;color:var(--text-time)">NOW</div>
+                <div style="width:12px;flex:none;display:flex;justify-content:center"><span style="width:12px;height:12px;border-radius:50%;background:var(--accent-primary);box-shadow:var(--shadow-orb)"></span></div>
+                <div style="flex:1;height:2px;background:var(--accent-primary);margin-left:6px;border-radius:2px"></div>
+              </div>
+            </sc-if>
+            <sc-if value="{{ r.isNext }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;align-items:flex-start;padding:10px 0">
+                <div style="width:56px;box-sizing:border-box;flex:none;text-align:right;padding-right:14px;padding-top:15px;font-weight:800;font-size:13px;color:var(--text-heading)">{{ r.time }}</div>
+                <div style="width:12px;flex:none;display:flex;justify-content:center;padding-top:18px"><span style="width:12px;height:12px;border-radius:50%;background:var(--accent-primary)"></span></div>
+                <div style="flex:1;min-width:0;margin-left:14px;background:var(--surface-card);border:1.5px solid var(--accent-primary);border-radius:20px;padding:14px;box-shadow:var(--shadow-card)">
+                  <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.SectionLabel" tone="time" hint-size="60px,14px">Next up</x-import>
+                  <div style="font-family:var(--font-display);font-weight:700;font-size:20px;color:var(--text-heading);margin-top:4px">{{ r.icon }} {{ r.title }}</div>
+                  <div style="font-size:13px;color:var(--text-secondary);margin-top:2px">📍 {{ r.place }}</div>
+                  <div style="display:flex;align-items:center;justify-content:space-between;background:var(--accent-primary);border-radius:14px;padding:10px 14px;margin-top:12px">
+                    <div><div style="font-size:11px;font-weight:800;letter-spacing:1.2px;color:var(--lumi-label-on-gold)">LEAVE</div><div style="font-family:var(--font-display);font-weight:700;font-size:24px;line-height:1.1;color:var(--text-on-gold);font-variant-numeric:tabular-nums">{{ r.leave }}</div></div>
+                    <div style="text-align:right"><div style="font-weight:800;font-size:14px;color:var(--text-on-gold)">in 12 min</div><div style="font-size:12px;font-weight:700;color:var(--lumi-label-on-gold);margin-top:2px">{{ r.modeIcon }} {{ r.mins }} min · arrive {{ r.arrive }}</div></div>
+                  </div>
+                  <button onClick="{{ goTrips }}" style="background:none;border:none;padding:10px 0 0;cursor:pointer;font-size:13px;font-weight:800;color:var(--text-time)">See the way there ›</button>
+                </div>
+              </div>
+            </sc-if>
+            <sc-if value="{{ r.isEvent }}" hint-placeholder-val="{{ true }}">
+              <div style="display:flex;align-items:flex-start;padding:10px 0;opacity:{{ r.opacity }}">
+                <div style="width:56px;box-sizing:border-box;flex:none;text-align:right;padding-right:14px;padding-top:1px;font-variant-numeric:tabular-nums"><div style="font-weight:800;font-size:13px;color:var(--text-heading)">{{ r.time }}</div><div style="font-size:11px;color:var(--text-tertiary);margin-top:1px">{{ r.end }}</div></div>
+                <div style="width:12px;flex:none;display:flex;justify-content:center;padding-top:4px"><span style="width:10px;height:10px;border-radius:50%;background:var(--surface-app);border:2px solid {{ r.dot }};box-sizing:border-box"></span></div>
+                <div style="flex:1;min-width:0;padding-left:14px;display:flex;gap:10px;align-items:flex-start">
+                  <div style="flex:1;min-width:0"><div dir="{{ r.dir }}" style="font-weight:700;font-size:15px;color:var(--text-heading);text-decoration:{{ r.strike }}">{{ r.title }}</div><div style="font-size:12px;color:var(--text-tertiary);margin-top:2px">{{ r.meta }}</div></div>
+                  <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.Checkbox" checked="{{ r.done }}" on-change="{{ r.toggle }}" size="{{ 20 }}" hint-size="20px,20px"></x-import>
+                </div>
+              </div>
+            </sc-if>
+          </sc-for>
+        </div>
+      </sc-if>
+      <sc-if value="{{ noRows }}" hint-placeholder-val="{{ false }}">
+        <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.EmptyState" icon="☀️" text="{{ emptyText }}" style="margin-top:40px" hint-size="100%,160px"></x-import>
+      </sc-if>
+    </sc-if>
+
+    <sc-if value="{{ isTrips }}" hint-placeholder-val="{{ false }}">
+      <div style="padding:14px 20px 0;display:flex;flex-direction:column;gap:16px">
+        <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:12px">
+          <div><div style="font-family:var(--font-display);font-weight:700;font-size:32px;line-height:1.1;color:var(--text-heading)">Trips</div><div style="font-size:13px;font-weight:700;color:var(--text-secondary);margin-top:4px">{{ tripsSub }}</div></div>
+          <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.FilterChip" tone="honey" on-click="{{ openPicker }}" hint-size="100px,34px">{{ dayShort }} ▾</x-import>
+        </div>
+        <sc-if value="{{ hasLegs }}" hint-placeholder-val="{{ true }}">
+          <div style="height:190px;border:1px solid var(--border-hairline);border-radius:16px;background:var(--surface-card);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px">
+            <span style="font-size:22px">🗺️</span>
+            <span style="font-size:12px;font-weight:800;color:var(--text-tertiary)">Map · route to {{ mapTo }}</span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <sc-for list="{{ legs }}" as="l" hint-placeholder-count="3">
+              <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.TravelChainCard" time="{{ l.time }}" title="{{ l.title }}" sub="{{ l.sub }}" done="{{ l.done }}" expanded="{{ l.expanded }}" direction="{{ l.direction }}" mode="{{ l.mode }}" steps="{{ l.steps }}" on-toggle-expand="{{ l.toggle }}" on-complete="{{ l.complete }}" on-mode-change="{{ l.modeChange }}" hint-size="100%,62px"></x-import>
+            </sc-for>
+          </div>
+        </sc-if>
+        <sc-if value="{{ noLegs }}" hint-placeholder-val="{{ false }}">
+          <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.EmptyState" icon="🗺️" text="No trips on this day. Stay put." style="margin-top:40px" hint-size="100%,160px"></x-import>
+        </sc-if>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isTasks }}" hint-placeholder-val="{{ false }}">
+      <div style="padding:14px 20px 0">
+        <div style="font-family:var(--font-display);font-weight:700;font-size:32px;line-height:1.1;color:var(--text-heading)">Tasks</div>
+        <div style="font-size:13px;font-weight:700;color:var(--text-secondary);margin-top:4px">{{ tasksSub }}</div>
+        <div style="margin-top:18px">
+          <sc-for list="{{ tasks }}" as="t" hint-placeholder-count="4">
+            <div style="display:flex;align-items:center;gap:14px;padding:14px 0;border-bottom:1px solid var(--border-hairline);opacity:{{ t.opacity }}">
+              <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.Checkbox" checked="{{ t.done }}" on-change="{{ t.toggle }}" hint-size="22px,22px"></x-import>
+              <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:15px;color:var(--text-heading);text-decoration:{{ t.strike }}">{{ t.title }}</div><div style="font-size:12px;color:var(--text-tertiary);margin-top:2px">{{ t.meta }}</div></div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isMe }}" hint-placeholder-val="{{ false }}">
+      <div style="padding:14px 20px 0">
+        <div style="display:flex;flex-direction:column;align-items:center;margin-top:24px">
+          <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.Avatar" initial="K" size="{{ 84 }}" hint-size="84px,84px"></x-import>
+          <div style="font-family:var(--font-display);font-weight:700;font-size:24px;color:var(--text-heading);margin-top:14px">Koral</div>
+          <div style="font-size:13px;color:var(--text-tertiary);margin-top:2px">With Meira since March</div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:34px">
+          <div style="background:var(--surface-card);border-radius:20px;box-shadow:var(--shadow-card);padding:18px;min-height:120px;display:flex;flex-direction:column;justify-content:space-between"><span style="font-size:24px">📍</span><div><div style="font-size:12px;font-weight:800;color:var(--text-tertiary)">Places</div><div style="font-family:var(--font-display);font-weight:600;font-size:18px;color:var(--text-heading);margin-top:2px">Home, Work</div></div></div>
+          <div style="background:var(--surface-card);border-radius:20px;box-shadow:var(--shadow-card);padding:18px;min-height:120px;display:flex;flex-direction:column;justify-content:space-between"><span style="font-size:24px">⏰</span><div><div style="font-size:12px;font-weight:800;color:var(--text-tertiary)">Mornings</div><div style="font-family:var(--font-display);font-weight:600;font-size:18px;color:var(--text-heading);margin-top:2px">45 min</div></div></div>
+          <button onClick="{{ toggleVoice }}" style="border:none;text-align:left;cursor:pointer;background:{{ voiceTileBg }};border-radius:20px;box-shadow:var(--shadow-card);padding:18px;min-height:120px;display:flex;flex-direction:column;justify-content:space-between;transition:background 200ms"><span style="font-size:24px">🔊</span><span><span style="display:block;font-size:12px;font-weight:800;color:var(--text-secondary)">Voice replies</span><span style="display:block;font-family:var(--font-display);font-weight:600;font-size:18px;color:var(--text-heading);margin-top:2px">{{ voiceLabel }}</span></span></button>
+          <button onClick="{{ toggleLang }}" style="border:none;text-align:left;cursor:pointer;background:var(--surface-card);border-radius:20px;box-shadow:var(--shadow-card);padding:18px;min-height:120px;display:flex;flex-direction:column;justify-content:space-between"><span style="font-family:var(--font-display);font-weight:700;font-size:22px;color:var(--text-time)">Aa</span><span><span style="display:block;font-size:12px;font-weight:800;color:var(--text-tertiary)">Language</span><span style="display:block;font-family:var(--font-display);font-weight:600;font-size:18px;color:var(--text-heading);margin-top:2px">{{ langLabel }}</span></span></button>
+        </div>
+        <div style="text-align:center;font-size:14px;font-weight:700;color:var(--text-tertiary);margin-top:40px">Sign out</div>
+      </div>
+    </sc-if>
+  </div>
+
+  <div style="position:absolute;left:0;right:0;bottom:0;height:88px;z-index:8;background:var(--surface-card);border-top:1px solid var(--border-hairline);display:grid;grid-template-columns:repeat(5,minmax(0,1fr));align-items:start;padding-top:10px;box-sizing:border-box">
+    <button onClick="{{ tabDay }}" style="background:none;border:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;opacity:{{ opDay }}"><span style="font-size:21px">☀️</span><span style="font-size:10px;font-weight:800;color:var(--text-heading)">Today</span></button>
+    <button onClick="{{ tabTrips }}" style="background:none;border:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;opacity:{{ opTrips }}"><span style="font-size:21px">🗺️</span><span style="font-size:10px;font-weight:800;color:var(--text-heading)">Trips</span></button>
+    <div style="display:flex;justify-content:center"><button onClick="{{ openMic }}" aria-label="Talk to Meira" style="width:66px;height:66px;margin-top:-38px;border-radius:50%;border:4px solid var(--surface-card);background:var(--gradient-primary);box-shadow:var(--shadow-orb);font-size:27px;cursor:pointer" style-active="transform:scale(0.95)">🎙️</button></div>
+    <button onClick="{{ tabTasks }}" style="background:none;border:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;opacity:{{ opTasks }}"><span style="font-size:21px">☑️</span><span style="font-size:10px;font-weight:800;color:var(--text-heading)">Tasks</span></button>
+    <button onClick="{{ tabMe }}" style="background:none;border:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;opacity:{{ opMe }}"><span style="font-size:21px">👤</span><span style="font-size:10px;font-weight:800;color:var(--text-heading)">Me</span></button>
+  </div>
+
+  <sc-if value="{{ pickerOpen }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;inset:0;z-index:25;display:flex;flex-direction:column;justify-content:flex-end;background:rgba(252,247,236,0.82)">
+      <div style="background:var(--surface-card);border-radius:28px 28px 44px 44px;padding:12px 20px 30px;box-shadow:0 -10px 30px rgba(214,165,55,0.18)">
+        <div style="width:40px;height:5px;border-radius:999px;background:var(--border-hairline);margin:0 auto 14px"></div>
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <span style="font-family:var(--font-display);font-weight:700;font-size:20px;color:var(--text-heading)">Pick a day</span>
+          <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.IconButton" icon="✕" label="Close" on-click="{{ closePicker }}" hint-size="36px,36px"></x-import>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:14px">
+          <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.FilterChip" active="{{ isToday }}" on-click="{{ pickToday }}" hint-size="70px,34px">Today</x-import>
+          <x-import component-from-global-scope="LumiAIDesignSystem_1a858d.FilterChip" active="{{ isTomorrow }}" on-click="{{ pickTomorrow }}" hint-size="90px,34px">Tomorrow</x-import>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:20px">
+          <button onClick="{{ prevMonth }}" style="width:36px;height:36px;border:none;border-radius:50%;background:var(--surface-app);font-size:18px;font-weight:800;color:var(--text-time);cursor:pointer;opacity:{{ prevOp }}">‹</button>
+          <span style="font-weight:800;font-size:15px;color:var(--text-heading)">{{ monthLabel }}</span>
+          <button onClick="{{ nextMonth }}" style="width:36px;height:36px;border:none;border-radius:50%;background:var(--surface-app);font-size:18px;font-weight:800;color:var(--text-time);cursor:pointer;opacity:{{ nextOp }}">›</button>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;margin-top:10px;text-align:center">
+          <sc-for list="{{ dow }}" as="w" hint-placeholder-count="7"><span style="font-size:11px;font-weight:800;color:var(--text-tertiary);padding:4px 0">{{ w }}</span></sc-for>
+          <sc-for list="{{ grid }}" as="c" hint-placeholder-count="35">
+            <button onClick="{{ c.pick }}" style="height:40px;border:none;background:none;padding:0;cursor:pointer;display:flex;align-items:center;justify-content:center;visibility:{{ c.vis }}">
+              <span style="width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;box-sizing:border-box;font-weight:800;font-size:14px;background:{{ c.bg }};color:{{ c.color }};border:{{ c.border }};font-variant-numeric:tabular-nums">{{ c.num }}</span>
+            </button>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ micOpen }}" hint-placeholder-val="{{ false }}"><dc-import name="VoiceSheet" listening="{{ listening }}" reply="{{ reply }}" level="{{ level }}" helper="Tap Send when you’re done" on-close="{{ closeMic }}" on-send="{{ send }}" on-undo="{{ undo }}" style="position:absolute;inset:0;z-index:30" hint-size="390px,844px"></dc-import></sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:390,&quot;height&quot;:844},&quot;initialTab&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;day&quot;,&quot;trips&quot;,&quot;tasks&quot;,&quot;me&quot;],&quot;default&quot;:&quot;day&quot;,&quot;tsType&quot;:&quot;'day'|'trips'|'tasks'|'me'&quot;},&quot;initialDay&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;today&quot;,&quot;tomorrow&quot;],&quot;default&quot;:&quot;today&quot;,&quot;tsType&quot;:&quot;'today'|'tomorrow'&quot;},&quot;initialPicker&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;}}">
+class Component extends DCLogic {
+  state = {
+    tab: (this.props && this.props.initialTab) || 'day',
+    off: (this.props && this.props.initialDay === 'tomorrow') ? 1 : 0,
+    pickerOpen: !!(this.props && this.props.initialPicker),
+    month: 8,
+    done: { review: true, call: true },
+    tdone: {},
+    exp: {}, modes: {},
+    mic: false, phase: 'listen', level: 0.55, gymMoved: false,
+    voiceOn: true, lang: 'en',
+  };
+  componentWillUnmount() { this.clear(); }
+  clear() { clearInterval(this.iv); clearTimeout(this.to); }
+  date(off) { const d = new Date(2026, 8, 27); d.setDate(d.getDate() + off); return d; }
+  offOf(d) { return Math.round((d - new Date(2026, 8, 27)) / 86400000); }
+  fmt(d) { return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()] + ' ' + d.getDate() + ' ' + ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()]; }
+  modeMeta(m) { return ({ walk: ['🚶', 'Walk'], bike: ['🚴', 'Ride'], bus: ['🚌', 'Bus'], train: ['🚆', 'Train'], car: ['🚗', 'Drive'] })[m] || ['🚶', 'Walk']; }
+  events(off) {
+    const g = this.state.gymMoved;
+    if (off === 0) return [
+      { id: 'review', time: '09:00', end: '10:30', title: 'Design review', icon: '💼', place: 'Azrieli Center', travel: { mode: 'bus', mins: 24, leave: '08:28', arrive: '08:52' }, past: true },
+      { id: 'call', time: '11:30', end: '12:00', title: 'Call with Noa', icon: '📞', meta: '30 min', past: true },
+      { id: 'deck', time: '13:00', end: '16:30', title: 'Finish the presentation', icon: '💼', meta: '7 min left', past: true },
+      { id: 'dentist', time: '17:00', end: '18:00', title: 'Dentist', icon: '⚕️', place: 'Dizengoff 50', travel: { mode: 'walk', mins: 18, leave: '16:35', arrive: '16:53' }, next: true },
+      !g && { id: 'gym', time: '19:30', end: '20:30', title: 'Gym', icon: '💪', place: 'Holmes Place', travel: { mode: 'bike', mins: 12, leave: '19:12', arrive: '19:24' } },
+      { id: 'mom', time: '21:00', end: '21:15', title: 'להתקשר לאמא', icon: '📞', meta: '15 min', rtl: true },
+    ].filter(Boolean);
+    if (off === 1) return [
+      g && { id: 'gym2', time: '07:30', end: '08:15', title: 'Gym', icon: '💪', place: 'Holmes Place', travel: { mode: 'bike', mins: 12, leave: '07:12', arrive: '07:24' } },
+      { id: 'interview', time: '09:30', end: '10:30', title: 'Job interview', icon: '🎯', place: 'Namal Tel Aviv', travel: { mode: 'train', mins: 32, leave: '08:50', arrive: '09:22' } },
+      { id: 'lunch', time: '13:00', end: '14:00', title: 'Lunch with Dana', icon: '🤝', place: 'Sarona Market', travel: { mode: 'walk', mins: 15, leave: '12:42', arrive: '12:57' } },
+      { id: 'course', time: '18:00', end: '19:30', title: 'UX course', icon: '📚', meta: 'Zoom' },
+    ].filter(Boolean);
+    const wd = this.date(off).getDay();
+    if (wd === 5 || wd === 6) return [];
+    return [
+      { id: 'deep' + off, time: '10:00', end: '13:00', title: 'Deep work', icon: '💼', meta: '3h', past: off < 0 },
+      { id: 'gymx' + off, time: '18:30', end: '19:30', title: 'Gym', icon: '💪', place: 'Holmes Place', travel: { mode: 'bike', mins: 12, leave: '18:12', arrive: '18:24' }, past: off < 0 },
+    ];
+  }
+  isDone(e) { const d = this.state.done[e.id]; return d === undefined ? this.state.off < 0 : d; }
+  openMic() {
+    this.clear();
+    this.setState({ mic: true, phase: 'listen', pickerOpen: false });
+    this.iv = setInterval(() => this.setState({ level: 0.25 + Math.random() * 0.65 }), 150);
+    this.to = setTimeout(() => this.send(), 3200);
+  }
+  send() { this.clear(); this.setState({ phase: 'reply', gymMoved: true }); }
+  renderVals() {
+    const s = this.state, off = s.off, sel = this.date(off);
+    const evs = this.events(off);
+    const rows = [];
+    if (off === 1 && evs.length) {
+      const first = evs.find(e => e.travel);
+      rows.push({ isWake: true, time: s.gymMoved ? '06:25' : '08:05', meta: '45 min to get ready, then leave at ' + (first ? first.travel.leave : '') });
+    }
+    evs.forEach(e => {
+      const done = this.isDone(e);
+      const mm = e.travel ? this.modeMeta(s.modes[e.id] || e.travel.mode) : null;
+      if (e.travel && !(off === 0 && e.next)) {
+        rows.push({ isTravel: true, modeIcon: mm[0], text: '🚪 Leave ' + e.travel.leave + ' · ' + mm[0] + ' ' + e.travel.mins + ' min', sub: 'arrive ' + e.travel.arrive, opacity: (e.past || done) ? '0.5' : '1' });
+      }
+      if (off === 0 && e.next) {
+        rows.push({ isNow: true });
+        rows.push({ isNext: true, time: e.time, icon: e.icon, title: e.title, place: e.place, leave: e.travel.leave, mins: e.travel.mins, arrive: e.travel.arrive, modeIcon: mm[0] });
+        return;
+      }
+      rows.push({ isEvent: true, time: e.time, end: e.end, title: e.title, dir: e.rtl ? 'rtl' : 'ltr', meta: e.icon + ' ' + (e.place ? e.place : e.meta), done,
+        opacity: done ? '0.55' : '1', strike: done ? 'line-through' : 'none', dot: e.past ? 'var(--text-tertiary)' : 'var(--lumi-honey)',
+        toggle: () => this.setState(st => ({ done: { ...st.done, [e.id]: !this.isDone(e) } })) });
+    });
+    const left = evs.filter(e => !this.isDone(e)).length;
+    const title = off === 0 ? 'Today' : off === 1 ? 'Tomorrow' : off === -1 ? 'Yesterday' : this.fmt(sel);
+    const sub = (Math.abs(off) <= 1 ? this.fmt(sel) + ' · ' : '') + (evs.length ? (off === 0 ? left + ' left' : evs.length + ' planned') : 'Nothing planned');
+    const ws = this.date(off - sel.getDay());
+    const week = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(ws); d.setDate(ws.getDate() + i);
+      const o = this.offOf(d), isSel = o === off, isT = o === 0;
+      return { letter: 'SMTWTFS'[i], num: d.getDate(), pick: () => this.setState({ off: o }),
+        bg: isSel ? 'var(--accent-primary)' : 'transparent', color: isSel ? 'var(--text-on-gold)' : o < 0 ? 'var(--text-tertiary)' : 'var(--text-heading)',
+        border: !isSel && isT ? '1.5px solid var(--accent-primary)' : '1.5px solid transparent', shadow: isSel ? 'var(--shadow-card)' : 'none' };
+    });
+    const m = s.month, firstDow = new Date(2026, m, 1).getDay(), dim = new Date(2026, m + 1, 0).getDate();
+    const grid = [];
+    for (let i = 0; i < firstDow; i++) grid.push({ num: '', vis: 'hidden', bg: 'transparent', color: 'transparent', border: 'none' });
+    for (let n = 1; n <= dim; n++) {
+      const o = this.offOf(new Date(2026, m, n)), isSel = o === off, isT = o === 0;
+      grid.push({ num: n, vis: 'visible', pick: () => this.setState({ off: o, pickerOpen: false }),
+        bg: isSel ? 'var(--accent-primary)' : 'transparent', color: isSel ? 'var(--text-on-gold)' : o < 0 ? 'var(--text-tertiary)' : 'var(--text-heading)',
+        border: !isSel && isT ? '1.5px solid var(--accent-primary)' : '1.5px solid transparent' });
+    }
+    const legs = evs.filter(e => e.travel).map(e => {
+      const mode = s.modes[e.id] || e.travel.mode, mm = this.modeMeta(mode), nxt = off === 0 && e.next;
+      return { time: e.travel.leave, title: e.title, sub: mm[0] + ' ' + e.travel.mins + ' min · arrive ' + e.travel.arrive, done: !!e.past || this.isDone(e),
+        expanded: s.exp[e.id] === undefined ? nxt : s.exp[e.id], direction: 'there', mode,
+        steps: [
+          { time: e.travel.leave, icon: '🚪', label: 'Leave for ' + e.title, note: nxt ? 'in 12 min' : '', kind: nxt ? 'highlight' : 'plain' },
+          { time: e.travel.leave, icon: mm[0], label: mm[1] + ' ' + e.travel.mins + ' min', kind: 'plain' },
+          { time: e.travel.arrive, icon: '📍', label: e.place, note: 'on time', kind: 'success' },
+        ],
+        toggle: () => this.setState(st => ({ exp: { ...st.exp, [e.id]: !(st.exp[e.id] === undefined ? nxt : st.exp[e.id]) } })),
+        complete: () => this.setState(st => ({ done: { ...st.done, [e.id]: !this.isDone(e) } })),
+        modeChange: (md) => this.setState(st => ({ modes: { ...st.modes, [e.id]: md } })) };
+    });
+    if (off === 0 && !s.gymMoved) legs.push({ time: '20:35', title: 'Home', sub: '🚴 12 min · arrive 20:47', done: false, expanded: !!s.exp.home, direction: 'home', mode: s.modes.home || 'bike',
+      steps: [{ time: '20:35', icon: '🚪', label: 'Leave Holmes Place', kind: 'plain' }, { time: '20:35', icon: '🚴', label: 'Ride 12 min', kind: 'plain' }, { time: '20:47', icon: '📍', label: 'Rothschild 22', note: 'home', kind: 'success' }],
+      toggle: () => this.setState(st => ({ exp: { ...st.exp, home: !st.exp.home } })), complete: () => {}, modeChange: (md) => this.setState(st => ({ modes: { ...st.modes, home: md } })) });
+    const nextLeg = evs.find(e => e.travel && !e.past) || evs.find(e => e.travel);
+    const mins = evs.filter(e => e.travel).reduce((a, e) => a + e.travel.mins, 0) + (off === 0 && !s.gymMoved ? 12 : 0);
+    const taskList = [
+      { id: 't1', title: 'Book the car service', meta: '📌 No date' },
+      { id: 't2', title: 'Send the invoice to Dana', meta: '💼 By Thursday' },
+      { id: 't3', title: 'Birthday gift for Mom', meta: '⭐ This week' },
+      { id: 't4', title: 'Renew passport', meta: '📌 No date' },
+    ].map(t => { const d = !!s.tdone[t.id]; return { ...t, done: d, opacity: d ? '0.55' : '1', strike: d ? 'line-through' : 'none', toggle: () => this.setState(st => ({ tdone: { ...st.tdone, [t.id]: !st.tdone[t.id] } })) }; });
+    const tab = s.tab;
+    return {
+      isDay: tab === 'day', isTrips: tab === 'trips', isTasks: tab === 'tasks', isMe: tab === 'me',
+      opDay: tab === 'day' ? '1' : '0.5', opTrips: tab === 'trips' ? '1' : '0.5', opTasks: tab === 'tasks' ? '1' : '0.5', opMe: tab === 'me' ? '1' : '0.5',
+      tabDay: () => this.setState({ tab: 'day' }), tabTrips: () => this.setState({ tab: 'trips' }), tabTasks: () => this.setState({ tab: 'tasks' }), tabMe: () => this.setState({ tab: 'me' }),
+      goTrips: () => this.setState({ tab: 'trips' }),
+      dayTitle: title, daySub: sub, dayShort: title, week, rows, hasRows: rows.length > 0, noRows: rows.length === 0,
+      emptyText: 'Nothing planned for ' + this.fmt(sel) + ' yet.\nTap 🎙️ and tell me what’s coming.',
+      legs, hasLegs: legs.length > 0, noLegs: legs.length === 0, mapTo: nextLeg ? nextLeg.place : '',
+      tripsSub: legs.length ? legs.length + (legs.length === 1 ? ' trip' : ' trips') + ' · ' + mins + ' min on the way' : this.fmt(sel),
+      tasks: taskList, tasksSub: taskList.filter(t => !t.done).length + ' open · no date yet',
+      pickerOpen: s.pickerOpen, openPicker: () => this.setState({ pickerOpen: true, month: sel.getMonth() === 9 ? 9 : 8 }), closePicker: () => this.setState({ pickerOpen: false }),
+      isToday: off === 0, isTomorrow: off === 1,
+      pickToday: () => this.setState({ off: 0, pickerOpen: false }), pickTomorrow: () => this.setState({ off: 1, pickerOpen: false }),
+      monthLabel: (m === 8 ? 'September' : 'October') + ' 2026', dow: ['S','M','T','W','T','F','S'], grid,
+      prevMonth: () => this.setState({ month: 8 }), nextMonth: () => this.setState({ month: 9 }), prevOp: m === 8 ? '0.4' : '1', nextOp: m === 9 ? '0.4' : '1',
+      micOpen: s.mic, openMic: () => this.openMic(), listening: s.phase === 'listen', reply: s.phase === 'reply', level: s.level,
+      closeMic: () => { this.clear(); this.setState({ mic: false }); }, send: () => this.send(),
+      undo: () => { this.clear(); this.setState({ gymMoved: false, mic: false }); },
+      toggleVoice: () => this.setState({ voiceOn: !s.voiceOn }), voiceTileBg: s.voiceOn ? 'var(--lumi-honey)' : 'var(--surface-card)', voiceLabel: s.voiceOn ? 'On' : 'Off',
+      toggleLang: () => this.setState({ lang: s.lang === 'en' ? 'he' : 'en' }), langLabel: s.lang === 'en' ? 'English' : 'עברית',
+    };
+  }
+}
+</script>
+</body>
+</html>

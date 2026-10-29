@@ -27,7 +27,7 @@ import { missedPlannedDeparture, stillWorthGoingUntil } from '../utils/liveRoute
 import { getTodayString, timeToMinutes } from '../utils/timeUtils';
 import TransitOptionsList from './TransitOptionsList';
 import TransitAlertLine from './TransitAlertLine';
-import { BRAND, FONTS, RADIUS } from '../constants/theme';
+import { BRAND, FONTS, RADIUS, nink } from '../constants/theme';
 import { travelRowState, describeTravelRow, routeFailureOf } from '../utils/travelRowState';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -611,7 +611,7 @@ export default function TimelineTravelLeg({
 
 const styles = StyleSheet.create({
   modeNoteText: { fontSize: 12, color: BRAND.inkFaint, marginTop: 2 },
-  whyToggle: { fontSize: 13, fontWeight: '600', color: '#6C63FF', marginTop: 8 },
+  whyToggle: { fontSize: 13, fontWeight: '600', color: nink('#6C63FF'), marginTop: 8 },
   whyLine: { fontSize: 12, color: BRAND.inkFaint, marginTop: 3, lineHeight: 16 },
   wrap: {
     backgroundColor: BRAND.creamCard, borderWidth: 1, borderColor: BRAND.line,

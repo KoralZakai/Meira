@@ -1,0 +1,25 @@
+:root {
+  /* The app's real rhythm: 2 / 4 / 6 / 8 / 10 / 12 / 14 / 16 / 18 / 20 / 24.
+     Card padding is 13–16px and gaps are 8–12px — not a strict 8pt grid. */
+  --space-0: 0px;
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 8px;
+  --space-5: 10px;
+  --space-6: 12px;
+  --space-7: 14px;
+  --space-8: 16px;
+  --space-9: 18px;
+  --space-10: 20px;
+  --space-12: 24px;
+  --space-14: 32px;
+
+  --screen-padding: 16px;       /* every screen's horizontal gutter */
+  --card-padding: 14px;         /* task cards, banners */
+  --card-padding-lg: 18px;      /* focus card, sticky notes */
+  --row-gap: 10px;              /* between cards in a list */
+  --time-gutter: 48px;          /* DayTimeline / DayTaskCard time column */
+  --tabbar-height: 60px;
+  --hit-target: 44px;
+}

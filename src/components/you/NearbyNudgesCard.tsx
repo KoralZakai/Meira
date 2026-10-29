@@ -11,7 +11,7 @@
 import React from 'react';
 import { ActivityIndicator, Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { BRAND, FONTS, MIN_TOUCH } from '../../constants/theme';
+import { BRAND, FONTS, MIN_TOUCH, surf, nline } from '../../constants/theme';
 import LineIcon from '../ui/LineIcon';
 import {
   GeofenceStatus, disableNearbyNudges, enableNearbyNudges, geofenceStatus, placeReminders, removePlaceReminder,
@@ -102,7 +102,7 @@ export default function NearbyNudgesCard({ he }: { he: boolean }) {
 const styles = StyleSheet.create({
   wrap: {
     padding: 14, gap: 8, borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.92)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.9)',
+    backgroundColor: surf('rgba(255,255,255,0.92)'), borderWidth: 1, borderColor: nline('rgba(255,255,255,0.9)'),
   },
   head: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   rowRtl: { flexDirection: 'row-reverse' },

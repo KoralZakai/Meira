@@ -8,6 +8,8 @@ import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { BRAND, FONTS } from '../../constants/theme';
 import type { RoutineRow as Row } from '../../utils/routineRows';
+import { useNight } from '../ui/SkyBackdrop';
+import { N } from '../../constants/nightTone';
 
 interface Props {
   row: Row;
@@ -21,23 +23,24 @@ interface Props {
 const HEBREW = /[֐-׿]/;
 
 export default function RoutineRow({ row, he, onGoing, onSkip, onAskDays }: Props) {
+  const night = useNight();
   const from = row.routine.daysFrom;
   // Where its days come from, said on the row (rule 4): a rule she taught
   // Meira, or nothing yet — then the row carries the question itself.
   const daysNote = from === 'rule' ? (he ? ' · לפי כלל שלימדת' : ' · by your rule') : '';
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, night && N.card]}>
       <View style={styles.top}>
-        <Text style={styles.when}>{`🔁 ${row.start}–${row.end}`}</Text>
+        <Text style={[styles.when, night && N.goldInk]}>{`🔁 ${row.start}–${row.end}`}</Text>
         {from === 'unsaid' && onAskDays && (
           <TouchableOpacity onPress={onAskDays} style={styles.askChip} accessibilityRole="button"
             accessibilityLabel={he ? `באילו ימים ${row.title}?` : `Which days is ${row.title}?`}>
-            <Text style={styles.askChipText}>{he ? 'כל יום? ›' : 'every day? ›'}</Text>
+            <Text style={[styles.askChipText, night && N.goldInk]}>{he ? 'כל יום? ›' : 'every day? ›'}</Text>
           </TouchableOpacity>
         )}
       </View>
-      <Text style={[styles.title, HEBREW.test(row.title) && styles.rtl]} numberOfLines={2}>{row.title}</Text>
-      <Text style={styles.sub} numberOfLines={1}>
+      <Text style={[styles.title, night && N.ink, HEBREW.test(row.title) && styles.rtl]} numberOfLines={2}>{row.title}</Text>
+      <Text style={[styles.sub, night && N.inkSoft]} numberOfLines={1}>
         {(he ? 'שגרה' : 'routine') + daysNote + (row.address ? ` · ${row.address}` : '')}
       </Text>
       <View style={styles.actions}>
@@ -46,7 +49,7 @@ export default function RoutineRow({ row, he, onGoing, onSkip, onAskDays }: Prop
           <Text style={styles.goingText}>{he ? '✓ הולכת' : '✓ Going'}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.skip} onPress={onSkip} accessibilityRole="button">
-          <Text style={styles.skipText}>{he ? 'לא היום' : 'Not today'}</Text>
+          <Text style={[styles.skipText, night && N.inkSoft]}>{he ? 'לא היום' : 'Not today'}</Text>
         </TouchableOpacity>
       </View>
     </View>

@@ -11,10 +11,12 @@
  */
 import React, { useCallback, useEffect, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { BRAND, FONTS, MIN_TOUCH } from '../../constants/theme';
+import { BRAND, FONTS, MIN_TOUCH, surf } from '../../constants/theme';
 import { onTasksWritten } from '../../services/TaskStorage';
 import { chooseMorningAlarm, currentMorningAlarm } from '../../services/MorningAlarmService';
 import { MorningPlan, alarmTimeChoices, morningAlarmLabel, wakeOptions } from '../../utils/morningAlarm';
+import { useNight } from '../ui/SkyBackdrop';
+import { N } from '../../constants/nightTone';
 
 function subMin(hhmm: string, m: number): string {
   const [h, mm] = hhmm.split(':').map(Number);
@@ -144,6 +146,7 @@ export function useMorningAlarm(he: boolean, refreshKey?: unknown): MorningAlarm
 }
 
 export default function MorningAlarmPill({ he, state }: { he: boolean; state: MorningAlarmState }) {
+  const night = useNight();
   const { plan, error } = state;
   const label = error
     ? (he ? '⚠️ לא הצלחתי לבדוק את השעון המעורר' : "⚠️ Couldn't check the alarm")
@@ -154,20 +157,20 @@ export default function MorningAlarmPill({ he, state }: { he: boolean; state: Mo
   return (
     <>
     <View style={[styles.row, { flexDirection: he ? 'row-reverse' : 'row' }]}>
-      <TouchableOpacity style={[styles.pill, plan?.on ? styles.pillOn : styles.pillOff]} activeOpacity={0.75}
+      <TouchableOpacity style={[styles.pill, plan?.on ? styles.pillOn : styles.pillOff, !plan?.on && night && N.goldSoft]} activeOpacity={0.75}
         onPress={state.toggle} onLongPress={state.openSheet} delayLongPress={350}
         accessibilityRole="switch" accessibilityState={{ checked: Boolean(plan?.on) }}
         accessibilityHint={he ? 'לחיצה מדליקה או מכבה, לחיצה ארוכה משנה שעה' : 'Tap to turn on or off, hold to change the time'}>
-        <Text style={[styles.pillText, !plan?.on && styles.pillTextOff]} numberOfLines={1}>{label}</Text>
+        <Text style={[styles.pillText, !plan?.on && styles.pillTextOff, !plan?.on && night && N.goldInk]} numberOfLines={1}>{label}</Text>
       </TouchableOpacity>
       {owner && !error ? (
-        <Text style={[styles.owner, he && styles.rtl]} numberOfLines={1}>
+        <Text style={[styles.owner, night && N.goldInk, he && styles.rtl]} numberOfLines={1}>
           {`${he ? 'ל' : 'for '}${owner}`}
         </Text>
       ) : null}
       {state.sheet}
     </View>
-    {state.note ? <Text style={[styles.note, he && styles.rtl]}>{state.note}</Text> : null}
+    {state.note ? <Text style={[styles.note, night && N.goldInk, he && styles.rtl]}>{state.note}</Text> : null}
     </>
   );
 }
@@ -183,12 +186,12 @@ const styles = StyleSheet.create({
   owner: { flexShrink: 1, fontFamily: FONTS.body, fontSize: 12, color: BRAND.goldInk },
   rtl: { textAlign: 'right', writingDirection: 'rtl' },
   scrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: '#FFFDF5', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 32 },
+  sheet: { backgroundColor: surf('#FFFDF5'), borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 32 },
   sheetTitle: { fontFamily: FONTS.bodyHeavy, fontSize: 18, color: BRAND.warmInk },
   sheetSub: { fontFamily: FONTS.body, fontSize: 13, color: BRAND.goldInk, marginTop: 4 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 16 },
   opt: { minWidth: 96, minHeight: MIN_TOUCH, borderRadius: 14, borderWidth: 1, borderColor: BRAND.honey,
-    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10, backgroundColor: '#fff' },
+    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10, backgroundColor: surf('#fff') },
   optOn: { backgroundColor: BRAND.sunGold, borderColor: BRAND.sunGold },
   optText: { fontFamily: FONTS.bodyHeavy, fontSize: 15, color: BRAND.warmInk, fontVariant: ['tabular-nums'] },
   optTextOn: { color: BRAND.onGold },

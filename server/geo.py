@@ -133,7 +133,31 @@ async def _geocode_uncached(address: str, bounds: Optional[str] = None) -> Optio
         return None
 
 
+def looks_like_name(text: str) -> bool:
+    """A business or place NAME rather than a street address: no house number,
+    short. "Nebuis", "Intel Haifa", "קפה לנדוור" — yes; "יצחק שדה 6" — no."""
+    t = (text or "").strip()
+    return bool(t) and not any(ch.isdigit() for ch in t) and len(t) <= 60
+
+
+_place_cache: dict = {}
+
+
 async def find_place(query: str) -> Optional[dict]:
+    """Cached (a miss for a day): a name that never resolves is asked once, not every sweep."""
+    import time as _t
+    key = (query or "").strip().lower()
+    hit = _place_cache.get(key)
+    if hit and hit[0] > _t.time():
+        return dict(hit[1]) if hit[1] else None
+    found = await _find_place_uncached(query)
+    if len(_place_cache) >= _GEOCODE_MAX:
+        _place_cache.pop(next(iter(_place_cache)))
+    _place_cache[key] = (_t.time() + (_GEOCODE_TTL_S if found else 24 * 3600), dict(found) if found else None)
+    return found
+
+
+async def _find_place_uncached(query: str) -> Optional[dict]:
     """Resolve a business/place NAME to {name, formatted, lat, lng, place_id}.
 
     geocode() needs a street address; a company name like 'MER Group' returns

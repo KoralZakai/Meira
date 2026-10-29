@@ -20,7 +20,7 @@ import {
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 // COLORS.danger only — BRAND has no danger token yet (flagged for theme.ts).
-import { BRAND, COLORS, FONTS, RADIUS, SHADOWS } from '../constants/theme';
+import { BRAND, COLORS, FONTS, RADIUS, SHADOWS, surf } from '../constants/theme';
 import LumiWordmark from '../components/LumiWordmark';
 import { CHECK_IN_TITLES, STRINGS } from '../constants/strings';
 import { useLumiContext } from '../hooks/useLumiContext';
@@ -898,7 +898,7 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
     padding: 10,
     marginBottom: 10,
-    backgroundColor: BRAND.white,
+    backgroundColor: surf(BRAND.white),
     fontFamily: FONTS.body,
     color: BRAND.warmInk,
   },

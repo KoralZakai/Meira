@@ -369,5 +369,29 @@ class CacheVersionTests(unittest.TestCase):
         self.assertTrue(meeting_brief._cache_matches({"headline_en": "x"}, meeting_brief.subjects(RAFAEL)))
 
 
+
+class TypedInterviewTitleTests(unittest.TestCase):
+    """29.10: "I have an interview for AI Engineer in Nebuis on" — no organiser,
+    no venue name, so the card said "why none?". The employer is in her words."""
+
+    def _s(self, title, location="4, Yitzhak Sadeh Street, Tel Aviv-Yafo"):
+        return meeting_brief.subjects({"title": title, "location": location})
+
+    def test_her_title(self):
+        s = self._s("I have an interview for AI Engineer in Nebuis on")
+        self.assertEqual(s["company"], "Nebuis")
+        self.assertEqual(s["role"], "AI Engineer")
+
+    def test_hebrew_title(self):
+        s = self._s("ראיון לתפקיד מפתחת בוויקס")
+        self.assertEqual(s["name_en"], "Wix")
+        self.assertEqual(self._s("ראיון בNebius")["company"], "Nebius")
+
+    def test_a_city_or_a_day_is_not_an_employer(self):
+        for t in ("interview in Tel Aviv", "Job interview in Monday", "ראיון בחיפה",
+                  "ראיון בשבוע הבא", "ראיון בבאר שבע", "interview in Person"):
+            self.assertEqual(self._s(t)["company"], "", t)
+
+
 if __name__ == "__main__":
     unittest.main()

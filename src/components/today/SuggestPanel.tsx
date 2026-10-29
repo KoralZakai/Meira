@@ -29,6 +29,8 @@ import { readingRow } from './readingRow';
 import { useAddSuggestions } from '../../hooks/useAddSuggestions';
 import { useApplySuggestion } from '../../hooks/useApplySuggestion';
 import type { SuggestionAction } from '../../utils/addSuggestions';
+import { useNight } from '../ui/SkyBackdrop';
+import { N } from '../../constants/nightTone';
 
 type Prefill = Extract<SuggestionAction, { kind: 'prefill' }>;
 
@@ -47,6 +49,7 @@ interface Props {
 }
 
 export default function SuggestPanel({ he, date, onAddOwn, onPrefill, onOpenTask, onChanged }: Props) {
+  const night = useNight();
   const view = useAddSuggestions(date);
   // What a tap does (apply + 5 s Undo) is shared with the chat home's card.
   const { onPick, takeBack, busyId, used, undo, failed } = useApplySuggestion({ he, onPrefill, onOpenTask, onChanged });
@@ -65,8 +68,8 @@ export default function SuggestPanel({ he, date, onAddOwn, onPrefill, onOpenTask
         onToday
       />
       {undo ? (
-        <View style={[styles.undoRow, { flexDirection: readingRow(he) }]}>
-          <Text style={styles.undoText} numberOfLines={2}>{pinned(he, undo.line)}</Text>
+        <View style={[styles.undoRow, night && N.card, { flexDirection: readingRow(he) }]}>
+          <Text style={[styles.undoText, night && N.inkSoft]} numberOfLines={2}>{pinned(he, undo.line)}</Text>
           <Pressable onPress={takeBack} style={styles.undoBtn} accessibilityRole="button">
             <Text style={styles.undoBtnText}>{he ? 'ביטול' : 'Undo'}</Text>
           </Pressable>
@@ -75,11 +78,11 @@ export default function SuggestPanel({ he, date, onAddOwn, onPrefill, onOpenTask
       {failed ? <Text style={styles.failed}>{pinned(he, failed)}</Text> : null}
       <Pressable
         onPress={onAddOwn}
-        style={({ pressed }) => [styles.own, { flexDirection: readingRow(he) }, pressed && styles.pressed]}
+        style={({ pressed }) => [styles.own, night && N.card, { flexDirection: readingRow(he) }, pressed && styles.pressed]}
         accessibilityRole="button"
       >
-        <Text style={styles.ownText}>{pinned(he, he ? '+ הוסיפי משלך' : '+ Add your own')}</Text>
-        <Text style={styles.ownArrow}>{he ? '‹' : '›'}</Text>
+        <Text style={[styles.ownText, night && N.ink]}>{pinned(he, he ? '+ הוסיפי משלך' : '+ Add your own')}</Text>
+        <Text style={[styles.ownArrow, night && N.goldInk]}>{he ? '‹' : '›'}</Text>
       </Pressable>
     </View>
   );

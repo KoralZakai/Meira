@@ -13,7 +13,7 @@ import AsyncStorage from '../services/EncryptedStorage';  // AES-256-GCM at rest
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useFocusEffect, useRoute } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BRAND, FONTS, MIN_TOUCH, RADIUS, SHADOWS } from '../constants/theme';
+import { BRAND, FONTS, MIN_TOUCH, RADIUS, SHADOWS, surf, nink, nline } from '../constants/theme';
 import { getTodayString, getTomorrowString, sortTasksByPriorityAndTime } from '../utils/timeUtils';
 import { endedBy } from '../utils/taskEnd';
 import {
@@ -126,6 +126,9 @@ import { nextMeetingBrief, upcomingInterviewBriefs, interviewBrief, InterviewBri
 import { interviewChipLabel, prepBlockChipLabel, briefReasonLine } from '../utils/interviewBrief';
 import { MeetingBriefResult } from '../services/LumiServer';
 import { perfFirstPaint, perfMark } from '../utils/perf';
+import { N, NIGHT_COLORS } from '../constants/nightTone';
+import { THEME_NIGHT } from '../constants/theme';
+import { NIGHT as NIGHT_SKY } from '../utils/skyGradient';
 
 // Once-per-day flag for the "want to hear your day?" offer banner.
 const BRIEFING_OFFERED_KEY = 'lumi.briefingOffered.v1';
@@ -591,9 +594,14 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
   const sky = React.useMemo(() => {
     const place = profile?.homeLat && profile?.homeLng
       ? { lat: profile.homeLat, lng: profile.homeLng } : FALLBACK_PLACE;
-    return skyFor(timeToMinutes(clock), sunTimes(new Date(), place.lat, place.lng));
+    const raw = skyFor(timeToMinutes(clock), sunTimes(new Date(), place.lat, place.lng));
+    // This run's palette decides dark vs light (constants/theme THEME_NIGHT) — never half and half.
+    return THEME_NIGHT && !raw.dark ? { ...raw, phase: 'night' as const, colors: NIGHT_SKY, dark: true }
+      : { ...raw, dark: THEME_NIGHT };
   }, [clock, profile?.homeLat, profile?.homeLng]);
   const headInk = sky.dark ? SKY_INK.light : SKY_INK.dark;
+  // Night (28.10, canvas v4 dark): dark glass and light ink, not cream on navy.
+  const night = THEME_NIGHT;
   const sun = React.useMemo(() => {
     const place = profile?.homeLat && profile?.homeLng
       ? { lat: profile.homeLat, lng: profile.homeLng } : FALLBACK_PLACE;
@@ -2072,7 +2080,7 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
     && (!showingToday || timeToMinutes(wakeOwner.chip.at) > timeToMinutes(clock)) ? (
       <TouchableOpacity key="wake" style={styles.wakeRow} onPress={() => (wakeOwner.pill ? morningAlarm.openSheet() : handleAlarmPress(wakeOwner.t))}
         accessibilityRole="button">
-        <Text style={styles.wakeText}>
+        <Text style={[styles.wakeText, night && N.goldInk]}>
           {`${wakeOwner.chip.muted ? '🔕' : '⏰'} ${he ? `השכמה ${wakeOwner.chip.at}` : `Wake up ${wakeOwner.chip.at}`}`
             + (wakeOwner.chip.muted ? (he ? ' · כבוי' : ' · off') : '')}
         </Text>
@@ -2245,6 +2253,7 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
       moved={Boolean(moved?.ids.includes(t.id))}
       onOpen={() => setOpenCardId(t.id)}
       onToggleComplete={() => handleComplete(t)}
+      nowAt={current || (showingToday && inProgress.includes(t)) ? clock : undefined}
       drag={showingToday ? { onLift: liftFromTray, onMove: moveOverDay, onDrop: (x, y) => { void dropOnDay(x, y); }, onCancel: endDrag } : undefined}
     />
   ) : (
@@ -2764,7 +2773,7 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
             accessibilityRole="button"
             onPress={() => { load(false).catch((e) => console.warn('[Today] task refresh retry failed', e)); }}
           >
-            <Text style={styles.calPillText}>
+            <Text style={[styles.calPillText, night && N.goldInk]}>
               {he
                 ? '☁️ לא הצלחתי לרענן — מוצג מה שבטלפון. הקישי לנסות שוב'
                 : "☁️ Couldn't refresh — showing what's on this phone. Tap to retry"}
@@ -2796,7 +2805,7 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
                 }
               }}
             >
-              <Text style={styles.calPillText}>{line.text}</Text>
+              <Text style={[styles.calPillText, night && N.goldInk]}>{line.text}</Text>
             </TouchableOpacity>
           );
         })() : null}
@@ -2946,7 +2955,7 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
           <View style={styles.section}>
             {/* Day-aware. Today owns the day chips now, so a clear TOMORROW
                 was being announced as "Today's clear". */}
-            <Text style={styles.emptyText}>
+            <Text style={[styles.emptyText, night && N.inkSoft]}>
               {showingToday
                 ? (language === 'he' ? 'היום פנוי — מה נכניס?' : "Today's clear — what shall we put in?")
                 : showingTomorrow
@@ -3011,8 +3020,8 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
             </View>
             {plusBlock}
             {dayRows.length > nowRowsEnd + 3 || anytime.length || earlier.length ? (
-              <TouchableOpacity style={styles.allDayLink} onPress={() => setView('all')} accessibilityRole="button">
-                <Text style={styles.allDayLinkText}>{he ? 'כל היום ›' : 'All day ›'}</Text>
+              <TouchableOpacity style={[styles.allDayLink, night && N.chip]} onPress={() => setView('all')} accessibilityRole="button">
+                <Text style={[styles.allDayLinkText, night && N.goldInk]}>{he ? 'כל היום ›' : 'All day ›'}</Text>
               </TouchableOpacity>
             ) : null}
           </View>
@@ -3021,8 +3030,8 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
             <View style={styles.denseRow}>
               {[true, false].map((d) => (
                 <TouchableOpacity key={String(d)} onPress={() => setDense(d)} accessibilityRole="tab"
-                  accessibilityState={{ selected: dense === d }} style={[styles.denseChip, dense === d && styles.denseChipOn]}>
-                  <Text style={[styles.denseText, dense === d && styles.denseTextOn]}>
+                  accessibilityState={{ selected: dense === d }} style={[styles.denseChip, night && N.chip, dense === d && styles.denseChipOn]}>
+                  <Text style={[styles.denseText, night && N.ink, dense === d && styles.denseTextOn]}>
                     {d ? (he ? 'מצומצם' : 'Compact') : (he ? 'מורחב' : 'Expanded')}
                   </Text>
                 </TouchableOpacity>
@@ -3130,7 +3139,7 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
         colors={[sky.colors[0], sky.colors[1]]}
         style={[styles.headerOverlay, { paddingTop: insets.top + 6 }]}
       >
-        <View style={[styles.header, language === 'he' && { flexDirection: 'row-reverse' }]}>
+          <View style={[styles.header, language === 'he' && { flexDirection: 'row-reverse' }]}>
           {/* Meira's face is the door to her (canvas v4): tap → the chat. */}
           <TouchableOpacity onPress={() => navigation.navigate('Meira')} hitSlop={8}
             accessibilityRole="button" accessibilityLabel={language === 'he' ? 'לדבר עם מאירה' : 'Talk to Meira'}>
@@ -3143,19 +3152,19 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
                 ? (language === 'he' ? 'מחר' : 'Tomorrow')
                 : formatDayLabel(dateKey, language)}
           </Text>
-          <TouchableOpacity style={styles.headerIcon} onPress={() => setAlertsOpen(true)}
+          <TouchableOpacity style={[styles.headerIcon, night && N.chip]} onPress={() => setAlertsOpen(true)}
             accessibilityLabel={language === 'he' ? `התראות — ${waiting.length}` : `Alerts — ${waiting.length}`}>
-            <LineIcon name="bell" size={20} color={BRAND.warmInk} />
+            <LineIcon name="bell" size={20} color={night ? NIGHT_COLORS.ink : BRAND.warmInk} />
             {waiting.length ? (
               <View style={styles.bellBadge}><Text style={styles.bellBadgeText}>{waiting.length}</Text></View>
             ) : null}
           </TouchableOpacity>
           <TouchableOpacity
-            style={styles.headerIcon}
+            style={[styles.headerIcon, night && N.chip]}
             onPress={() => navigation.navigate('SettingsMenu')}
             accessibilityLabel={language === 'he' ? 'תפריט' : 'Menu'}
           >
-            <LineIcon name="menu" size={20} color={BRAND.warmInk} />
+            <LineIcon name="menu" size={20} color={night ? NIGHT_COLORS.ink : BRAND.warmInk} />
           </TouchableOpacity>
           {/* One door (8.10, Koral): the profile is the menu's "👤 את", and the
               📅 is the menu's "📅 עדכון יומנים", which opens the banner below. */}
@@ -3183,38 +3192,38 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
           {showingToday ? (
             <>
               <TouchableOpacity onPress={() => setView('focus')} activeOpacity={0.85}
-                style={[styles.dayChip, view === 'focus' && styles.dayChipOn]} accessibilityRole="tab"
+                style={[styles.dayChip, night && N.chip, view === 'focus' && styles.dayChipOn]} accessibilityRole="tab"
                 accessibilityState={{ selected: view === 'focus' }}>
-                <Text style={[styles.dayChipText, view === 'focus' && styles.dayChipTextOn]} numberOfLines={1}>
+                <Text style={[styles.dayChipText, night && N.ink, view === 'focus' && styles.dayChipTextOn]} numberOfLines={1}>
                   {language === 'he' ? '◎ פוקוס' : '◎ Focus'}
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={() => setView('all')} activeOpacity={0.85}
-                style={[styles.dayChip, view === 'all' && styles.dayChipOn]} accessibilityRole="tab"
+                style={[styles.dayChip, night && N.chip, view === 'all' && styles.dayChipOn]} accessibilityRole="tab"
                 accessibilityState={{ selected: view === 'all' }}>
-                <Text style={[styles.dayChipText, view === 'all' && styles.dayChipTextOn]} numberOfLines={1}>
+                <Text style={[styles.dayChipText, night && N.ink, view === 'all' && styles.dayChipTextOn]} numberOfLines={1}>
                   {language === 'he' ? '☰ כל היום' : '☰ All day'}
                 </Text>
               </TouchableOpacity>
             </>
           ) : (
-            <TouchableOpacity onPress={() => setDateKey(getTodayString())} activeOpacity={0.85} style={styles.dayChip}>
-              <Text style={styles.dayChipText} numberOfLines={1}>{language === 'he' ? '‹ חזרה להיום' : '‹ Back to today'}</Text>
+            <TouchableOpacity onPress={() => setDateKey(getTodayString())} activeOpacity={0.85} style={[styles.dayChip, night && N.chip]}>
+              <Text style={[styles.dayChipText, night && N.ink]} numberOfLines={1}>{language === 'he' ? '‹ חזרה להיום' : '‹ Back to today'}</Text>
             </TouchableOpacity>
           )}
           <TouchableOpacity
             onPress={() => setDateKey(getTomorrowString())}
             activeOpacity={0.85}
-            style={[styles.dayChip, showingTomorrow && styles.dayChipOn]}
+            style={[styles.dayChip, night && N.chip, showingTomorrow && styles.dayChipOn]}
           >
-            <Text style={[styles.dayChipText, showingTomorrow && styles.dayChipTextOn]} numberOfLines={1}>
+            <Text style={[styles.dayChipText, night && N.ink, showingTomorrow && styles.dayChipTextOn]} numberOfLines={1}>
               {language === 'he' ? 'מחר' : 'Tomorrow'}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
             onPress={() => setShowDayPicker(true)}
             activeOpacity={0.85}
-            style={[styles.dateBtn, !showingToday && !showingTomorrow && styles.dayChipOn]}
+            style={[styles.dateBtn, night && N.chip, !showingToday && !showingTomorrow && styles.dayChipOn]}
             accessibilityLabel={language === 'he' ? 'בחירת תאריך' : 'Pick a day'}
           >
             <Text style={styles.dateBtnText}>📅</Text>
@@ -3342,7 +3351,7 @@ const styles = StyleSheet.create({
   eventsRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   eventsTitle: { flex: 1, fontFamily: FONTS.bodyHeavy, fontSize: 14, color: BRAND.onGold },
   eventsAddAll: { backgroundColor: BRAND.warmInk, borderRadius: 999, paddingVertical: 8, paddingHorizontal: 14, minHeight: 36, justifyContent: 'center' },
-  eventsAddAllText: { color: BRAND.white, fontFamily: FONTS.bodyHeavy, fontSize: 12 },
+  eventsAddAllText: { color: BRAND.creamCard, fontFamily: FONTS.bodyHeavy, fontSize: 12 },
   eventsSub: { fontFamily: FONTS.bodySemi, fontSize: 12, color: BRAND.goldInk, marginTop: 6 },
   eventsReview: { fontFamily: FONTS.bodyHeavy, textDecorationLine: 'underline', color: BRAND.onGold },
   // Warm cream. Today and the timeline blocks inside it are one palette
@@ -3357,7 +3366,7 @@ const styles = StyleSheet.create({
   headerOverlay: {
     position: 'absolute', top: 0, left: 0, right: 0,
     paddingHorizontal: 16, paddingBottom: 10,
-    borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.45)',
+    borderBottomWidth: 1, borderBottomColor: nline('rgba(255,255,255,0.45)'),
     overflow: 'hidden',
   },
   greeting: { fontSize: 14, fontFamily: FONTS.body, color: BRAND.inkSoft },
@@ -3388,10 +3397,10 @@ const styles = StyleSheet.create({
   },
   bellBadgeText: { fontFamily: FONTS.bodyHeavy, fontSize: 10, color: BRAND.white },
   denseRow: { flexDirection: 'row', justifyContent: 'flex-end', gap: 6, marginBottom: 8 },
-  denseChip: { minHeight: 32, justifyContent: 'center', paddingHorizontal: 12, borderRadius: RADIUS.pill, backgroundColor: 'rgba(255,253,247,0.6)' },
+  denseChip: { minHeight: 32, justifyContent: 'center', paddingHorizontal: 12, borderRadius: RADIUS.pill, backgroundColor: surf('rgba(255,253,247,0.6)') },
   denseChipOn: { backgroundColor: BRAND.warmInk },
   denseText: { fontFamily: FONTS.bodyBold, fontSize: 12, color: BRAND.warmInk },
-  denseTextOn: { color: BRAND.white },
+  denseTextOn: { color: BRAND.creamCard },
   dropHover: { borderRadius: 18, borderWidth: 2, borderColor: '#7B6CFF', backgroundColor: 'rgba(123,108,255,0.10)' },
   movedStrip: {
     position: 'absolute', left: 14, right: 14, minHeight: 52, borderRadius: 26, paddingHorizontal: 16,
@@ -3410,7 +3419,7 @@ const styles = StyleSheet.create({
   allDayTitle: { fontFamily: FONTS.bodyHeavy, fontSize: 15, color: BRAND.warmInk, marginTop: 2 },
   allDayLink: {
     alignSelf: 'center', minHeight: 44, justifyContent: 'center', paddingHorizontal: 18, marginTop: 4,
-    borderRadius: RADIUS.pill, backgroundColor: 'rgba(255,253,247,0.85)',
+    borderRadius: RADIUS.pill, backgroundColor: surf('rgba(255,253,247,0.85)'),
   },
   allDayLinkText: { fontFamily: FONTS.bodyHeavy, fontSize: 13, color: BRAND.goldInk },
   dayChipText: {
@@ -3466,27 +3475,27 @@ const styles = StyleSheet.create({
   },
   leaveText: { fontSize: 13, fontFamily: FONTS.bodyBold, color: BRAND.creamCard },
   offlineBanner: {
-    backgroundColor: '#FDECEF', borderRadius: RADIUS.card,
+    backgroundColor: surf('#FDECEF'), borderRadius: RADIUS.card,
     borderWidth: 1, borderColor: '#EF476F',
     paddingHorizontal: 14, paddingVertical: 10, marginBottom: 12,
   },
-  offlineText: { fontFamily: FONTS.bodyBold, fontSize: 13, color: '#A32B47' },
+  offlineText: { fontFamily: FONTS.bodyBold, fontSize: 13, color: nink('#A32B47') },
   clashBox: {
-    backgroundColor: '#FFF4E5', borderRadius: RADIUS.card,
+    backgroundColor: surf('#FFF4E5'), borderRadius: RADIUS.card,
     borderWidth: 1, borderColor: '#FF9F1C',
     paddingHorizontal: 14, paddingVertical: 10, marginBottom: 12, gap: 4,
   },
-  clashTitle: { fontFamily: FONTS.bodyBold, fontSize: 14, color: '#8A5300' },
+  clashTitle: { fontFamily: FONTS.bodyBold, fontSize: 14, color: nink('#8A5300') },
   clashItem: { gap: 6, marginTop: 4 },
   clashOptions: { gap: 6 },
   clashOption: {
     backgroundColor: BRAND.creamCard, borderRadius: RADIUS.chip,
-    borderWidth: 1, borderColor: '#E8C89A',
+    borderWidth: 1, borderColor: nline('#E8C89A'),
     paddingHorizontal: 10, paddingVertical: 7,
   },
-  clashOptionText: { fontFamily: FONTS.bodySemi, fontSize: 12.5, color: '#7A4A00' },
-  clashLine: { fontFamily: FONTS.body, fontSize: 13, color: '#8A5300' },
-  clashCta: { fontFamily: FONTS.bodySemi, fontSize: 12, color: '#8A5300', marginTop: 2 },
+  clashOptionText: { fontFamily: FONTS.bodySemi, fontSize: 12.5, color: nink('#7A4A00') },
+  clashLine: { fontFamily: FONTS.body, fontSize: 13, color: nink('#8A5300') },
+  clashCta: { fontFamily: FONTS.bodySemi, fontSize: 12, color: nink('#8A5300'), marginTop: 2 },
   suggestBox: {
     backgroundColor: BRAND.creamCard, borderRadius: RADIUS.card,
     borderWidth: 1, borderColor: BRAND.line,
@@ -3521,13 +3530,13 @@ const styles = StyleSheet.create({
   liveNoteMore: { fontFamily: FONTS.bodyHeavy, fontSize: 13, color: BRAND.goldInk, marginTop: 6 },
   // v3: a glass card with a soft red edge — urgent, never alarming.
   missedBox: {
-    backgroundColor: 'rgba(255,255,255,0.94)', borderWidth: 1, borderColor: '#F6B8C6', borderTopWidth: 4, borderTopColor: BRAND.danger,
+    backgroundColor: surf('rgba(255,255,255,0.94)'), borderWidth: 1, borderColor: '#F6B8C6', borderTopWidth: 4, borderTopColor: BRAND.danger,
     borderRadius: 22, padding: 14, gap: 10, marginBottom: 12, ...SHADOWS.card,
   },
   lateTell: {
-    marginTop: 10, padding: 12, borderRadius: 16, backgroundColor: '#E6FAF3', borderWidth: 1, borderColor: '#9FE6CC', gap: 4,
+    marginTop: 10, padding: 12, borderRadius: 16, backgroundColor: surf('#E6FAF3'), borderWidth: 1, borderColor: nline('#9FE6CC'), gap: 4,
   },
-  lateTellText: { fontFamily: FONTS.bodyHeavy, fontSize: 14, color: '#0B6B4F' },
+  lateTellText: { fontFamily: FONTS.bodyHeavy, fontSize: 14, color: nink('#0B6B4F') },
   lateTellDraft: { fontFamily: FONTS.bodySemi, fontSize: 12.5, color: BRAND.inkSoft, lineHeight: 18 },
   missedTitle: { fontFamily: FONTS.bodyHeavy, fontSize: 14, color: BRAND.warmInk, lineHeight: 20 },
   missedDismiss: { alignSelf: 'center', minHeight: MIN_TOUCH, justifyContent: 'center', paddingHorizontal: 16 },
@@ -3567,7 +3576,7 @@ const styles = StyleSheet.create({
   focusProgressText: { fontSize: 13, fontFamily: FONTS.bodySemi, color: 'rgba(255,255,255,0.85)' },
   ring: {
     width: 40, height: 40, borderRadius: 20,
-    borderWidth: 3, borderColor: 'rgba(255,255,255,0.5)',
+    borderWidth: 3, borderColor: nline('rgba(255,255,255,0.5)'),
     alignItems: 'center', justifyContent: 'center',
   },
   ringPct: { fontSize: 10, fontFamily: FONTS.bodyHeavy, color: BRAND.creamCard },

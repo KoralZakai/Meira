@@ -42,7 +42,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BRAND, FONTS, RADIUS, SHADOWS } from '../constants/theme';
+import { BRAND, FONTS, RADIUS, SHADOWS, surf, nink } from '../constants/theme';
 import { getCategoryMeta } from '../constants/categories';
 import { AppLanguage, Task, TaskLocation, TransitLeg, TransitPlan, TransportType } from '../types';
 import { getAllTasks, getSettings, updateTaskFields, getTasksForDate } from '../services/TaskStorage';
@@ -860,7 +860,7 @@ const styles = StyleSheet.create({
   comboModes: { flexDirection: 'row', gap: 8 },
   comboMode: {
     paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999,
-    borderWidth: 1, borderColor: BRAND.line, backgroundColor: BRAND.white,
+    borderWidth: 1, borderColor: BRAND.line, backgroundColor: surf(BRAND.white),
   },
   comboModeText: { fontSize: 16 },
   comboResult: {
@@ -887,7 +887,7 @@ const styles = StyleSheet.create({
   subtitle: { fontFamily: FONTS.body, fontSize: 13, color: BRAND.inkSoft, marginTop: 2 },
   scroll: { paddingHorizontal: 16 },
 
-  empty: { alignItems: 'center', marginTop: 60, marginHorizontal: 20, padding: 24, gap: 12, borderRadius: 24, backgroundColor: 'rgba(255,255,255,0.82)' },
+  empty: { alignItems: 'center', marginTop: 60, marginHorizontal: 20, padding: 24, gap: 12, borderRadius: 24, backgroundColor: surf('rgba(255,255,255,0.82)') },
   emptyIcon: { fontSize: 40 },
   emptyText: {
     fontFamily: FONTS.body, fontSize: 14, color: BRAND.inkSoft,

@@ -58,7 +58,8 @@ function styleBlock(src: string, name: string): string {
 /** Resolve `prop: BRAND.x` or `prop: '#abc'` inside a block to a hex colour. */
 function colorOf(src: string, style: string, prop: 'color' | 'backgroundColor' | 'borderColor'): string {
   const block = styleBlock(src, style);
-  const m = new RegExp(`(?<![A-Za-z])${prop}:\\s*(?:BRAND\\.(\\w+)|'(#[0-9A-Fa-f]{6})')`).exec(block);
+  // surf('#…') / nink('#…') / nline('#…') carry the DAY value inside (night swaps it at run time).
+  const m = new RegExp(`(?<![A-Za-z])${prop}:\\s*(?:(?:surf|nink|nline)\\()?(?:BRAND\\.(\\w+)|'(#[0-9A-Fa-f]{6})')`).exec(block);
   if (!m) throw new Error(`style "${style}" has no ${prop} token`);
   if (m[2]) return m[2];
   const hex = (BRAND as Record<string, string>)[m[1]];
@@ -178,7 +179,7 @@ console.log('\n3. Text that must not be cut\n');
 
   // NowAddRow: the time is a Text of its own.
   check('NowAddRow: the time is its own Text and never shrinks',
-    /styles\.time\}>\{time\}/.test(nowAdd) && /flexShrink:\s*0/.test(styleBlock(nowAdd, 'time')) && /flexShrink:\s*1/.test(styleBlock(nowAdd, 'label')));
+    /styles\.time(, night && N\.ink)?\]?\}>\{time\}/.test(nowAdd) && /flexShrink:\s*0/.test(styleBlock(nowAdd, 'time')) && /flexShrink:\s*1/.test(styleBlock(nowAdd, 'label')));
   check('NowAddRow: the label no longer carries the clock inside its string', !/\$\{freeUntil\}|\$\{nextStart\}/.test(code(nowAdd)));
 
   // Transit list: "leave in N min" ahead of the station, so the station is what a cut takes.

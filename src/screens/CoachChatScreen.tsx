@@ -16,7 +16,7 @@ import {
   TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BRAND, FONTS, RADIUS, SHADOWS } from '../constants/theme';
+import { BRAND, FONTS, RADIUS, SHADOWS, surf, nline } from '../constants/theme';
 import { coachTurn, CoachPending } from '../services/LumiCoachEngine';
 import { brainTurn, sendReaction } from '../services/LumiBrain';
 import AsyncStorage from '../services/EncryptedStorage';  // AES-256-GCM at rest (7.10)
@@ -24,8 +24,16 @@ import LearnedCard from '../components/LearnedCard';
 import HomeConfirmCard from '../components/HomeConfirmCard';
 import { HOME_HERE_CHIP, HomeAsk, findHomeHere, saveHomeHere } from '../utils/homeFromHere';
 import AnswerCard from '../components/AnswerCard';
+
 import ChainCard from '../components/ChainCard';
 import { ChainAnswer, asChainAnswer } from '../utils/chainAnswer';
+
+import { ApptCard, BookingCard } from '../components/ClinicCards';
+import {
+  ClinicAppointment, isClinicBookingRequest, looksLikeClalitSms, parseClalitSms, parseFailText,
+} from '../utils/clalitSms';
+
+
 import type { VoiceTurn } from '../components/VoiceSheet';
 import { LookupAnswer, asLookupAnswer } from '../utils/answerCard';
 import type { ProfileChange } from '../services/LumiServer';
@@ -33,6 +41,7 @@ import { invalidateRoutines } from '../services/GapFillService';
 import { getSettings, getAllTasks } from '../services/TaskStorage';
 import { useFocusEffect } from '@react-navigation/native';
 import MeiraHomePanel, { HomeTile } from '../components/home/MeiraHomePanel';
+import { N, NIGHT_COLORS } from '../constants/nightTone';
 import SkyBackdrop, { useSky } from '../components/ui/SkyBackdrop';
 import MeiraCoin from '../components/MeiraCoin';
 import LineIcon from '../components/ui/LineIcon';
@@ -79,6 +88,8 @@ interface Message {
   reaction?: 'up' | 'down';
   /** The Meira message she answered (↩ / long-press), drawn as a quote in her bubble. */
   replyTo?: string;
+  /** Clalit (27.10): the booking card, or an appointment read from her SMS (components/ClinicCards). */
+  clinic?: { kind: 'book' } | { kind: 'appt'; appt: ClinicAppointment };
 }
 
 // THE chat with Meira (6.10): the 💬 in the tab bar and You → "Tell me" open
@@ -227,6 +238,33 @@ export default function CoachChatScreen({ navigation, route }: any) {
   const lumiSay = (text: string) =>
     deliver([{ id: Date.now().toString(), role: 'lumi', text, ts: Date.now() }]);
 
+  // A Clalit confirmation, shared or pasted, is read HERE and goes nowhere:
+  // the text is health data and untrusted, so it never reaches the server or
+  // the agent (utils/clalitSms, security review 27.10).
+  const clinicReply = (sms: string, he = language === 'he'): Message => {
+    const parsed = parseClalitSms(sms);
+    return parsed.ok
+      ? { id: `${Date.now()}-appt`, role: 'lumi', ts: Date.now(),
+        text: he ? 'מצאתי את התור 👇' : 'Found the appointment 👇', clinic: { kind: 'appt', appt: parsed.appt } }
+      : { id: `${Date.now()}-appt`, role: 'lumi', ts: Date.now(), text: parseFailText(parsed.reason, he) };
+  };
+  // Shared to Meira from the SMS app (modules/share-in → App.tsx). The raw
+  // SMS is not drawn as her bubble — it is on her phone already.
+  const shared: { id: string; text: string } | undefined = route?.params?.shared;
+  useEffect(() => {
+    if (!shared?.id) return;
+    // The language from settings, not state: a share can open the chat before it loads.
+    getSettings().catch(() => null).then((st) => {
+      const he = (st?.language ?? language) === 'he';
+      setMessages((prev) => (prev.some((m) => m.id === `${shared.id}-s`) ? prev : [
+        ...prev,
+        { id: `${shared.id}-s`, role: 'user', ts: Date.now(), text: he ? '📩 שיתפתי הודעה' : '📩 Shared a message' },
+        clinicReply(shared.text, he),
+      ]));
+      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 150);
+    });
+  }, [shared?.id]);
+
   // 📍 "my home is here": GPS fix → address → a card that ASKS. Home changes
   // only on her yes (utils/homeFromHere) — it used to save on one tap, and a
   // mis-tap reaching for the mic did exactly that (7.10).
@@ -311,7 +349,23 @@ export default function CoachChatScreen({ navigation, route }: any) {
       // them is strictly worse: slower, offline-fragile, and occasionally
       // wrong about the one thing she is asking to rely on. Everything else
       // carries on to the brain untouched.
+      // Clalit (27.10): a pasted confirmation is parsed on the phone and goes
+      // nowhere — not to the agent, not to the extractor — whatever else is in
+      // flight (a quoted message, a pending question), so it is checked first.
+      if (looksLikeClalitSms(finalText)) {
+        setPending(undefined);
+        deliver([clinicReply(finalText)]);
+        return;
+      }
       if (!pending?.mode && !replyTo) {
+        // "Book me a doctor" opens the booking card: Clalit cannot be booked
+        // for her, and it needs no model.
+        if (isClinicBookingRequest(finalText)) {
+          deliver([{ id: Date.now().toString(), role: 'lumi', ts: Date.now(), clinic: { kind: 'book' },
+            text: language === 'he' ? 'כללית לא נותנת לי לקבוע בשבילך. פותחת לך את מסך התור 👇'
+              : "Clalit doesn't let me book for you. Here's the booking screen 👇" }]);
+          return;
+        }
         const answered = await tryAnswerScheduleQuestion(finalText, language).catch(() => null);
         if (answered) {
           deliver([{ id: Date.now().toString(), role: 'lumi', text: answered.text, ts: Date.now() }]);
@@ -388,7 +442,10 @@ export default function CoachChatScreen({ navigation, route }: any) {
       prev.map((m) => (m.id === msg.id ? { ...m, reaction: r } : m)));
     set(next);
     const i = messages.findIndex((m) => m.id === msg.id);
-    const question = [...messages.slice(0, Math.max(i, 0))].reverse().find((m) => m.role === 'user')?.text ?? '';
+    const asked = [...messages.slice(0, Math.max(i, 0))].reverse().find((m) => m.role === 'user')?.text ?? '';
+    // A pasted Clalit SMS is health data that stays on the phone — a 👍 under
+    // its reply must not carry it to the server.
+    const question = looksLikeClalitSms(asked) ? '' : asked;
     const ok = await sendReaction(next ?? 'none', msg.text, question, msg.id);
     if (!ok) {
       set(msg.reaction);
@@ -399,6 +456,7 @@ export default function CoachChatScreen({ navigation, route }: any) {
   const he = language === 'he';
   // The same time-of-day sky as Today (canvas v4) — the chat is home now.
   const sky = useSky();
+  const night = sky.dark;
   const bell = useBellCount();
   // The six tiles (her pick, 27.10). The day views are Today's own; "how do I
   // get there" asks Meira the way to the NEXT task, so the answer is the real
@@ -451,9 +509,9 @@ export default function CoachChatScreen({ navigation, route }: any) {
   const hasEarlier = home && messages.some((m) => !fromThisVisit(m) && !m.greet);
 
   const homeChip = (
-    <TouchableOpacity key="home-here" style={styles.chip} onPress={askLocationAsHome} disabled={locating}>
+    <TouchableOpacity key="home-here" style={[styles.chip, night && N.chip]} onPress={askLocationAsHome} disabled={locating}>
       {locating ? <ActivityIndicator color={BRAND.sunGold} size="small" />
-        : <Text style={styles.chipText}>{language === 'he' ? HOME_HERE_CHIP.he : HOME_HERE_CHIP.en}</Text>}
+        : <Text style={[styles.chipText, night && N.ink]}>{language === 'he' ? HOME_HERE_CHIP.he : HOME_HERE_CHIP.en}</Text>}
     </TouchableOpacity>
   );
 
@@ -470,20 +528,20 @@ export default function CoachChatScreen({ navigation, route }: any) {
           <Text style={[styles.headerStatus, sky.dark && { color: '#7BE8C6' }, he && styles.rtlText]}>{he ? '● מחוברת' : '● online'}</Text>
         </View>
         {home ? (
-          <TouchableOpacity onPress={() => navigation.navigate('Today', { openBell: Date.now() })} style={styles.closeBtn}
+          <TouchableOpacity onPress={() => navigation.navigate('Today', { openBell: Date.now() })} style={[styles.closeBtn, night && N.chip]}
             accessibilityLabel={he ? `התראות${bell ? ` — ${bell}` : ''}` : `Alerts${bell ? ` — ${bell}` : ''}`}>
-            <LineIcon name="bell" size={20} color={BRAND.warmInk} />
+            <LineIcon name="bell" size={20} color={night ? NIGHT_COLORS.ink : BRAND.warmInk} />
             {bell ? <View style={styles.bellBadge}><Text style={styles.bellBadgeText}>{bell}</Text></View> : null}
           </TouchableOpacity>
         ) : null}
         {home ? (
-          <TouchableOpacity onPress={() => navigation.navigate('SettingsMenu')} style={styles.closeBtn}
+          <TouchableOpacity onPress={() => navigation.navigate('SettingsMenu')} style={[styles.closeBtn, night && N.chip]}
             accessibilityLabel={he ? 'תפריט' : 'Menu'}>
-            <LineIcon name="menu" size={20} color={BRAND.warmInk} />
+            <LineIcon name="menu" size={20} color={night ? NIGHT_COLORS.ink : BRAND.warmInk} />
           </TouchableOpacity>
         ) : (
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.closeBtn}>
-            <Text style={styles.closeBtnText}>✕</Text>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={[styles.closeBtn, night && N.chip]}>
+            <Text style={[styles.closeBtnText, night && N.ink]}>✕</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -513,7 +571,7 @@ export default function CoachChatScreen({ navigation, route }: any) {
           />
         ) : null}
         {hasEarlier ? (
-          <TouchableOpacity onPress={() => setShowHistory((v) => !v)} style={styles.historyLink} accessibilityRole="button">
+          <TouchableOpacity onPress={() => setShowHistory((v) => !v)} style={[styles.historyLink, night && N.chip]} accessibilityRole="button">
             <Text style={styles.historyLinkText}>
               {showHistory ? (he ? 'להסתיר שיחות קודמות' : 'Hide earlier chat') : (he ? 'שיחות קודמות ›' : 'Earlier chat ›')}
             </Text>
@@ -525,7 +583,7 @@ export default function CoachChatScreen({ navigation, route }: any) {
               <HomeConfirmCard ask={msg.homeAsk} he={language === 'he'}
                 onAnswer={(yes) => answerHome(msg.id, msg.homeAsk!, yes)} />
               {/* The card outlives the day in the kept history: say when the fix was taken. */}
-              {msg.ts ? <Text style={styles.msgStamp}>{stampOf(msg.ts)}</Text> : null}
+              {msg.ts ? <Text style={[styles.msgStamp, night && N.inkSoft]}>{stampOf(msg.ts)}</Text> : null}
             </View>
           ) : msg.cards?.length ? (
             <View key={msg.id} style={styles.cardsRow}>
@@ -538,22 +596,22 @@ export default function CoachChatScreen({ navigation, route }: any) {
             <View key={msg.id} style={styles.lumiCol}>
               {/* Long-press a Lumi bubble to reply to that specific message. */}
               <TouchableOpacity
-                style={styles.lumiBubble}
+                style={[styles.lumiBubble, night && N.card]}
                 onLongPress={() => setQuoted(msg.text)}
                 delayLongPress={300}
                 activeOpacity={0.85}
               >
-                <Text style={styles.lumiText} selectable>
+                <Text style={[styles.lumiText, night && N.ink]} selectable>
                   {msg.greet ? GREETING[msg.greet][language === 'he' ? 'he' : 'en'] : msg.text}
                 </Text>
-                {msg.ts ? <Text style={styles.msgStamp}>{stampOf(msg.ts)}</Text> : null}
+                {msg.ts ? <Text style={[styles.msgStamp, night && N.inkSoft]}>{stampOf(msg.ts)}</Text> : null}
               </TouchableOpacity>
               {/* Visible, not hidden behind a long-press (silent-state rule 5). */}
               {!msg.greet && msg.text ? (
                 <View style={styles.reactRow}>
                   {(['up', 'down'] as const).map((r) => (
                     <TouchableOpacity key={r} onPress={() => react(msg, r)}
-                      style={[styles.reactBtn, msg.reaction === r && styles.reactBtnOn]}
+                      style={[styles.reactBtn, night && N.chip, msg.reaction === r && styles.reactBtnOn]}
                       accessibilityLabel={r === 'up' ? (language === 'he' ? 'תשובה טובה' : 'Good answer')
                         : (language === 'he' ? 'תשובה לא טובה' : 'Bad answer')}
                       hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}>
@@ -562,12 +620,17 @@ export default function CoachChatScreen({ navigation, route }: any) {
                       </Text>
                     </TouchableOpacity>
                   ))}
-                  <TouchableOpacity onPress={() => setQuoted(msg.text)} style={styles.reactBtn}
+                  <TouchableOpacity onPress={() => setQuoted(msg.text)} style={[styles.reactBtn, night && N.chip]}
                     accessibilityLabel={language === 'he' ? 'להשיב להודעה הזו' : 'Reply to this message'}
                     hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}>
-                    <Text style={styles.reactReply}>{language === 'he' ? '↩ השיבי' : '↩ Reply'}</Text>
+                    <Text style={[styles.reactReply, night && N.inkSoft]}>{language === 'he' ? '↩ השיבי' : '↩ Reply'}</Text>
                   </TouchableOpacity>
                 </View>
+              ) : null}
+              {msg.clinic?.kind === 'book' ? (
+                <BookingCard he={language === 'he'} onSay={lumiSay} />
+              ) : msg.clinic?.kind === 'appt' ? (
+                <ApptCard appt={msg.clinic.appt} he={language === 'he'} onSay={lumiSay} onEdit={setInput} />
               ) : null}
               {msg.answer ? (
                 <AnswerCard answer={msg.answer} he={language === 'he'}
@@ -595,12 +658,12 @@ export default function CoachChatScreen({ navigation, route }: any) {
                   </View>
                 ) : null}
                 <Text style={styles.userText} selectable>{msg.voice ? `🎤 ${msg.text}` : msg.text}</Text>
-                {msg.ts ? <Text style={[styles.msgStamp, styles.msgStampUser]}>{stampOf(msg.ts)}</Text> : null}
+                {msg.ts ? <Text style={[styles.msgStamp, night && N.inkSoft, styles.msgStampUser]}>{stampOf(msg.ts)}</Text> : null}
               </View>
               {msg.voice ? (
                 // What the mic heard, one tap from fixed and sent again.
                 <TouchableOpacity onPress={() => setInput(msg.text)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
-                  <Text style={styles.heard}>{language === 'he' ? 'שמעתי ככה ✏️' : 'Heard this ✏️'}</Text>
+                  <Text style={[styles.heard, night && N.chip]}>{language === 'he' ? 'שמעתי ככה ✏️' : 'Heard this ✏️'}</Text>
                 </TouchableOpacity>
               ) : null}
             </View>
@@ -608,7 +671,7 @@ export default function CoachChatScreen({ navigation, route }: any) {
         )}
         {loading && (
           <View style={styles.lumiRow}>
-            <View style={styles.lumiBubble}>
+            <View style={[styles.lumiBubble, night && N.card]}>
               <ActivityIndicator color={BRAND.sunGold} size="small" />
             </View>
           </View>
@@ -618,23 +681,23 @@ export default function CoachChatScreen({ navigation, route }: any) {
 
       {/* What can I ask? — starters per theme; one that ends in "…" goes into the box to finish. */}
       {showExamples ? (
-        <ScrollView style={styles.examples} contentContainerStyle={styles.examplesContent} keyboardShouldPersistTaps="handled">
+        <ScrollView style={[styles.examples, night && N.bar]} contentContainerStyle={styles.examplesContent} keyboardShouldPersistTaps="handled">
           {ASK_GROUPS.map((g) => (
             <View key={g.id} style={styles.exGroup}>
-              <Text style={[styles.exTitle, language === 'he' && styles.exRtl]}>
+              <Text style={[styles.exTitle, night && N.inkSoft, language === 'he' && styles.exRtl]}>
                 {`${g.icon} ${language === 'he' ? g.titleHe : g.titleEn}`}
               </Text>
               <View style={[styles.exRow, language === 'he' && styles.exRowRtl]}>
                 {g.examples.map((ex) => {
                   const text = language === 'he' ? ex.he : ex.en;
                   return (
-                    <TouchableOpacity key={ex.id} style={styles.exChip} accessibilityRole="button"
+                    <TouchableOpacity key={ex.id} style={[styles.exChip, night && N.chip]} accessibilityRole="button"
                       onPress={() => {
                         setShowExamples(false);
                         if (isStarter(text)) setInput(text.replace(/…\s*$/, ' '));
                         else void send(text);
                       }}>
-                      <Text style={styles.chipText}>{text}</Text>
+                      <Text style={[styles.chipText, night && N.ink]}>{text}</Text>
                     </TouchableOpacity>
                   );
                 })}
@@ -648,14 +711,14 @@ export default function CoachChatScreen({ navigation, route }: any) {
           there is no home yet, last once there is. It only ever ASKS. */}
       {home && !shown.length ? null : (
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chips} contentContainerStyle={styles.chipsContent}>
-        <TouchableOpacity style={[styles.chip, showExamples && styles.chipOn]} accessibilityRole="button"
+        <TouchableOpacity style={[styles.chip, night && N.chip, showExamples && styles.chipOn]} accessibilityRole="button"
           onPress={() => setShowExamples((v) => !v)}>
-          <Text style={styles.chipText}>{language === 'he' ? '💡 מה אפשר לשאול?' : '💡 What can I ask?'}</Text>
+          <Text style={[styles.chipText, night && N.ink]}>{language === 'he' ? '💡 מה אפשר לשאול?' : '💡 What can I ask?'}</Text>
         </TouchableOpacity>
         {!hasHome && homeChip}
         {(dynamicChips?.length ? dynamicChips : language === 'he' ? CHIPS_HE : CHIPS_EN).map((chip) => (
-          <TouchableOpacity key={chip} style={styles.chip} onPress={() => send(chip)}>
-            <Text style={styles.chipText}>{chip}</Text>
+          <TouchableOpacity key={chip} style={[styles.chip, night && N.chip]} onPress={() => send(chip)}>
+            <Text style={[styles.chipText, night && N.ink]}>{chip}</Text>
           </TouchableOpacity>
         ))}
         {hasHome && homeChip}
@@ -664,9 +727,9 @@ export default function CoachChatScreen({ navigation, route }: any) {
 
       {/* Quote bar — replying to a specific Lumi message */}
       {quoted && (
-        <View style={styles.quoteBar}>
+        <View style={[styles.quoteBar, night && N.bar]}>
           <View style={styles.quoteAccent} />
-          <Text style={styles.quoteText} numberOfLines={1}>
+          <Text style={[styles.quoteText, night && N.ink]} numberOfLines={1}>
             {quoted}
           </Text>
           <TouchableOpacity onPress={() => setQuoted(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
@@ -680,7 +743,7 @@ export default function CoachChatScreen({ navigation, route }: any) {
         <ChatMic
           ref={micRef}
           he={language === 'he'}
-          style={styles.micBtn}
+          style={[styles.micBtn, night && N.chip]}
           activeStyle={styles.micBtnActive}
           onPhase={setMicPhase}
           onText={(heard) => {
@@ -692,13 +755,13 @@ export default function CoachChatScreen({ navigation, route }: any) {
           onError={lumiSay}
         />
         <TextInput
-          style={styles.input}
+          style={[styles.input, night && N.input]}
           value={input}
           onChangeText={setInput}
           placeholder={listening ? (language === 'he' ? 'מקשיבה… הקישי 🔴 כשסיימת' : 'Listening… tap 🔴 when done')
             : micPhase === 'transcribing' ? (language === 'he' ? 'מתמללת…' : 'Transcribing…')
               : language === 'he' ? 'ספרי למאירה…' : 'Ask Meira anything…'}
-          placeholderTextColor={BRAND.inkFaint}
+          placeholderTextColor={night ? NIGHT_COLORS.inkSoft : BRAND.inkFaint}
           multiline
           returnKeyType="send"
           onSubmitEditing={() => send(input)}
@@ -717,7 +780,7 @@ export default function CoachChatScreen({ navigation, route }: any) {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: BRAND.cream },
-  historyLink: { alignSelf: 'center', minHeight: 40, justifyContent: 'center', paddingHorizontal: 14, borderRadius: RADIUS.pill, backgroundColor: 'rgba(255,255,255,0.8)' },
+  historyLink: { alignSelf: 'center', minHeight: 40, justifyContent: 'center', paddingHorizontal: 14, borderRadius: RADIUS.pill, backgroundColor: surf('rgba(255,255,255,0.8)') },
   historyLinkText: { fontFamily: FONTS.bodyHeavy, fontSize: 12, color: BRAND.goldInk },
 
   header: {
@@ -741,7 +804,7 @@ const styles = StyleSheet.create({
   headerStatus: { fontSize: 12, fontFamily: FONTS.bodySemi, color: BRAND.success },
   closeBtn: {
     width: 40, height: 40, borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.75)', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: surf('rgba(255,255,255,0.75)'), alignItems: 'center', justifyContent: 'center',
   },
   closeBtnText: { fontSize: 14, color: BRAND.inkSoft, fontFamily: FONTS.bodyBold },
 
@@ -762,7 +825,7 @@ const styles = StyleSheet.create({
   userRow: { alignItems: 'flex-end' },
   // A reply with a card: the bubble, and the card full-width under it.
   lumiCol: { alignItems: 'flex-start', gap: 2 },
-  heard: { fontFamily: FONTS.body, fontSize: 11, color: BRAND.inkSoft, marginTop: 2, marginRight: 4, paddingHorizontal: 6, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.7)', overflow: 'hidden' },
+  heard: { fontFamily: FONTS.body, fontSize: 11, color: BRAND.inkSoft, marginTop: 2, marginRight: 4, paddingHorizontal: 6, borderRadius: 8, backgroundColor: surf('rgba(255,255,255,0.7)'), overflow: 'hidden' },
   userBubble: {
     borderRadius: 20, borderBottomRightRadius: 6,
     paddingHorizontal: 14, paddingVertical: 10, maxWidth: '78%',
@@ -776,14 +839,14 @@ const styles = StyleSheet.create({
   },
   replyQuoteText: { fontSize: 12, fontFamily: FONTS.body, color: BRAND.creamCard, lineHeight: 16 },
   reactRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2, marginLeft: 4 },
-  reactBtn: { minHeight: 32, minWidth: 36, paddingHorizontal: 6, borderRadius: RADIUS.pill, backgroundColor: 'rgba(255,255,255,0.7)',
+  reactBtn: { minHeight: 32, minWidth: 36, paddingHorizontal: 6, borderRadius: RADIUS.pill, backgroundColor: surf('rgba(255,255,255,0.7)'),
     alignItems: 'center', justifyContent: 'center' },
   reactBtnOn: { backgroundColor: BRAND.honey },
   reactIcon: { fontSize: 15 },
   reactIconDim: { opacity: 0.35 },
   reactReply: { fontSize: 12, fontFamily: FONTS.bodySemi, color: BRAND.inkSoft },
 
-  chips: { flexGrow: 0, borderTopWidth: 1, borderTopColor: BRAND.line },
+  chips: { flexGrow: 0 },
   chipsContent: { padding: 10, gap: 8 },
   chip: {
     backgroundColor: BRAND.honey, borderRadius: RADIUS.pill,
@@ -800,21 +863,21 @@ const styles = StyleSheet.create({
   exRowRtl: { flexDirection: 'row-reverse' },
   exChip: { backgroundColor: BRAND.honey, borderRadius: RADIUS.pill, paddingHorizontal: 14, paddingVertical: 8 },
 
+  // Canvas v4 ChatV3: the box floats on the sky as a glass pill — no cream strip.
   inputRow: {
     flexDirection: 'row', alignItems: 'flex-end', gap: 8,
     paddingHorizontal: 12, paddingTop: 8,
-    backgroundColor: BRAND.creamCard, borderTopWidth: 1, borderTopColor: BRAND.line,
   },
   input: {
-    flex: 1, backgroundColor: BRAND.cream,
-    borderRadius: 24, borderWidth: 1, borderColor: BRAND.line,
+    flex: 1, backgroundColor: surf('rgba(255,255,255,0.86)'),
+    borderRadius: 24, borderWidth: 1, borderColor: nline('rgba(255,255,255,0.95)'),
     paddingHorizontal: 16, paddingVertical: 10,
     fontSize: 14, fontFamily: FONTS.body, color: BRAND.warmInk,
     maxHeight: 100,
   },
   sendBtn: {
     width: 40, height: 40, borderRadius: 20,
-    backgroundColor: BRAND.sunGold, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#6C63FF', alignItems: 'center', justifyContent: 'center',
     ...SHADOWS.button,
   },
   sendBtnDisabled: { opacity: 0.4 },

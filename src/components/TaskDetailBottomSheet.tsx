@@ -18,7 +18,7 @@ import {
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { allDayPatch, endPatch, isAllDay, lastDay, spanDays, startPatch } from '../utils/allDay';
 import { Task, AppLanguage, TaskPriority, Subtask, TaskLocation, TransportType } from '../types';
-import { BRAND, COLORS, PRIORITY_META, FONTS, RADIUS } from '../constants/theme';
+import { BRAND, COLORS, PRIORITY_META, FONTS, RADIUS, surf, nink } from '../constants/theme';
 import { getCategoryMeta, allCategories, createCustomCategory, CategoryEntry } from '../constants/categories';
 import { searchLocationCandidates, openLocationInMaps } from '../services/NearbyTaskReminderService';
 import { meetingProvider, extractMeetingUrl } from '../utils/meetingLink';
@@ -32,11 +32,13 @@ import OnYourWayCard from './OnYourWayCard';
 import { TaskPrepSection } from './TaskPrepCard';
 import { sourceLinkOf } from '../utils/sourceLink';
 import EventDetailsSection from './EventDetailsSection';
+
 import TaskSheetHero from './today/TaskSheetHero';
 import { keepOpen, moveToChosenSlot } from '../services/RunningLate';
 import LineIcon, { LineIconName } from './ui/LineIcon';
 import { originText, shortPlace } from '../utils/tripPlaces';
 import { contactPhoneOf } from '../utils/lateNotice';
+
 
 const TRANSPORTS: Array<{ key: TransportType; icon: string; en: string; he: string }> = [
   { key: 'bus', icon: '🚌', en: 'Bus', he: 'אוטובוס' },
@@ -488,7 +490,7 @@ export default function TaskDetailBottomSheet({
                 <View style={styles.core}>
                   <View style={styles.coreCard}>
                     <View style={[styles.coreRow, { flexDirection: dir }]}>
-                      <View style={[styles.coreIcon, { backgroundColor: '#E5F0FF' }]}><LineIcon name="calendar" size={18} color="#2F6FD6" /></View>
+                      <View style={[styles.coreIcon, { backgroundColor: surf('#E5F0FF') }]}><LineIcon name="calendar" size={18} color="#2F6FD6" /></View>
                       <TouchableOpacity style={{ flex: 1, minWidth: 0 }} onPress={() => setShowDatePicker(true)} accessibilityRole="button">
                         <Text style={[styles.coreLabel, rtl]}>{isHe ? 'מתי' : 'When'}</Text>
                         <Text style={[styles.coreValue, rtl]} numberOfLines={1}>{formatDeadline(task.date, isHe)}</Text>
@@ -546,7 +548,7 @@ export default function TaskDetailBottomSheet({
                   {place ? (
                     <View style={styles.coreCard}>
                       <View style={[styles.coreRow, { flexDirection: dir }]}>
-                        <View style={[styles.coreIcon, { backgroundColor: '#FFF1C7' }]}><LineIcon name="home" size={18} color="#B87F00" /></View>
+                        <View style={[styles.coreIcon, { backgroundColor: surf('#FFF1C7') }]}><LineIcon name="home" size={18} color="#B87F00" /></View>
                         <View style={{ flex: 1, minWidth: 0 }}>
                           <Text style={[styles.coreLabel, rtl]}>{isHe ? 'מאיפה' : 'From'}</Text>
                           <Text style={[styles.coreValue, rtl]} numberOfLines={1}>{from}</Text>
@@ -554,7 +556,7 @@ export default function TaskDetailBottomSheet({
                       </View>
                       <View style={[styles.thread, isHe ? { marginRight: 18 } : { marginLeft: 18 }]} />
                       <View style={[styles.coreRow, { flexDirection: dir }]}>
-                        <View style={[styles.coreIcon, { backgroundColor: '#F1E7FF' }]}><LineIcon name="pin" size={18} color="#7A3FC4" /></View>
+                        <View style={[styles.coreIcon, { backgroundColor: surf('#F1E7FF') }]}><LineIcon name="pin" size={18} color="#7A3FC4" /></View>
                         <View style={{ flex: 1, minWidth: 0 }}>
                           <Text style={[styles.coreLabel, rtl]}>{isHe ? 'לאן' : 'To'}</Text>
                           <Text style={[styles.coreValue, rtl]} numberOfLines={2}>{place}</Text>
@@ -579,7 +581,7 @@ export default function TaskDetailBottomSheet({
 
                   {leave ? (
                     <View style={[styles.coreCard, styles.coreRow, { flexDirection: dir }]}>
-                      <View style={[styles.coreIcon, { backgroundColor: '#FFE3EA' }]}><LineIcon name="bell" size={18} color="#D6335A" /></View>
+                      <View style={[styles.coreIcon, { backgroundColor: surf('#FFE3EA') }]}><LineIcon name="bell" size={18} color="#D6335A" /></View>
                       <View style={{ flex: 1, minWidth: 0 }}>
                         <Text style={[styles.coreLabel, rtl]}>{isHe ? 'תזכורת יציאה' : 'Leave reminder'}</Text>
                         <Text style={[styles.coreValue, rtl]} numberOfLines={1}>{isHe ? `בשעת היציאה · ${leave}` : `At leave time · ${leave}`}</Text>
@@ -1175,8 +1177,8 @@ const styles = StyleSheet.create({
   editSaveText: { fontFamily: FONTS.bodyHeavy, fontSize: 15, color: BRAND.onGold },
   rtlText: { textAlign: 'right', writingDirection: 'rtl' },
   core: { gap: 8, marginBottom: 12 },
-  coreCard: { padding: 10, borderRadius: 16, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: BRAND.line },
-  coreMissing: { borderStyle: 'dashed', backgroundColor: 'rgba(255,255,255,0.6)' },
+  coreCard: { padding: 10, borderRadius: 16, backgroundColor: surf('#FFFFFF'), borderWidth: 1, borderColor: BRAND.line },
+  coreMissing: { borderStyle: 'dashed', backgroundColor: surf('rgba(255,255,255,0.6)') },
   coreRow: { alignItems: 'center', gap: 10, minHeight: 44 },
   coreIcon: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
   coreLabel: { fontFamily: FONTS.bodyBold, fontSize: 11.5, color: BRAND.inkSoft },
@@ -1185,7 +1187,7 @@ const styles = StyleSheet.create({
   stepBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(20,27,46,0.07)', alignItems: 'center', justifyContent: 'center' },
   stepText: { fontFamily: FONTS.bodyHeavy, fontSize: 13, color: BRAND.warmInk },
   dateBtn: { minWidth: 88 },
-  timeBtn: { minWidth: 72, minHeight: 44, paddingHorizontal: 10, borderRadius: 14, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: BRAND.line, alignItems: 'center', justifyContent: 'center' },
+  timeBtn: { minWidth: 72, minHeight: 44, paddingHorizontal: 10, borderRadius: 14, backgroundColor: surf('#FFFFFF'), borderWidth: 1, borderColor: BRAND.line, alignItems: 'center', justifyContent: 'center' },
   timeText: { fontFamily: FONTS.bodyHeavy, fontSize: 18, color: BRAND.warmInk, fontVariant: ['tabular-nums'] },
   stepArrow: { fontSize: 16, color: BRAND.inkSoft },
   thread: { width: 2, height: 10, backgroundColor: 'rgba(90,79,224,0.35)' },
@@ -1193,11 +1195,11 @@ const styles = StyleSheet.create({
   modeBtn: { width: 48, height: 42, borderRadius: 14, backgroundColor: 'rgba(20,27,46,0.06)', alignItems: 'center', justifyContent: 'center' },
   modeBtnOn: { backgroundColor: '#5A4FE0' },
   coreCall: { width: 44, height: 44, borderRadius: 22, backgroundColor: BRAND.goldSoft, alignItems: 'center', justifyContent: 'center' },
-  coreNote: { fontFamily: FONTS.bodySemi, fontSize: 12, color: '#3B3570' },
+  coreNote: { fontFamily: FONTS.bodySemi, fontSize: 12, color: nink('#3B3570') },
   moreCap: { fontFamily: FONTS.bodyHeavy, fontSize: 12, color: BRAND.goldInk, marginTop: 6 },
   overlay: { flex: 1, backgroundColor: 'rgba(20, 27, 46, 0.45)', justifyContent: 'flex-end' },
   sheet: {
-    backgroundColor: '#F7F5FF',
+    backgroundColor: surf('#F7F5FF'),
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     maxHeight: height * 0.85,
@@ -1224,7 +1226,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: surf('#FFFFFF'),
   },
   // v3: each detail is its own soft white card with the icon in a pastel circle.
   detailsSection: { marginBottom: 16, gap: 6 },
@@ -1235,11 +1237,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     minHeight: 52,
     borderRadius: 16,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: surf('#FFFFFF'),
   },
   detailIcon: {
     fontSize: 16, marginRight: 10, width: 34, height: 34, borderRadius: 17, overflow: 'hidden',
-    textAlign: 'center', textAlignVertical: 'center', lineHeight: 34, backgroundColor: '#EEF0FF',
+    textAlign: 'center', textAlignVertical: 'center', lineHeight: 34, backgroundColor: surf('#EEF0FF'),
   },
   detailLabel: { fontSize: 14, fontFamily: FONTS.bodySemi, color: BRAND.inkSoft, flex: 1 },
   detailValue: { fontSize: 14, fontFamily: FONTS.bodySemi, color: BRAND.warmInk, maxWidth: 180 },

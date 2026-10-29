@@ -3,7 +3,51 @@
  * BRAND holds the canonical design tokens; COLORS keeps legacy keys (mapped to
  * the new palette) so existing screens keep working while we migrate.
  */
-export const BRAND = {
+import { FALLBACK_PLACE, skyFor, sunTimes } from '../utils/skyGradient';
+
+/**
+ * Day or night for THIS run of the app (Koral, 28.10: "all the cards and all
+ * the screens need to change into night mode, it cannot be half dark half
+ * bright"). Every StyleSheet in the app reads BRAND once, when it is created,
+ * so the palette is chosen here, at load, from the real sky over Israel
+ * (Tel Aviv's sunset — the app's place; a home elsewhere shifts it by minutes).
+ * ThemeWatcher (components/ui/SkyBackdrop) reloads the bundle when the sky
+ * crosses dusk or dawn, so every screen switches together. Node (tests) always
+ * gets the day palette, which the contrast tests were written against.
+ */
+export function nightNow(at: Date = new Date()): boolean {
+  const m = at.getHours() * 60 + at.getMinutes();
+  return skyFor(m, sunTimes(at, FALLBACK_PLACE.lat, FALLBACK_PLACE.lng)).dark;
+}
+// In the app (Hermes / RN), never in node tests. Two signals, so a release build that
+// drops one cannot leave the palette stuck on day (and reload on every return).
+const IN_APP = (typeof navigator !== 'undefined' && (navigator as any).product === 'ReactNative')
+  || typeof (globalThis as any).HermesInternal !== 'undefined';
+export const THEME_NIGHT: boolean = IN_APP && nightNow();
+
+/** Option A (her pick, 28.10): WhatsApp's dark — #0B141A ground, #111B21 surfaces. */
+const NIGHT_BRAND = {
+  honey: '#3A3220',
+  cream: '#0B141A',
+  creamCard: '#111B21',
+  line: '#1F2C34',
+  timeChipBg: '#1A252C',
+  warmInk: '#E9EDEF',
+  inkSoft: '#AEBAC1',
+  inkFaint: '#8696A0',
+  timeChipText: '#FFD166',
+  success: '#3DD68C',
+  danger: '#F2667F',
+  warnInk: '#FFB454',
+  goldInk: '#FFD166',
+  goldSoft: '#2A2618',
+  lateInk: '#FF8FA3',
+  /** A white CARD by day (text on violet / red keeps BRAND.white). */
+  surface: '#111B21',
+} as const;
+
+const DAY_BRAND = {
+
   // ── Fills. The identity lives here and is UNCHANGED: the gold, honey and
   // cream are exactly as they were. Yellow is a high-luminance hue, so it can
   // never be readable *as text* on a light ground — it earns its place as a
@@ -53,7 +97,23 @@ export const BRAND = {
   // used by the late pill, the clash title and the 'N min late' tail so the
   // word 'late' never has to be read at 4.6:1 when it can be 7:1.
   lateInk: '#9C3F57',
+  surface: '#FFFFFF',
 } as const;
+
+/** A white card by day stays exactly as drawn; at night it is the night surface. */
+export const surf = (day: string): string => (THEME_NIGHT ? NIGHT_BRAND.surface : day);
+
+function mixToward(hex: string, to: string, t: number): string {
+  const a = parseInt(hex.slice(1), 16), b = parseInt(to.slice(1), 16);
+  const ch = (sh: number) => Math.round(((a >> sh) & 255) * (1 - t) + ((b >> sh) & 255) * t);
+  return `#${[16, 8, 0].map((sh) => ch(sh).toString(16).padStart(2, '0')).join('')}`;
+}
+/** A dark hand-picked text colour (purple, brown, green…) keeps its hue at night, lifted to read on dark. */
+export const nink = (day: string): string => (THEME_NIGHT && /^#[0-9a-fA-F]{6}$/.test(day) ? mixToward(day, '#FFFFFF', 0.62) : day);
+/** A light hand-picked border keeps its day look; at night it is the night hairline. */
+export const nline = (day: string): string => (THEME_NIGHT ? '#26343D' : day);
+
+export const BRAND: { [K in keyof typeof DAY_BRAND]: string } = THEME_NIGHT ? { ...DAY_BRAND, ...NIGHT_BRAND } : DAY_BRAND;
 
 /**
  * CLAUDE — DEPRECATED alias, kept only so a stray import cannot resurrect the
@@ -93,13 +153,17 @@ export const tintBorder = (hex: string) => `${hex}55`;
  * hand-picking a color per category. Alternating rotation gives the
  * hand-placed sticky-note feel.
  */
-export const NOTE_PALETTE = [
+const NOTE_PALETTE_DAY = [
   { tint: '#FDEFD9', border: '#F1E0B8', tape: '#F6CF67' },
   { tint: '#FCEADC', border: '#F3D3B8', tape: '#F6B98C' },
   { tint: '#FEF3DC', border: '#F3E1B4', tape: '#FBE6A0' },
   { tint: '#FBEFE3', border: '#F0DFC7', tape: '#F1C24E' },
   { tint: '#FDF1E6', border: '#F2DFC3', tape: '#EAB23F' },
 ] as const;
+// At night the sticky notes are the night surface with a coloured tape — a
+// pastel note with light ink was unreadable (28.10, Tasks).
+const NOTE_PALETTE_NIGHT = NOTE_PALETTE_DAY.map((n) => ({ tint: '#111B21', border: '#1F2C34', tape: n.tape }));
+export const NOTE_PALETTE = THEME_NIGHT ? NOTE_PALETTE_NIGHT : NOTE_PALETTE_DAY;
 
 export function getNoteStyle(index: number) {
   const p = NOTE_PALETTE[index % NOTE_PALETTE.length];

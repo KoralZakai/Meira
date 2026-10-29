@@ -26,6 +26,8 @@ import { BRAND, FONTS } from '../constants/theme';
 import VoiceSheet from './VoiceSheet';
 import { useAppLanguage } from '../hooks/useAppLanguage';
 import LineIcon, { LineIconName } from './ui/LineIcon';
+import { useNight } from './ui/SkyBackdrop';
+import { N, NIGHT_COLORS } from '../constants/nightTone';
 
 interface TabBarProps {
   state: any;
@@ -55,6 +57,7 @@ const BAR_HEIGHT = 60;
 export default function CustomTabBar({ state, navigation }: TabBarProps) {
   const insets = useSafeAreaInsets();
   const { he } = useAppLanguage();
+  const night = useNight();
   const [voiceOpen, setVoiceOpen] = useState(false);
 
   const root = () => navigation.getParent?.() ?? navigation;
@@ -71,7 +74,7 @@ export default function CustomTabBar({ state, navigation }: TabBarProps) {
   };
 
   return (
-    <View style={[styles.container, { paddingBottom: Math.max(insets.bottom, 28) }]}>
+    <View style={[styles.container, night && N.bar, { paddingBottom: Math.max(insets.bottom, 28) }]}>
       {voiceOpen && (
         <VoiceSheet onClose={closeVoice} onTypeInstead={(text) => openChat(text)}
           onAnswer={(turn) => { closeVoice(); root().navigate('CoachChat', { voiceTurn: turn }); }} />
@@ -90,7 +93,7 @@ export default function CustomTabBar({ state, navigation }: TabBarProps) {
                 accessibilityLabel={he ? slot.he : slot.en}
               >
                 <Text style={styles.icon}>{slot.icon}</Text>
-                <Text style={[styles.label, styles.inactive]}>{he ? slot.he : slot.en}</Text>
+                <Text style={[styles.label, styles.inactive, night && N.inkSoft]}>{he ? slot.he : slot.en}</Text>
               </Pressable>
             );
           }
@@ -103,8 +106,8 @@ export default function CustomTabBar({ state, navigation }: TabBarProps) {
                 accessibilityRole="button"
                 accessibilityLabel={he ? slot.he : slot.en}
               >
-                <Text style={[styles.icon, styles.menuIcon, styles.inactiveIcon]}>{slot.icon}</Text>
-                <Text style={[styles.label, styles.inactive]}>{he ? slot.he : slot.en}</Text>
+                <Text style={[styles.icon, styles.menuIcon, styles.inactiveIcon, night && N.ink]}>{slot.icon}</Text>
+                <Text style={[styles.label, styles.inactive, night && N.inkSoft]}>{he ? slot.he : slot.en}</Text>
               </Pressable>
             );
           }
@@ -125,12 +128,12 @@ export default function CustomTabBar({ state, navigation }: TabBarProps) {
               accessibilityState={{ selected: focused }}
               accessibilityLabel={he ? slot.he : slot.en}
             >
-              {focused ? <View style={styles.selectedBar} /> : null}
+              {focused ? <View style={[styles.selectedBar, night && { backgroundColor: NIGHT_COLORS.goldInk }]} /> : null}
               {/* v3 line icon; the selected one sits in a gold-tinted pill. */}
-              <View style={[styles.iconPill, focused && styles.iconPillOn]}>
-                <LineIcon name={slot.icon} size={21} color={focused ? BRAND.goldInk : BRAND.inkSoft} strokeWidth={focused ? 2.2 : 1.9} />
+              <View style={[styles.iconPill, focused && styles.iconPillOn, focused && night && styles.iconPillNight]}>
+                <LineIcon name={slot.icon} size={21} color={focused ? (night ? '#141B2E' : BRAND.goldInk) : (night ? NIGHT_COLORS.inkSoft : BRAND.inkSoft)} strokeWidth={focused ? 2.2 : 1.9} />
               </View>
-              <Text style={[styles.label, !focused && styles.inactive]}>{he ? slot.he : slot.en}</Text>
+              <Text style={[styles.label, !focused && styles.inactive, night && (focused ? N.ink : N.inkSoft)]}>{he ? slot.he : slot.en}</Text>
             </Pressable>
           );
         })}
@@ -162,5 +165,7 @@ const styles = StyleSheet.create({
   inactiveIcon: { opacity: 0.7 },
   iconPill: { width: 48, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   iconPillOn: { backgroundColor: BRAND.goldSoft },
+  // v4 TabBar dark: the selected tab is a solid gold pill with dark ink.
+  iconPillNight: { backgroundColor: NIGHT_COLORS.goldInk },
   selectedBar: { position: 'absolute', top: 0, width: 24, height: 3, borderBottomLeftRadius: 3, borderBottomRightRadius: 3, backgroundColor: BRAND.goldInk },
 });

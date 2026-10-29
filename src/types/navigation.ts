@@ -25,7 +25,8 @@ export type RootStackParamList = {
   Settings: undefined;
   SettingsMenu: undefined;
   Agents: undefined;
-  CoachChat: { initialText?: string } | undefined;
+  /** `shared`: text shared to Meira from another app (modules/share-in), read on the phone. */
+  CoachChat: { initialText?: string; shared?: { id: string; text: string } } | undefined;
   FocusNow: { task: Task };
   DayReview: undefined;
   PersonalityQuiz: undefined;

@@ -16,7 +16,7 @@
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity } from 'react-native';
-import { BRAND, FONTS } from '../constants/theme';
+import { BRAND, FONTS, surf } from '../constants/theme';
 import { AppLanguage } from '../types/index';
 import { lastSyncAt, onCalendarSync, syncCalendarNow } from '../services/CalendarAutoSync';
 
@@ -111,7 +111,7 @@ const styles = StyleSheet.create({
     minWidth: 76, height: 36, borderRadius: 18, paddingHorizontal: 10,
     backgroundColor: BRAND.goldSoft, alignItems: 'center', justifyContent: 'center',
   },
-  pillError: { backgroundColor: '#FBE3E8', borderWidth: 1, borderColor: BRAND.danger },
+  pillError: { backgroundColor: surf('#FBE3E8'), borderWidth: 1, borderColor: BRAND.danger },
   text: { fontFamily: FONTS.bodyBold, fontSize: 12.5, color: BRAND.goldInk },
   textError: { color: BRAND.danger },
 });

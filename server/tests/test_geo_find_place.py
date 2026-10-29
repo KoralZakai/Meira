@@ -46,6 +46,10 @@ def _patched_client(payload):
 
 
 class FindPlaceTests(unittest.TestCase):
+    def setUp(self):
+        # find_place caches (misses too) — each test asks Google afresh.
+        geo._place_cache.clear()
+
     OK_PAYLOAD = {
         "status": "OK",
         "results": [{

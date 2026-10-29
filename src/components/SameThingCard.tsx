@@ -20,7 +20,7 @@
  */
 import React, { useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { BRAND, FONTS, RADIUS, SHADOWS } from '../constants/theme';
+import { BRAND, FONTS, RADIUS, SHADOWS, surf, nink } from '../constants/theme';
 import { getCategoryMeta } from '../constants/categories';
 import { AppLanguage, Task } from '../types/index';
 import { SameThingGroup } from '../utils/likelySameTask';
@@ -126,7 +126,7 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     borderWidth: 1, borderColor: BRAND.line, borderRadius: RADIUS.chip,
-    padding: 8, marginTop: 6, backgroundColor: BRAND.white,
+    padding: 8, marginTop: 6, backgroundColor: surf(BRAND.white),
   },
   stripe: { width: 4, alignSelf: 'stretch', borderRadius: 2 },
   rowText: { fontFamily: FONTS.bodyBold, fontSize: 13, color: BRAND.warmInk },

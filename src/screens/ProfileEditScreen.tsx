@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BRAND, LEVELS, FONTS, RADIUS, SHADOWS } from '../constants/theme';
+import { BRAND, LEVELS, FONTS, RADIUS, SHADOWS, surf, nline } from '../constants/theme';
 import {
   getSettings, loadStats, saveSettings, saveSettingsChecked, getTasksForDate,
 } from '../services/TaskStorage';
@@ -1035,12 +1035,12 @@ export default function ProfileEditScreen({ navigation, route }: any) {
 const styles = StyleSheet.create({
   topBar: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingBottom: 6 },
   rowRtl: { flexDirection: 'row-reverse' },
-  backBtn: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.75)' },
+  backBtn: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: surf('rgba(255,255,255,0.75)') },
   backText: { fontSize: 28, fontFamily: FONTS.bodyHeavy, color: BRAND.goldInk },
   topTitle: { fontSize: 24, fontFamily: FONTS.display, color: BRAND.warmInk },
   rtl: { textAlign: 'right', writingDirection: 'rtl' },
   hint: { fontSize: 12, fontFamily: FONTS.body, color: BRAND.inkSoft, marginTop: 2 },
-  tellBox: { padding: 16, gap: 6, borderRadius: 22, borderWidth: 1.5, borderColor: BRAND.sunGold, backgroundColor: 'rgba(255,246,216,0.95)' },
+  tellBox: { padding: 16, gap: 6, borderRadius: 22, borderWidth: 1.5, borderColor: BRAND.sunGold, backgroundColor: surf('rgba(255,246,216,0.95)') },
   tellTitle: { fontSize: 18, fontFamily: FONTS.display, color: BRAND.warmInk },
   tellText: { fontSize: 13, fontFamily: FONTS.body, color: BRAND.inkSoft },
   tellBtns: { flexDirection: 'row', gap: 10, marginTop: 8 },
@@ -1068,11 +1068,11 @@ const styles = StyleSheet.create({
   // v3: labels sit on the sky in a soft pill; cards are white glass (canvas v4).
   sectionLabel: {
     alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 999, overflow: 'hidden',
-    backgroundColor: 'rgba(255,255,255,0.7)', fontSize: 11.5, fontFamily: FONTS.bodyHeavy, color: BRAND.goldInk, letterSpacing: 0.3,
+    backgroundColor: surf('rgba(255,255,255,0.7)'), fontSize: 11.5, fontFamily: FONTS.bodyHeavy, color: BRAND.goldInk, letterSpacing: 0.3,
   },
   sectionLabelHe: { alignSelf: 'flex-end', writingDirection: 'rtl' },
   card: {
-    backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: 22, borderWidth: 1, borderColor: 'rgba(255,255,255,0.9)',
+    backgroundColor: surf('rgba(255,255,255,0.92)'), borderRadius: 22, borderWidth: 1, borderColor: nline('rgba(255,255,255,0.9)'),
     ...SHADOWS.card, overflow: 'hidden',
   },
 

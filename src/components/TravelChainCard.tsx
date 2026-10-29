@@ -11,7 +11,7 @@ import { Task, TransportType, TransitPlan, UserProfile, AppLanguage } from '../t
 import { rankDepartureOptions } from '../utils/departureOptions';
 import TransitOptionsList from './TransitOptionsList';
 import TransitAlertLine from './TransitAlertLine';
-import { BRAND, FONTS, RADIUS, SHADOWS } from '../constants/theme';
+import { BRAND, FONTS, RADIUS, SHADOWS, nink } from '../constants/theme';
 import { needsLastMileHelp } from '../services/MultiModalPlanner';
 import { getCategoryMeta } from '../constants/categories';
 import {

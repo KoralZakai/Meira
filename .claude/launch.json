@@ -3,12 +3,44 @@
   "configurations": [
     {
       "name": "start",
-      "runtimeExecutable": "npm",
+      "url": "http://localhost:8081",
+      "port": 8081
+    },
+    {
+      "name": "web",
+      "runtimeExecutable": "npx",
       "runtimeArgs": [
-        "run",
-        "start"
+        "expo",
+        "start",
+        "--web",
+        "--port",
+        "8090"
       ],
-      "port": 3000
+      "port": 8090
+    },
+    {
+      "name": "site",
+      "runtimeExecutable": "/opt/homebrew/bin/python3.12",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8091",
+        "--directory",
+        "site"
+      ],
+      "port": 8091
+    },
+    {
+      "name": "site-oct20",
+      "runtimeExecutable": "/opt/homebrew/bin/python3.12",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8092",
+        "--directory",
+        "/Users/user/dev/meira-site-oct20/site"
+      ],
+      "port": 8092
     }
   ]
 }

@@ -5,7 +5,7 @@
 import React from 'react';
 import { Alert, Pressable, SafeAreaView, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { BRAND, FONTS, RADIUS, SHADOWS } from '../constants/theme';
+import { BRAND, FONTS, RADIUS, SHADOWS, surf } from '../constants/theme';
 import LumiWordmark from '../components/LumiWordmark';
 import { useLumiContext } from '../hooks/useLumiContext';
 import { rescheduleDailyNotifications } from '../services/NotificationService';
@@ -265,7 +265,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.pill,
     paddingHorizontal: 10,
     paddingVertical: 7,
-    backgroundColor: BRAND.white,
+    backgroundColor: surf(BRAND.white),
   },
   stepText: {
     color: BRAND.inkSoft,
@@ -281,7 +281,7 @@ const styles = StyleSheet.create({
     borderColor: BRAND.line,
     paddingVertical: 8,
     paddingHorizontal: 14,
-    backgroundColor: BRAND.white,
+    backgroundColor: surf(BRAND.white),
   },
   languageActive: {
     backgroundColor: BRAND.sunGold,

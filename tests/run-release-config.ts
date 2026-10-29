@@ -97,6 +97,7 @@ function main() {
   check('...and the focus-guard module declares it',
     read('modules/focus-guard/android/src/main/AndroidManifest.xml').includes('android.permission.SYSTEM_ALERT_WINDOW'));
 
+
   // USE_EXACT_ALARM is granted only to apps whose core function is an alarm clock or a calendar,
   // and Play reviews it as such — a near-certain rejection for Meira. Nothing here needs it: the
   // wake alarm is set in the CLOCK app (ACTION_SET_ALARM, which rings exactly on its own), and
@@ -105,6 +106,19 @@ function main() {
   check('USE_EXACT_ALARM is NOT requested (Play: alarm-clock apps only)',
     !perms.some((p) => bare(p) === 'USE_EXACT_ALARM'));
   check('...and is blocked', blocked.some((b) => bare(b) === 'USE_EXACT_ALARM'));
+
+  // SMS (27.10): Clalit confirmations reach Meira through "Share → Meira", one
+  // message she picks. READ_SMS / RECEIVE_SMS are Play-restricted to default SMS
+  // apps and would expose every bank code; nothing may pull them in.
+  for (const p of ['READ_SMS', 'RECEIVE_SMS', 'READ_PHONE_NUMBERS']) {
+    check(`${p} is blocked`, blocked.some((b) => bare(b) === p));
+  }
+  const filters: any[] = app.android?.intentFilters ?? [];
+  check('"Share → Meira" accepts text (ACTION_SEND text/plain)',
+    filters.some((f) => f.action === 'SEND' && (f.data ?? []).some((d: any) => d.mimeType === 'text/plain')));
+  check('...and the share-in module declares no permission',
+    !read('modules/share-in/android/src/main/AndroidManifest.xml').includes('uses-permission'));
+
 
   // The ones the app genuinely needs must survive this tidying.
   for (const p of ['RECORD_AUDIO', 'ACCESS_FINE_LOCATION', 'READ_CONTACTS',

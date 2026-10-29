@@ -16,7 +16,7 @@
  */
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { BRAND, FONTS, MIN_TOUCH } from '../constants/theme';
+import { BRAND, FONTS, MIN_TOUCH, surf } from '../constants/theme';
 import { closeChange, markSeen, onChangesChanged, openChanges, setChangeUi } from '../services/ChangeRecordStore';
 import { acceptFill, acceptStudy, acceptWake, fillOfferFor, FillOffer, removeCancelled, suggestionFor } from '../services/ChangeSuggestService';
 import { SuggestResponse, studyChipLabel } from '../utils/changeSuggestion';
@@ -273,6 +273,6 @@ const styles = StyleSheet.create({
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 },
   chip: { minHeight: MIN_TOUCH, paddingHorizontal: 14, borderRadius: 999, backgroundColor: BRAND.sunGold, justifyContent: 'center' },
   chipText: { fontFamily: FONTS.bodyHeavy, fontSize: 13, color: BRAND.onGold },
-  chipGhost: { minHeight: MIN_TOUCH, paddingHorizontal: 14, borderRadius: 999, borderWidth: 1, borderColor: BRAND.line, backgroundColor: BRAND.white, justifyContent: 'center', alignSelf: 'flex-start' },
+  chipGhost: { minHeight: MIN_TOUCH, paddingHorizontal: 14, borderRadius: 999, borderWidth: 1, borderColor: BRAND.line, backgroundColor: surf(BRAND.white), justifyContent: 'center', alignSelf: 'flex-start' },
   chipGhostText: { fontFamily: FONTS.bodySemi, fontSize: 13, color: BRAND.inkSoft },
 });

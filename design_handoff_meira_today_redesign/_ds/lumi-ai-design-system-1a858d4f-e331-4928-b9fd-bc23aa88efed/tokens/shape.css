@@ -1,0 +1,26 @@
+:root {
+  /* Radii (RADIUS in theme.ts) — nothing in Lumi has a hard corner. */
+  --radius-card: 20px;
+  --radius-pill: 20px;
+  --radius-button: 20px;
+  --radius-screen: 44px;   /* phone frame */
+  --radius-icon: 34px;     /* app icon superellipse */
+  --radius-chip: 12px;
+  --radius-row: 14px;      /* sticky-note task rows, action buttons */
+  --radius-note: 16px;     /* travel-chain card */
+  --radius-full: 999px;
+  --radius-bubble: 20px;
+  --radius-bubble-tail: 6px;
+
+  /* Soft, gold-tinted elevation (SHADOWS in theme.ts). Never grey. */
+  --shadow-card: 0 8px 18px rgba(214, 165, 55, 0.10);
+  --shadow-row: 0 1px 3px rgba(214, 165, 55, 0.06);
+  --shadow-button: 0 12px 24px rgba(180, 120, 20, 0.22);
+  --shadow-orb: 0 6px 22px rgba(234, 178, 63, 0.45);
+  --shadow-note: 0 10px 22px rgba(214, 165, 55, 0.16);
+  --shadow-tape: 0 2px 5px rgba(0, 0, 0, 0.08);
+
+  --border-width-hairline: 1px; /* @kind spacing */
+  --border-width-accent: 1.5px; /* @kind spacing */  /* the "next" card */
+  --border-width-priority: 4px; /* @kind spacing */  /* left priority bar / category rail */
+}

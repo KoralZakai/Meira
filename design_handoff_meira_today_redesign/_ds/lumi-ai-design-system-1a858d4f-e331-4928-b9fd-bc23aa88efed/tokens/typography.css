@@ -1,0 +1,38 @@
+:root {
+  /* Families. Display = Fredoka (rounded, friendly); UI/body = Nunito.
+     Fraunces is legacy: only the "Claude-styled" Schedule screen uses it. */
+  --font-display: "Fredoka", "Poppins", -apple-system, sans-serif;
+  --font-body: "Nunito", -apple-system, "Segoe UI", sans-serif;
+  --font-serif: "Fraunces", Georgia, serif;
+
+  /* Weights actually shipped by the app (FONTS in theme.ts) */
+  --weight-display: 700;        /* Fredoka_700Bold */
+  --weight-display-semi: 600;   /* Fredoka_600SemiBold */
+  --weight-body: 400;           /* Nunito_400Regular */
+  --weight-body-semi: 600;      /* Nunito_600SemiBold */
+  --weight-body-bold: 700;      /* Nunito_700Bold */
+  --weight-body-heavy: 800;     /* Nunito_800ExtraBold */
+
+  /* Sizes, named by their role in the app rather than a t-shirt scale. */
+  --text-screen-title: 30px;    /* Trips header */
+  --text-display-lg: 24px;      /* Tasks header, leave-time */
+  --text-display-md: 22px;      /* greeting name */
+  --text-display-sm: 20px;      /* destination, sheet titles */
+  --text-display-xs: 17px;      /* sticky-note title, chat header */
+  --text-body-lg: 16px;
+  --text-body: 15px;            /* task titles */
+  --text-body-sm: 14px;         /* rows, chat bubbles */
+  --text-meta: 13px;            /* chips, secondary lines */
+  --text-meta-sm: 12px;         /* time chips, counts */
+  --text-caption: 11px;         /* eyebrows, labels */
+  --text-caption-sm: 10px;      /* tab labels, stamps */
+
+  --leading-tight: 1.1; /* @kind other */
+  --leading-snug: 1.25; /* @kind other */
+  --leading-body: 1.4; /* @kind other */
+  --leading-relaxed: 1.5; /* @kind other */
+
+  --tracking-eyebrow: 1.2px; /* @kind other */    /* "NEXT UP", "LEAVE" */
+  --tracking-label: 0.5px; /* @kind other */
+  --tracking-wordmark: 0.5px; /* @kind other */
+}

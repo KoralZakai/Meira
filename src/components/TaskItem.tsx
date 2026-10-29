@@ -2,7 +2,7 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { RectButton, Swipeable } from 'react-native-gesture-handler';
-import { BRAND, COLORS, NOTE_PALETTE, FONTS, RADIUS } from '../constants/theme';
+import { BRAND, COLORS, NOTE_PALETTE, FONTS, RADIUS, surf } from '../constants/theme';
 import { Task } from '../types/index';
 
 // Sticky-note pastels so category badges match the Tasks board.
@@ -146,7 +146,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: BRAND.line,
     marginRight: 10,
-    backgroundColor: BRAND.white,
+    backgroundColor: surf(BRAND.white),
   },
   checked: {
     backgroundColor: BRAND.sunGold,

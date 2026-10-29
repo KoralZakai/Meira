@@ -10,7 +10,7 @@
  */
 import React from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { BRAND, FONTS, SHADOWS } from '../../constants/theme';
+import { BRAND, FONTS, SHADOWS, nline } from '../../constants/theme';
 import { TravelProblem } from '../../utils/dayProblems';
 import { MODE_EMOJI } from './DayCard';
 
@@ -94,7 +94,7 @@ const styles = StyleSheet.create({
   // The label gives way (flexShrink 1, two lines); the time beside it never does (flexShrink 0).
   goldText: { flexShrink: 1, fontFamily: FONTS.bodyHeavy, fontSize: 14, color: BRAND.onGold },
   goldSmall: { flexShrink: 0, fontFamily: FONTS.bodyHeavy, fontSize: 13, color: BRAND.onGold },
-  soft: { backgroundColor: BRAND.creamCard, borderWidth: 1.5, borderColor: '#E6D9BC' },
+  soft: { backgroundColor: BRAND.creamCard, borderWidth: 1.5, borderColor: nline('#E6D9BC') },
   dashed: { borderStyle: 'dashed' },
   softText: { flexShrink: 1, fontFamily: FONTS.bodyHeavy, fontSize: 14, color: BRAND.warmInk },
   softSmall: { flexShrink: 0, fontFamily: FONTS.bodyHeavy, fontSize: 13, color: BRAND.inkSoft },

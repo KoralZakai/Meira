@@ -1169,7 +1169,7 @@ export async function ensureTravelChain(
       // her gym and a street with the same name in another town — and a wrong
       // one is not an error, it is a confident route with an alarm on top.
       // A no-op for anything that already names a place. See addressCompletion.
-      const dest = completeDestination(addrOf(t)!, t.text, homeOrigin);
+      let dest = completeDestination(addrOf(t)!, t.text, homeOrigin);
 
       // Already standing there. The journey to this task is history, so do not
       // compute or refresh a route to a building she is inside, and leave no
@@ -1235,7 +1235,27 @@ export async function ensureTravelChain(
       // parallel Directions calls per sweep for nothing (18.10, the slowness in the
       // logs). The reason stays on the card; she fixing the place, or the retry
       // button, both reach here as `forced` or as a fresh location object.
-      const lastFailure = locOf(t)?.routeFailure;
+      let lastFailure = locOf(t)?.routeFailure;
+      // …unless the "place" was a NAME (29.10: "Nebuis" — the word from her
+      // sentence). Look it up once as a business; an office found is a new
+      // place, so the route is worked out now instead of backing off.
+      const placedLoc = locOf(t) as any;
+      if (!existing && lastFailure?.kind === 'not_found' && !placedLoc?.placeSource && !/\d/.test(dest)) {
+        const found = await geocodeTaskLocation(dest).catch(() => null);
+        if (found?.business?.address) {
+          const fresh = {
+            ...placedLoc, lat: found.lat, lng: found.lng,
+            address: found.business.address, displayName: found.business.name || dest,
+            originalPlace: dest, placeSource: 'places_guess', confirmed: false,
+            routeFailure: undefined, noRouteForMode: undefined,
+          };
+          await updateTaskFields(t.id, { location: fresh } as any);
+          (t as any).location = fresh;
+          dest = found.business.address;
+          lastFailure = undefined;
+          changed = true;
+        }
+      }
       if (!existing && !forced && lastFailure?.kind === 'not_found'
         && Date.now() - (lastFailure.at ?? 0) < NOT_FOUND_BACKOFF_MS) {
         prevAddress = dest;
@@ -1554,10 +1574,16 @@ export async function ensureTravelChain(
         if (unplaced) {
           const coords = await geocodeTaskLocation(dest);
           if (coords) {
+            const { business, ...ll } = coords;
             await updateTaskFields(t.id, {
               location: {
                 ...(placed ?? { address: dest, confirmed: false }),
-                ...coords,
+                ...ll,
+                // The place was a NAME ("Nebuis"): keep the business's real name and
+                // street address, so the card, the route and the brief all see the office.
+                // A guess from the name — stays unconfirmed, and what she wrote is kept.
+                ...(business?.address ? { address: business.address, displayName: business.name || dest,
+                  originalPlace: dest, placeSource: 'places_guess', confirmed: false } : {}),
                 // "Meira could not place this" (askAboutUnplaced) is no longer true.
                 ...(placed?.routeFailure?.status === 'NO_PLACE' ? { routeFailure: undefined } : {}),
               },
