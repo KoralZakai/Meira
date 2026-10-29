@@ -23,6 +23,7 @@ import { LUMI_FILLER_WORDS } from '../constants/strings';
 import { extractTasks } from './LumiServer';
 import { parseTimeExpression, type TimeExpression } from '../utils/timeParser';
 import { extractHebrewPlace } from '../utils/hebrewPlace';
+import { inferFromText } from '../utils/categorize';
 
 const STARTER_TRIGGERS = [
   'i need to',
@@ -405,7 +406,14 @@ function fallbackParse(transcript: string): ParsedTask[] {
   // Hebrew was missing entirely, so every Hebrew task fell through to
   // 'general' — including "אימון", which is how a gym session lost its
   // category (and with it, its learned duration and its lead time).
-  if (/gym|workout|exercise|fitness|run|cycling/.test(lower) || /אימון|חדר כושר|כושר|ריצה|יוגה|שחייה|פילאטיס/.test(lower)) category = 'gym';
+  //
+  // 15.10: the shared table (utils/categorize) answers first. This block was
+  // its own copy of it, spelled "workout" without the optional space — so
+  // "work out" fell through to `work` and a workout was filed under 💼. What
+  // is left below is only the handful of words the table has no row for.
+  const inferred = inferFromText(transcript);
+  if (inferred.matched) category = inferred.category;
+  else if (/exercise|cycling/.test(lower)) category = 'gym';
   else if (/call|phone|text|message|ring/.test(lower) || /להתקשר|שיחה|טלפון/.test(lower)) category = 'call';
   else if (/meeting|meet|appointment|zoom/.test(lower)) category = 'meeting';
   else if (/work|office|project|deploy|coding/.test(lower)) category = 'work';
@@ -490,6 +498,9 @@ export async function parseSpeechToTasksWithExpansion(transcript: string): Promi
   return expandRecurringTasks(parsed);
 }
 
+/** Icons for the categories `inferTaskDetails`'s own list has no row for. */
+const CATEGORY_ICON_FALLBACK: Record<string, string> = { aspiration: '⭐', general: '📌' };
+
 /** Heuristic category/priority/duration guess for one task text (no LLM). */
 export function inferTaskDetails(text: string): {
   category: TaskCategory;
@@ -514,6 +525,21 @@ export function inferTaskDetails(text: string): {
     { kws: ['leisure', 'movie', 'סרט', 'relax'], cat: 'leisure', icon: '🎮', pri: 'nice_to_do', dur: 60 },
   ];
 
+  // The category is the shared table's call (utils/categorize.inferFromText —
+  // the server's own, ported and parity-tested), not this list's: its "workout"
+  // had no "work out", so a workout was a 💼. The list below still supplies
+  // what is NOT category: the icon, and the priority/length this form shows.
+  const shared = inferFromText(text);
+  if (shared.matched) {
+    const own = rules.find((r) => r.cat === shared.category);
+    return own
+      ? { category: own.cat, subgroup: own.cat, icon: own.icon, priority: own.pri, durationMinutes: own.dur }
+      : {
+        category: shared.category, subgroup: shared.category,
+        icon: CATEGORY_ICON_FALLBACK[shared.category] ?? '📌',
+        priority: shared.priority, durationMinutes: shared.durationMinutes,
+      };
+  }
   for (const r of rules) {
     if (r.kws.some(kw => t.includes(kw))) {
       return { category: r.cat, subgroup: r.cat, icon: r.icon, priority: r.pri, durationMinutes: r.dur };

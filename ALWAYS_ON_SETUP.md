@@ -57,7 +57,7 @@ push and won't fire notifications when closed).
 Code is done on both sides. Two setup steps + one in-app action:
 
 ### 1. Firebase / FCM credentials (required for Android push)
-- Create a Firebase project, add an Android app with package **`com.lumi.app`**.
+- Create a Firebase project, add an Android app with package **`meira.secretary`** (was `com.lumi.app` until 8.10, when Play refused it as taken).
 - Generate an **FCM v1 service-account key** (JSON) in Firebase → Project settings →
   Service accounts.
 - Upload it to Expo so Expo's push service can deliver to Android:

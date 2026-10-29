@@ -46,7 +46,7 @@ export default function SignInScreen({ onContinueOffline }: Props) {
         <View style={styles.avatar}>
           <Text style={styles.avatarEmoji}>💛</Text>
         </View>
-        <Text style={styles.title}>Lumi</Text>
+        <Text style={styles.title}>Meira</Text>
         <Text style={styles.subtitle}>Sign in to sync your day across devices</Text>
 
         <Pressable

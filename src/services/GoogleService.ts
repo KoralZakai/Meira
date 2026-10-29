@@ -17,8 +17,11 @@ import * as SecureStore from 'expo-secure-store';
 import * as WebBrowser from 'expo-web-browser';
 import { UserProfile, CalendarEvent, TransitPlan, TransportType } from '../types/index';
 import * as RoutePlanner from './RoutePlanner';
+import { GMAIL_ENABLED, googleScopes } from '../utils/gmailAccess';
 import { meetingUrlFromEvent } from '../utils/meetingLink';
-import { addressFromDescription } from '../utils/eventAddress';
+import { eventDetailsFromGoogle, type EventDetails } from '../utils/eventDetails';
+import { addressFromDescription, addressFromTitle } from '../utils/eventAddress';
+import { localClockOf } from '../utils/calendarTime';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -31,38 +34,119 @@ export interface CalendarFetchResult {
   error?: string;
 }
 
-const GOOGLE_SCOPES = [
-  'https://www.googleapis.com/auth/gmail.readonly',
-  'https://www.googleapis.com/auth/calendar.readonly',
-  // Write scope: accepting an emailed appointment puts it on the real calendar
-  // (createCalendarEvent). Tokens granted before this scope existed keep working
-  // for reads and simply fail the insert — the local task is created either way.
-  'https://www.googleapis.com/auth/calendar.events',
-];
+// Calendar only since 19.10: gmail.readonly is a restricted scope (paid CASA review,
+// 100-user cap). utils/gmailAccess owns the switch; every Gmail reader below checks it,
+// so a token granted by an older build that still carries the scope reads no mail either.
+const GOOGLE_SCOPES = googleScopes();
 
 // OAuth client id: the Android-specific id when present (EAS env), else the generic one.
 const OAUTH_CLIENT_ID =
   process.env.EXPO_PUBLIC_GOOGLE_OAUTH_CLIENT_ID_ANDROID ||
   process.env.EXPO_PUBLIC_GOOGLE_OAUTH_CLIENT_ID || '';
 
-/** SecureStore key holding {accessToken, refreshToken?, expiresAt} as JSON. */
-const TOKEN_STORE_KEY = 'google_tokens';
+// ── Her Google accounts (6.10: "several accounts of the same kind — private
+// and work Gmail") ────────────────────────────────────────────────────────────
+// One token per account, each under its own SecureStore key, listed in an
+// index. A second sign-in used to OVERWRITE the first account silently; now
+// the same address replaces its own token and a new address is added. Each
+// account says whether Meira reads its calendar and its mail.
+//
+// Migration: older builds kept ONE token under `google_tokens`; it becomes the
+// first account in place (its key does not move), and its address is looked
+// up once from Calendar's own answer.
+
+/** {accessToken, refreshToken?, expiresAt, email?} as JSON, per account. */
+const LEGACY_TOKEN_KEY = 'google_tokens';
+const ACCOUNTS_KEY = 'google_accounts';
 
 interface StoredTokens {
   accessToken: string;
   refreshToken?: string;
   expiresAt: number; // epoch ms
+  /** The account's address ("koral@gmail.com"). */
+  email?: string;
 }
 
-async function loadStoredTokens(): Promise<StoredTokens | null> {
+/** One Google account she connected directly. */
+export interface GoogleAccount {
+  /** "" until known (a token from an older build, before its first lookup). */
+  email: string;
+  /** SecureStore key of its tokens. */
+  key: string;
+  /** Read this account's calendar by API. */
+  calendar: boolean;
+  /** Read this account's Gmail for events. */
+  mail: boolean;
+  addedAt: number;
+}
+
+/** A failed account lookup is not retried for this long (it runs on every sync). */
+const ACCOUNT_LOOKUP_RETRY_MS = 10 * 60_000;
+let accountLookupFailedAt = 0;
+/** Why the last "add an account" did not finish, in words for the Calendars screen. */
+let lastSignInError: string | null = null;
+
+const sameEmail = (a?: string, b?: string) => Boolean(a && b && a.trim().toLowerCase() === b.trim().toLowerCase());
+/** SecureStore keys allow letters, digits, ".", "-" and "_" only. */
+const keyForEmail = (email: string) => `google_tokens.${email.trim().toLowerCase().replace(/[^a-z0-9._-]/g, '_')}`;
+
+async function readTokens(key: string): Promise<StoredTokens | null> {
   try {
-    const raw = await SecureStore.getItemAsync(TOKEN_STORE_KEY);
+    const raw = await SecureStore.getItemAsync(key);
     return raw ? (JSON.parse(raw) as StoredTokens) : null;
-  } catch { return null; }
+  } catch (e) {
+    console.warn('[Google] token unreadable', key, e);
+    return null;
+  }
 }
 
-async function saveStoredTokens(t: StoredTokens): Promise<void> {
-  await SecureStore.setItemAsync(TOKEN_STORE_KEY, JSON.stringify(t));
+async function writeTokens(key: string, t: StoredTokens): Promise<void> {
+  await SecureStore.setItemAsync(key, JSON.stringify(t));
+}
+
+async function saveAccounts(accounts: GoogleAccount[]): Promise<void> {
+  await SecureStore.setItemAsync(ACCOUNTS_KEY, JSON.stringify({ accounts }));
+}
+
+async function loadAccounts(): Promise<GoogleAccount[]> {
+  try {
+    const raw = await SecureStore.getItemAsync(ACCOUNTS_KEY);
+    if (raw) return (JSON.parse(raw).accounts ?? []) as GoogleAccount[];
+  } catch (e) {
+    console.warn('[Google] accounts list unreadable', e);
+  }
+  const legacy = await readTokens(LEGACY_TOKEN_KEY);
+  if (!legacy) return [];
+  const migrated: GoogleAccount = {
+    email: legacy.email || '', key: LEGACY_TOKEN_KEY, calendar: true, mail: true, addedAt: Date.now(),
+  };
+  await saveAccounts([migrated]).catch((e) => console.warn('[Google] accounts list not saved', e));
+  return [migrated];
+}
+
+/** The account for this address, or the first one when no address is given. */
+async function accountFor(email?: string): Promise<GoogleAccount | null> {
+  const accounts = await loadAccounts();
+  if (!email) return accounts[0] ?? null;
+  return accounts.find((a) => sameEmail(a.email, email)) ?? null;
+}
+
+/** calendars/primary → id IS the account's address; no new scope needed. */
+async function emailForAccessToken(accessToken: string): Promise<string | null> {
+  try {
+    const r = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary?fields=id', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!r.ok) {
+      console.warn('[Google] account lookup failed: HTTP', r.status);
+      return null;
+    }
+    const id = String((await r.json())?.id || '').trim();
+    return id.includes('@') ? id : null;
+  } catch (e) {
+    console.warn('[Google] account lookup failed:', String((e as Error)?.message || e).slice(0, 120));
+    return null;
+  }
 }
 
 /** Google OAuth + Calendar + Directions facade. Transit/car planners route FROM userProfile.homeAddress — pass a profile with the CONFIRMED origin swapped in when the trip doesn't start at home. */
@@ -89,6 +173,12 @@ function googleRedirectUri(): string {
   return `com.googleusercontent.apps.${match[1]}:/oauth2redirect`;
 }
 
+/** Which Google account last answered for an event id (in memory, per session). */
+const eventAnsweredBy = new Map<string, string>();
+/** Event details by event id, ten minutes: an edited description shows soon, a closed card reopens at once. */
+const EVENT_TTL_MS = 10 * 60 * 1000;
+const eventCache = new Map<string, { details: EventDetails; at: number }>();
+
 export const GoogleService = {
   async signInWithGoogle(): Promise<boolean> {
     try {
@@ -99,10 +189,20 @@ export const GoogleService = {
         scopes: GOOGLE_SCOPES,
         redirectUri,
         // offline access → Google returns a refresh_token on the code exchange.
-        extraParams: { access_type: 'offline', prompt: 'consent' },
+        // select_account: she picks WHICH Google account — private or work.
+        extraParams: { access_type: 'offline', prompt: 'select_account consent' },
       });
+      lastSignInError = null;
       const result = await request.promptAsync(discovery);
-      if (result.type !== 'success' || !result.params?.code) return false;
+      if (result.type !== 'success' || !result.params?.code) {
+        const err = (result as any)?.params?.error || (result as any)?.error?.code || result.type;
+        // A work account whose admin blocks unverified apps comes back as this;
+        // its calendar can still come through the phone (rule 9: a rung below).
+        lastSignInError = /admin_policy|access_denied|org_internal|disallowed/i.test(String(err))
+          ? 'admin_blocked' : String(err || 'cancelled');
+        console.warn('[Google] sign-in did not finish:', err);
+        return false;
+      }
       // PKCE authorization-code flow: the code MUST be exchanged for tokens
       // (result.authentication is null in this flow — the old code stored '').
       const tokens = await AuthSession.exchangeCodeAsync(
@@ -114,16 +214,78 @@ export const GoogleService = {
         },
         discovery,
       );
-      await saveStoredTokens({
+      const fresh: StoredTokens = {
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
         expiresAt: Date.now() + (tokens.expiresIn ?? 3600) * 1000,
-      });
+      };
+      const email = await emailForAccessToken(fresh.accessToken);
+      const accounts = await loadAccounts();
+      // The same address replaces its own token; a new address is a new account.
+      let account = email ? accounts.find((a) => sameEmail(a.email, email)) : undefined;
+      if (!account && !email && accounts.length === 1 && !accounts[0].email) account = accounts[0];
+      if (account) {
+        await writeTokens(account.key, { ...fresh, email: email || account.email || undefined });
+        if (email) account.email = email;
+      } else {
+        account = {
+          email: email || '', key: email ? keyForEmail(email) : `google_tokens.added_${Date.now()}`,
+          calendar: true, mail: true, addedAt: Date.now(),
+        };
+        await writeTokens(account.key, { ...fresh, email: email || undefined });
+        accounts.push(account);
+      }
+      await saveAccounts(accounts);
+      accountLookupFailedAt = 0;
       return true;
     } catch (e) {
-      console.log('[Google] Auth error:', e);
+      lastSignInError = String((e as Error)?.message || e).slice(0, 160);
+      console.warn('[Google] Auth error:', e);
       return false;
     }
+  },
+
+  /** Why the last "add an account" did not finish: 'admin_blocked', 'cancelled', or Google's words. */
+  lastSignInError(): string | null {
+    return lastSignInError;
+  },
+
+  /** Every Google account she connected, with what Meira reads from each. Unknown addresses are looked up. */
+  async listGoogleAccounts(): Promise<GoogleAccount[]> {
+    const accounts = await loadAccounts();
+    if (accounts.some((a) => !a.email)) {
+      for (const a of accounts.filter((x) => !x.email)) await this.identifyGoogleAccount(false, a.key);
+      return loadAccounts();
+    }
+    return accounts;
+  },
+
+  /** Read this account's calendar / mail, or not. */
+  async setGoogleAccountUse(email: string, use: { calendar?: boolean; mail?: boolean }): Promise<void> {
+    const accounts = await loadAccounts();
+    const a = accounts.find((x) => sameEmail(x.email, email));
+    if (!a) return;
+    if (use.calendar !== undefined) a.calendar = use.calendar;
+    if (use.mail !== undefined) a.mail = use.mail;
+    await saveAccounts(accounts);
+  },
+
+  /** Disconnect one account: its token is deleted from this phone. */
+  async disconnectGoogleAccount(email: string): Promise<boolean> {
+    const accounts = await loadAccounts();
+    const a = accounts.find((x) => sameEmail(x.email, email) || (!email && !x.email));
+    if (!a) return false;
+    await SecureStore.deleteItemAsync(a.key).catch((e) => console.warn('[Google] token not deleted', e));
+    await saveAccounts(accounts.filter((x) => x !== a));
+    // Guests, descriptions and dial-in PINs of that account must not outlive it.
+    eventCache.clear(); eventAnsweredBy.clear();
+    return true;
+  },
+
+  /** Addresses whose calendar Meira reads by API; `unknown` = a connected account not identified yet. */
+  async googleCalendarEmails(): Promise<{ emails: string[]; unknown: boolean }> {
+    const accounts = (await loadAccounts()).filter((a) => a.calendar);
+    return { emails: accounts.map((a) => a.email).filter(Boolean), unknown: accounts.some((a) => !a.email) };
   },
 
   /** True when a Google token is stored (i.e. the user connected their account). */
@@ -138,7 +300,7 @@ export const GoogleService = {
    * user-facing check is actually asking.
    */
   async isGoogleConnected(): Promise<boolean> {
-    if (await loadStoredTokens()) return true;
+    if ((await loadAccounts()).length) return true;
     // Legacy single-token storage from older builds.
     return Boolean(await SecureStore.getItemAsync('google_access_token'));
   },
@@ -180,9 +342,55 @@ export const GoogleService = {
     };
   },
 
-  async getToken(): Promise<string | null> {
-    const stored = await loadStoredTokens();
-    if (!stored) return SecureStore.getItemAsync('google_access_token'); // legacy fallback
+  /**
+   * Which Google account is connected directly: {connected, email?}.
+   *
+   * The email is what tells the phone-calendar reader WHICH account's primary
+   * calendar GoogleSync already reads (utils/googleCalendarSkip). Without it
+   * every Google account's main calendar on the phone was skipped, so a second
+   * Gmail's calendar silently went unread. A token from an older build has no
+   * email: it is looked up once from Calendar's own answer and kept.
+   */
+  async connectedGoogleAccount(): Promise<{ connected: boolean; email?: string }> {
+    const first = await accountFor();
+    if (!first) return { connected: Boolean(await SecureStore.getItemAsync('google_access_token')) };
+    if (first.email) return { connected: true, email: first.email };
+    const email = await this.identifyGoogleAccount(false, first.key);
+    return { connected: true, email: email || undefined };
+  },
+
+  /**
+   * Ask Calendar which account this token belongs to, and store it.
+   * calendars/primary → id IS the account's address; no new scope needed.
+   * null (with the reason in the log) when it cannot say; then retried after
+   * ACCOUNT_LOOKUP_RETRY_MS, never on every sync.
+   */
+  async identifyGoogleAccount(force = false, key?: string): Promise<string | null> {
+    if (!force && accountLookupFailedAt && Date.now() - accountLookupFailedAt < ACCOUNT_LOOKUP_RETRY_MS) return null;
+    const accounts = await loadAccounts();
+    const account = key ? accounts.find((a) => a.key === key) : accounts.find((a) => !a.email) ?? accounts[0];
+    if (!account) return null;
+    const token = await this.getToken(account.email || undefined, account.key);
+    if (!token) return null;
+    const id = await emailForAccessToken(token);
+    if (!id) {
+      accountLookupFailedAt = Date.now();
+      return null;
+    }
+    const stored = await readTokens(account.key);
+    if (stored) await writeTokens(account.key, { ...stored, email: id });
+    account.email = id;
+    await saveAccounts(accounts);
+    accountLookupFailedAt = 0;
+    return id;
+  },
+
+  /** A fresh access token for this account (by address), or the first account's. */
+  async getToken(email?: string, key?: string): Promise<string | null> {
+    const account = key ? (await loadAccounts()).find((a) => a.key === key) ?? null : await accountFor(email);
+    if (!account) return email || key ? null : SecureStore.getItemAsync('google_access_token'); // legacy fallback
+    const stored = await readTokens(account.key);
+    if (!stored) return null;
     // Refresh when the access token is expired (or about to).
     if (Date.now() > stored.expiresAt - 60_000 && stored.refreshToken) {
       try {
@@ -195,11 +403,12 @@ export const GoogleService = {
           accessToken: refreshed.accessToken,
           refreshToken: refreshed.refreshToken ?? stored.refreshToken,
           expiresAt: Date.now() + (refreshed.expiresIn ?? 3600) * 1000,
+          email: stored.email,
         };
-        await saveStoredTokens(next);
+        await writeTokens(account.key, next);
         return next.accessToken;
       } catch (e) {
-        console.log('[Google] token refresh failed:', e);
+        console.warn('[Google] token refresh failed:', e);
         return stored.accessToken; // let the API call fail loudly if truly dead
       }
     }
@@ -223,8 +432,8 @@ export const GoogleService = {
    * Profile screen answered "0 events found", because a 403 and a free
    * Wednesday looked identical all the way up the stack. They do not any more.
    */
-  async fetchCalendarEvents(date: string): Promise<CalendarFetchResult> {
-    const token = await this.getToken();
+  async fetchCalendarEvents(date: string, email?: string): Promise<CalendarFetchResult> {
+    const token = await this.getToken(email);
     if (!token) return { events: [], error: 'not_connected' };
     try {
       const [y, m, d] = date.split('-').map(Number);
@@ -254,15 +463,10 @@ export const GoogleService = {
         return { events: [], error: reason };
       }
 
-      // Google returns an offset-bearing RFC-3339 string ("…T11:00:00+03:00"),
-      // and slicing characters 11–16 off it only worked while that offset
-      // happened to match the phone. Parse it and read the local clock instead.
-      const hhmm = (dt?: string): string | null => {
-        if (!dt) return null;
-        const parsed = new Date(dt);
-        if (Number.isNaN(parsed.getTime())) return null;
-        return `${String(parsed.getHours()).padStart(2, '0')}:${String(parsed.getMinutes()).padStart(2, '0')}`;
-      };
+      // Google returns an offset-bearing RFC-3339 string ("…T11:00:00+03:00");
+      // utils/calendarTime parses it and reads the local clock, so the zone
+      // database decides the offset on both sides of a DST change.
+      const hhmm = localClockOf;
 
       const events: CalendarEvent[] = (data.items || [])
         // An all-day event has `start.date` and no `start.dateTime`. It has no
@@ -279,7 +483,7 @@ export const GoogleService = {
           // body, usually beside a Google Maps link. Reading it back out is
           // the difference between an interview that has a route, a leave-home
           // time and an alarm, and one that is only a name on a timeline.
-          location: item.location || addressFromDescription(item.description),
+          location: item.location || addressFromDescription(item.description) || addressFromTitle(item.summary),
           description: item.description,
           // Google exposes the video link in three different places depending
           // on how the event was created; none of them were being read, so the
@@ -303,6 +507,112 @@ export const GoogleService = {
     }
   },
 
+  /**
+   * The LAST time she met these people: calendar events before `beforeDate`
+   * whose attendees include one of `addresses`, or that carry the same title.
+   *
+   * 18.10, Koral: a brief has to say who the call is with AND a summary of the
+   * previous meeting if there was one. Read here, on the phone, with her own
+   * token; at most two events leave it, as title + date + the notes the event
+   * carries (its description, cut). A failure says why (rule 1) — an earlier
+   * meeting that could not be looked up must not read as "there was none".
+   */
+  async previousMeetingsWith(
+    addresses: string[], title: string, beforeDate: string, account?: string,
+  ): Promise<{ meetings: Array<{ date: string; title: string; notes: string }>; error?: string }> {
+    const token = await this.getToken(account);
+    if (!token) return { meetings: [], error: 'not_connected' };
+    const who = addresses.map((a) => String(a || '').trim().toLowerCase()).filter((a) => a.includes('@'));
+    const sameTitle = String(title || '').trim().toLowerCase();
+    if (!who.length && !sameTitle) return { meetings: [] };
+    try {
+      const [y, m, d] = beforeDate.split('-').map(Number);
+      const to = new Date(y, m - 1, d, 0, 0, 0, 0);
+      const from = new Date(to.getTime() - 120 * 24 * 60 * 60 * 1000);
+      const params = new URLSearchParams({
+        timeMin: from.toISOString(), timeMax: to.toISOString(),
+        singleEvents: 'true', orderBy: 'startTime', maxResults: '250',
+      });
+      if (who[0]) params.set('q', who[0]);
+      const res = await fetch(
+        `https://www.googleapis.com/calendar/v3/calendars/primary/events?${params}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data) {
+        const reason = `http_${res.status}: ${String(data?.error?.message || 'no response body').slice(0, 160)}`;
+        console.warn('[Google] previous meetings lookup failed', reason);
+        return { meetings: [], error: reason };
+      }
+      const hits = (data.items || [])
+        .filter((e: any) => e.start?.dateTime && e.status !== 'cancelled')
+        .filter((e: any) => {
+          const guests = (e.attendees || []).map((a: any) => String(a.email || '').toLowerCase());
+          return who.some((w) => guests.includes(w))
+            || (sameTitle && String(e.summary || '').trim().toLowerCase() === sameTitle);
+        })
+        .slice(-2)
+        .map((e: any) => ({
+          date: String(e.start.dateTime).slice(0, 10),
+          title: String(e.summary || '').slice(0, 120),
+          // The invitation's own text is not "what was said", but it is all the
+          // calendar holds; the server says "no notes" when it is empty.
+          notes: String(e.description || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 600),
+        }));
+      return { meetings: hits };
+    } catch (e) {
+      const reason = `network: ${String((e as Error)?.message || e).slice(0, 160)}`;
+      console.warn('[Google] previous meetings lookup threw', reason);
+      return { meetings: [], error: reason };
+    }
+  },
+
+  /**
+   * One event, by the id its task carries (`calendarEventId`), with everything
+   * the calendar holds: link, guests, description, join link, attachments.
+   * Asked of each calendar-enabled account in turn — a task does not record
+   * which one it came from. Read live, never stored (utils/eventDetails). A
+   * failure says why (rule 1): "not found" and "could not ask" are different.
+   */
+  async getEventDetails(eventId: string): Promise<{ details?: EventDetails; error?: string }> {
+    const hit = eventCache.get(eventId);
+    if (hit && Date.now() - hit.at < EVENT_TTL_MS) return { details: hit.details };
+    const all = (await this.listGoogleAccounts()).filter((a) => a.calendar);
+    if (!all.length) return { error: 'not_connected' };
+    // The account that answered last time goes first: one GET, not one per account.
+    const known = eventAnsweredBy.get(eventId);
+    const accounts = [...all].sort((x, y) => Number(y.email === known) - Number(x.email === known));
+    let lastError = 'not_found';
+    for (const acct of accounts) {
+      const token = await this.getToken(acct.email || undefined);
+      if (!token) { lastError = 'not_connected'; continue; }
+      try {
+        // A hung request must not hold the spinner (and the radio) for ever.
+        const abort = new AbortController();
+        const timer = setTimeout(() => abort.abort(), 10000);
+        const res = await fetch(
+          `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(eventId)}?supportsAttachments=true`,
+          { headers: { Authorization: `Bearer ${token}` }, signal: abort.signal },
+        ).finally(() => clearTimeout(timer));
+        if (res.status === 404) continue;
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data) {
+          lastError = `http_${res.status}: ${String(data?.error?.message || 'no response body').slice(0, 160)}`;
+          console.warn('[Google] event details lookup failed', lastError);
+          continue;
+        }
+        eventAnsweredBy.set(eventId, acct.email);
+        const details = eventDetailsFromGoogle(data);
+        eventCache.set(eventId, { details, at: Date.now() });
+        return { details };
+      } catch (e) {
+        lastError = `network: ${String((e as Error)?.message || e).slice(0, 160)}`;
+        console.warn('[Google] event details lookup threw', lastError);
+      }
+    }
+    return { error: lastError };
+  },
+
   /** One local day's events, array only — for callers that cannot act on a failure. */
   async getCalendarEventsToday(date: string): Promise<CalendarEvent[]> {
     return (await this.fetchCalendarEvents(date)).events;
@@ -320,8 +630,10 @@ export const GoogleService = {
     startTime: string,
     durationMinutes = 60,
     location?: string,
+    /** Which of her accounts' calendar; the first account when omitted. */
+    account?: string,
   ): Promise<string | null> {
-    const token = await this.getToken();
+    const token = await this.getToken(account);
     if (!token) return null;
     try {
       const start = new Date(`${date}T${startTime}:00`);
@@ -357,6 +669,7 @@ export const GoogleService = {
   },
 
   async searchGmailForTask(keywords: string): Promise<{ threadId: string; subject: string; sender: string; snippet: string } | null> {
+    if (!GMAIL_ENABLED) return null;   // off in this build (utils/gmailAccess), never "not found"
     const token = await this.getToken();
     if (!token) return null;
     try {
@@ -404,8 +717,11 @@ export const GoogleService = {
    */
   async gmailHistoryWith(
     email: string, max = 4,
+    /** Which of her mailboxes; the first account when omitted. */
+    account?: string,
   ): Promise<Array<{ date: string; subject: string; from: string; snippet: string }>> {
-    const token = await this.getToken();
+    if (!GMAIL_ENABLED) return [];   // off in this build; the brief simply carries no mail history
+    const token = await this.getToken(account);
     const address = (email || '').trim();
     if (!token || !address.includes('@')) return [];
     try {
@@ -447,8 +763,9 @@ export const GoogleService = {
    * for calendar-like emails: reservations, appointments, interviews, invites.
    * Deliberately NOT a full inbox crawl — see plan constraint (memory/latency).
    */
-  async scanGmailForEvents(): Promise<{ id: string; threadId: string; subject: string; sender: string; snippet: string }[]> {
-    const token = await this.getToken();
+  async scanGmailForEvents(account?: string): Promise<{ id: string; threadId: string; subject: string; sender: string; snippet: string }[]> {
+    if (!GMAIL_ENABLED) return [];   // off in this build; callers say so via GMAIL_ENABLED
+    const token = await this.getToken(account);
     if (!token) return [];
     try {
       const q = encodeURIComponent(
@@ -497,6 +814,7 @@ export const GoogleService = {
   planForMode: RoutePlanner.planForMode,
   getDepartNowPlan: RoutePlanner.getDepartNowPlan,
   getDepartNowOptions: RoutePlanner.getDepartNowOptions,
+  getNeighbourDeparture: RoutePlanner.getNeighbourDeparture,
   compareModes: RoutePlanner.compareModes,
   searchPlaces: RoutePlanner.searchPlaces,
 

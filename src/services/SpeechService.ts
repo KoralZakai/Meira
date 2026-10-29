@@ -4,7 +4,7 @@
  * preprocessing (filler removal, Hebrew/English place-name corrections).
  *
  * Dependencies: expo-speech, utils/fuzzyMatch (correctPlaceName).
- * preprocessTranscript is consumed by LLMService before the agent runs.
+ * preprocessTranscript is used by the chat mic (CoachChatScreen) before the text is sent.
  */
 import * as Speech from 'expo-speech';
 import { AppLanguage } from '../types/models';
@@ -282,8 +282,29 @@ export async function hebrewVoiceStatus(): Promise<'available' | 'missing' | 'un
   return hebrewVoice.status;
 }
 
-/** TTS via expo-speech — SHORT texts only per CLAUDE.md speech rules. */
+/**
+ * Say it in Meira's own voice (13.10, Koral: "the voice you use for 'Tell
+ * Meira about you' must be in ALL speech, like Hear my day"). Google Chirp 3
+ * HD through the server (NaturalVoice), the phone's engine only when that
+ * cannot be had — and NaturalVoice logs why. Resolves when she has finished.
+ * SHORT texts only (CLAUDE.md speech rules).
+ */
 export async function speak(text: string, language: AppLanguage): Promise<void> {
+  // Required here, not imported: NaturalVoice falls back to speakDevice below.
+  const { sayNatural } = require('./NaturalVoice') as typeof import('./NaturalVoice');
+  emitSpeaking(true);
+  try {
+    await sayNatural(text, language);
+  } catch (error) {
+    console.warn('[TTS] natural voice failed — phone voice', error);
+    await speakDevice(text, language);
+  } finally {
+    emitSpeaking(false);
+  }
+}
+
+/** The phone's own engine (expo-speech) — the fallback, never the first choice. */
+export async function speakDevice(text: string, language: AppLanguage): Promise<void> {
   const voice = voiceLanguageFor(text, language);
   const voiceId = voice === 'he-IL' && (await hebrewVoiceStatus()) === 'available'
     ? hebrewVoice?.id
@@ -312,29 +333,48 @@ export async function speak(text: string, language: AppLanguage): Promise<void> 
   });
 }
 
-/** Cancel any in-progress TTS. */
-export function stopSpeaking() {
+/** Stop the phone's engine only (NaturalVoice's own stop calls this). */
+export function stopDeviceSpeech() {
   try {
     Speech.stop();
   } catch (error) {
     console.log('[MOCK] Speech stop unavailable:', error);
   }
+}
+
+/** Cancel any in-progress TTS — Meira's voice and the phone's. */
+export function stopSpeaking() {
+  try {
+    (require('./NaturalVoice') as typeof import('./NaturalVoice')).stopNatural();
+  } catch (error) {
+    console.warn('[TTS] could not stop the natural voice', error);
+  }
+  stopDeviceSpeech();
   emitSpeaking(false);
 }
 
-const FILLER_WORDS = ['um', 'uh', 'like', 'you know', 'so', 'כאילו', 'אממ', 'אה'];
+// "like" and "so" are words, not only fillers: stripping them turned "I'd like
+// to book" into "I'd to book". Only sounds that never carry meaning.
+const FILLER_WORDS = ['um', 'uh', 'umm', 'uhh', 'you know', 'כאילו', 'אממ', 'אמממ', 'אה'];
 
-/** Remove fillers + fix place names before parsing; consumed by LLMService/TaskParser. */
-export const preprocessTranscript = (text: string, language: AppLanguage): string => {
+// JS `\b` only knows ASCII letters, so `\b` + a Hebrew word never matched and
+// every Hebrew filler survived. A word edge here is "not a letter or digit" in
+// either alphabet.
+const EDGE = 'A-Za-z0-9\u0590-\u05FF';
+const asWord = (w: string) => new RegExp(`(^|[^${EDGE}])${w}(?=$|[^${EDGE}])`, 'gi');
+
+/**
+ * Remove fillers + fix place names before the text is sent (chat mic).
+ *
+ * Spoken Hebrew numbers are NOT turned into digits here: the old rules never
+ * ran (the `\b` above), and made to run they would write "באר 7" for באר שבע.
+ * The server reads "בשמונה" by meaning.
+ */
+export const preprocessTranscript = (text: string, _language: AppLanguage): string => {
   let result = text;
-  FILLER_WORDS.forEach(fw => {
-    result = result.replace(new RegExp(`\\b${fw}\\b`, 'gi'), '');
+  FILLER_WORDS.forEach((fw) => {
+    result = result.replace(asWord(fw), '$1');
   });
   result = correctPlaceName(result);
-  result = result
-    .replace(/\bעשר\b/g, '10').replace(/\bאחת עשרה\b/g, '11')
-    .replace(/\bשתיים עשרה\b/g, '12').replace(/\bשמונה\b/g, '8')
-    .replace(/\bתשע\b/g, '9').replace(/\bשבע\b/g, '7')
-    .replace(/\bשש\b/g, '6').replace(/\bחמש\b/g, '5');
-  return result.trim();
+  return result.replace(/,\s*,/g, ',').replace(/\s{2,}/g, ' ').trim();
 };

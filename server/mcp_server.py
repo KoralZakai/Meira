@@ -46,6 +46,7 @@ from fastapi.responses import JSONResponse, Response
 
 import app_auth
 import config
+import identity_keys
 import rate_limit
 import secure_store
 
@@ -185,9 +186,12 @@ TOOLS: list[dict] = [
     {
         "name": "get_my_day",
         "title": "Get my day",
-        "description": "The user's day in order: every task and appointment with its time, place, and — for "
-                       "appointments she travels to — when to leave home and when to wake up, plus any clashes "
-                       "(two things at once, or two places too far apart for the gap between them).",
+        "description": "The user's day in order: every task and appointment with its time and place; for each "
+                       "one she travels to, when to leave (leave_by), how long and how — or no_leave_reason when "
+                       "there is none; ONE wake_by for the day; and the clashes, each with a kind: 'travel' (two "
+                       "places too far apart for the gap: late_by, arrive_at, ask_for, and a faster option when "
+                       "there is one), 'overlap' (her own movable work on an appointment: moves_to), 'spatial' or "
+                       "'double' (two appointments at once). Say the clashes; never invent their fixes.",
         "inputSchema": _obj({"date": _DATE}),
         "annotations": {"readOnlyHint": True},
     },
@@ -283,7 +287,7 @@ _TOOL_NAMES = {t["name"] for t in TOOLS}
 
 def _resolve_date(value: Optional[str]) -> str:
     """Any date words → YYYY-MM-DD, through the ONE parser the agent uses."""
-    from tz import today_il, resolve_date
+    from tz import today_il, resolve_date_at as resolve_date
     today = today_il()
     if not value or str(value).strip().lower() in ("today", "היום"):
         return today.isoformat()
@@ -310,35 +314,17 @@ def _hhmm(value: Optional[str]) -> Optional[str]:
     return f"{h:02d}:{m:02d}"
 
 
+def _agent_key(user: dict, caller: dict) -> str:
+    """The key the agent's tools — and the profile they read — are filed under."""
+    return str(user.get("id") or user.get("whatsapp_phone") or caller["key"])
+
+
 async def _agent_tools(caller: dict, content: str = "") -> tuple[dict, dict]:
     import agent_turn
     from lumi_agent import _make_tools
     user, _ = await agent_turn.user_for_caller(caller)
-    agent_key = str(user.get("id") or user.get("whatsapp_phone") or caller["key"])
-    tools = _make_tools(agent_key, content, wa_phone=str(user.get("whatsapp_phone") or "") or None)
+    tools = _make_tools(_agent_key(user, caller), content, wa_phone=str(user.get("whatsapp_phone") or "") or None)
     return {t.name: t for t in tools}, user
-
-
-def _day_row(r: dict) -> dict:
-    loc = r.get("location")
-    out = {
-        "id": r.get("id"), "text": r.get("text"), "time": r.get("scheduled_time") or r.get("fixed_time"),
-        "fixed": bool(r.get("fixed_time")), "minutes": r.get("duration_minutes"),
-        "category": r.get("category"), "priority": r.get("priority"), "status": r.get("status"),
-    }
-    if isinstance(loc, dict):
-        out["place"] = loc.get("displayName") or loc.get("address")
-        for src, dst in (("leaveHomeBy", "leave_by"), ("wakeUpBy", "wake_by"), ("travelMinutes", "travel_minutes")):
-            if loc.get(src):
-                out[dst] = loc[src]
-        plan = loc.get("transitPlan") or {}
-        legs = [f"{l.get('type')} {l.get('lineNumber') or ''}".strip()
-                for l in plan.get("legs") or [] if l.get("type") != "walk"]
-        if legs:
-            out["route"] = " → ".join(legs)
-    elif isinstance(loc, str) and loc:
-        out["place"] = loc
-    return {k: v for k, v in out.items() if v not in (None, "", [])}
 
 
 _JOURNEY_KEYS = ("transport", "modeLabel", "startKind", "startResolved", "destResolved", "travelMinutes",
@@ -351,26 +337,40 @@ def _journey(p: dict) -> dict:
 
 
 async def _get_my_day(caller: dict, args: dict) -> dict:
-    import clashes as _clashes
-    import day_schedule
+    """The day, stated — see day_plan. It used to echo only what the phone had
+    synced, so the evening before a busy day it had one leave time and no
+    clashes (29.9 → 30.9)."""
+    import day_plan
     import task_store
+    import user_profile
     from tz import today_il, now_il
     date = _resolve_date(args.get("date"))
     rows = await task_store.fetch_task_rows(caller["key"], date, date, include_location=True)
-    live = [r for r in rows if str(r.get("status") or "pending") not in ("complete", "moved", "deleted", "cancelled")]
     now = now_il().strftime("%H:%M") if date == today_il().isoformat() else None
-    ordered = day_schedule.build_day_schedule(live, now=now, today=date)
-    by_id = {str(r.get("id")): r for r in live}
-    day = [_day_row({**by_id.get(str(o.get("id")), {}), **o}) for o in ordered]
-    found = _clashes.resolve_clashes(live)
+    profile: dict = {}
+    plan_leg = None
+    if day_plan.unrouted(rows):
+        # Only now is it worth resolving who she is: a leg needs routing.
+        tools, user = await _agent_tools(caller)
+        profile = user_profile.get_profile(_agent_key(user, caller)) or {}
+        plan_leg = day_plan.agent_plan_leg(tools["plan_departure"], profile)
+    plan = await day_plan.plan_day(
+        rows, date=date, home=profile.get("homeAddress"), plan_leg=plan_leg,
+        routine_minutes=profile.get("morningRoutineMinutes") or 45, now=now)
+    clash_keys = ("kind", "first", "second", "overlap_minutes", "travel_shortfall_minutes",
+                  "travel_minutes", "arrive_at", "late_by", "ask_for", "faster",
+                  "work", "fixed", "moves_to")
     return {
         "date": date,
-        "tasks": day,
+        "wake_by": plan["wake_by"],
+        **({"wake_reason": plan["wake_reason"]} if plan["wake_reason"] else {}),
+        "tasks": plan["events"],
         "done": sum(1 for r in rows if r.get("status") == "complete"),
-        "clashes": [{"question": c.get("questionEn"), "overlap_minutes": c.get("overlapMinutes"),
-                     "travel_shortfall_minutes": c.get("travelShortfall")} for c in found],
-        "note": "leave_by / wake_by are computed on the user's phone from live transit; "
-                "a task added a moment ago may not have them yet.",
+        "clashes": [{"question": p["question_en"], **{k: p[k] for k in clash_keys if p.get(k) is not None}}
+                    for p in plan["problems"]],
+        "note": "leave_by comes from the phone's live route (source 'phone') or was routed just now "
+                "(source 'meira'); an event without one says why (no_leave_reason). wake_by is the "
+                "one alarm for the day. flexible = her own work, no fixed hour or journey.",
     }
 
 
@@ -399,6 +399,17 @@ async def _add_task(caller: dict, args: dict) -> dict:
         "filled_from_memory": inferred.get("recalled") or None,
         "clashes": inferred.get("collisions") or inferred.get("clashes") or [],
     }
+    # Does it fit the day, travel between her meetings included (28.10)? When not,
+    # she is asked — keep it, or the nearest hour that fits (update_task moves it).
+    if saved:
+        try:
+            note, _ = await agent_turn.fit_note(caller["key"], saved, he=False)
+            if note:
+                out["does_not_fit"] = note
+                out["ask_her"] = "Tell her it does not fit and ask: keep it anyway, or move it (update_task)?"
+        except Exception as exc:  # noqa: BLE001 — the task is saved; the check is said to have failed
+            logger.warning("mcp add_task: fit check failed: %s", exc)
+            out["does_not_fit"] = f"could not check whether it fits: {type(exc).__name__}"
     where = task.get("location")
     where = where.get("address") if isinstance(where, dict) else where
     if where and task.get("fixed_time"):
@@ -472,7 +483,7 @@ async def _prepare_me(caller: dict, args: dict) -> dict:
         task = {"text": str(args["text"])}
     else:
         raise ValueError("pass task_id or text")
-    out = await task_prep.build(task, caller["key"])
+    out = await task_prep.build(task, identity_keys.brain_key(caller))
     keep = ("ok", "reason", "why", "kind", "headline_en", "items_en", "sources")
     return {k: out.get(k) for k in keep if out.get(k) is not None}
 

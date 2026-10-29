@@ -53,6 +53,12 @@ yarn-error.*
 /ios
 /android
 
+# gradle output inside local native modules (modules/<name>/android/build) — the SOURCE of
+# modules/ must ship (it is the native code), its build output must not
+modules/*/android/build/
+modules/*/android/.gradle/
+modules/*/android/.cxx/
+
 # server + research artifacts the app build doesn't need
 server/
 nebius/

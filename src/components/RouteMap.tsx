@@ -25,10 +25,12 @@ interface Props {
   destLng: number;
   destLabel?: string;
   height?: number;
+  /** The page draws its own Google Maps / Waze / Moovit row (TaskDetailScreen). */
+  hideNavigate?: boolean;
 }
 
 /** Decode a Google encoded polyline into lat/lng points. */
-function decodePolyline(encoded: string): Array<{ latitude: number; longitude: number }> {
+export function decodePolyline(encoded: string): Array<{ latitude: number; longitude: number }> {
   const points: Array<{ latitude: number; longitude: number }> = [];
   let index = 0;
   let lat = 0;
@@ -74,7 +76,7 @@ function openNavigation(lat: number, lng: number, label?: string) {
  *  rule and goes and finds the real coordinates instead. */
 const usable = hasRealCoords;
 
-export default function RouteMap({ plan, destLat, destLng, destLabel, height = 180 }: Props) {
+export default function RouteMap({ plan, destLat, destLng, destLabel, height = 180, hideNavigate }: Props) {
   const points = plan.overviewPolyline ? decodePolyline(plan.overviewPolyline) : [];
   const canMap = !isExpoGo && points.length > 1;
   const destOk = usable(destLat, destLng);
@@ -119,7 +121,7 @@ export default function RouteMap({ plan, destLat, destLng, destLabel, height = 1
           ))}
         </View>
       )}
-      {destOk && (
+      {destOk && !hideNavigate && (
         <Pressable style={styles.navBtn} onPress={() => openNavigation(destLat, destLng, destLabel)}>
           <Text style={styles.navText}>🧭 Navigate</Text>
         </Pressable>

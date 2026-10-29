@@ -32,6 +32,16 @@ export interface UserProfile {
   hobbies?: string;
   /** Free-text routines ("gym Mon/Wed 18:00, weekly review Sunday") — context for planning. */
   routinesNotes?: string;
+  /** Does she have a car to drive? Unset until she says — see utils/travelLadder.hasCarOf. */
+  hasCar?: boolean;
+  /** How pushy Meira is around a study block — utils/nudgeLevel; the server reads it (reschedule.nudges_for). */
+  nudgeLevel?: 'alarm' | 'gentle' | 'motivating';
+  /** HH:MM — the earliest she is willing to be woken (utils/dayFeasibility, WAKE_CONFLICT). */
+  earliestWakeTime?: string;
+  /** Minutes of slack she wants on arrival. */
+  travelBufferMinutes?: number;
+  /** How late she habitually leaves — learned, never typed (utils/leadLearning). */
+  departDelayMinutes?: number;
   onboardingComplete: boolean;
   createdAt: string;
   lastUpdated: string;

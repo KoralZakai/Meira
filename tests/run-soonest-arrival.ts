@@ -39,5 +39,13 @@ check('past midnight counts as later, not earlier',
 check('nothing parseable falls back to the first', soonestArrival([plan('x', 'y', 1)], '15:00')?.leaveHomeAt === 'x');
 check('empty is null', soonestArrival([], '15:00') === null);
 
+// 21.10, 09:38 — a cached "now" answer from 09:32 (arrive 10:06) beat the real next bus (arrive 10:29).
+check('a departure that has already gone is never picked, however early it arrives',
+  soonestArrival([plan('09:32', '10:06', 1), plan('09:42', '10:29', 1)], '09:38')?.leaveHomeAt === '09:42');
+check('one minute ago still counts as now (she is walking out of the door)',
+  soonestArrival([plan('09:37', '10:20', 1), plan('09:50', '10:40', 1)], '09:38')?.leaveHomeAt === '09:37');
+check('every answer stale: null — said by the caller, never a gone bus',
+  soonestArrival([plan('09:20', '10:00', 1), plan('09:30', '10:05', 1)], '09:38') === null);
+
 console.log(`\n${checks - failures}/${checks} passed`);
 if (failures) process.exit(1);

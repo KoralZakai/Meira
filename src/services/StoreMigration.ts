@@ -21,7 +21,7 @@
  * Dependencies: TaskStorage (locked writes), NotificationService, fuzzyMatch.
  * Consumed by App.tsx at startup.
  */
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from './EncryptedStorage';  // AES-256-GCM at rest (7.10)
 import { Task } from '../types/index';
 import { getAllTasks, saveAllTasks, withTaskLock } from './TaskStorage';
 import { mergeByMeaning } from '../utils/taskMerge';

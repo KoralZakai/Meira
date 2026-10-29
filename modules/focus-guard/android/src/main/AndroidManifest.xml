@@ -1,0 +1,71 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+  <!-- Which app is in front right now. Granted by the user in Settings > Usage access
+       (a "special app access" — there is no runtime dialog), hence ProtectedPermissions. -->
+  <uses-permission
+      android:name="android.permission.PACKAGE_USAGE_STATS"
+      tools:ignore="ProtectedPermissions" />
+
+  <!-- Showing the "you're learning" screen on top of a blocked app from the background. -->
+  <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+  <!-- The session itself: a foreground service of type specialUse. -->
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+  <!-- Re-arm scheduled sessions and resume a running one after a reboot. -->
+  <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+  <!-- Package visibility (Android 11+): without these, "is Instagram installed?" always says no. -->
+  <queries>
+    <package android:name="com.whatsapp" />
+    <package android:name="com.whatsapp.w4b" />
+    <package android:name="com.instagram.android" />
+    <package android:name="com.zhiliaoapp.musically" />
+    <package android:name="com.ss.android.ugc.trill" />
+    <package android:name="com.google.android.youtube" />
+    <package android:name="com.facebook.katana" />
+    <package android:name="com.twitter.android" />
+    <package android:name="org.telegram.messenger" />
+    <package android:name="com.snapchat.android" />
+  </queries>
+
+  <application>
+    <service
+        android:name=".FocusService"
+        android:exported="false"
+        android:foregroundServiceType="specialUse">
+      <!-- Play Console > App content > Foreground service permissions: declare this subtype. -->
+      <property
+          android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+          android:value="Learning-session app blocker: while the user's own study timer runs, it watches which app is in front (Usage access) and shows a 'you are learning' screen over social apps the user chose to block." />
+    </service>
+
+    <activity
+        android:name=".FocusBlockActivity"
+        android:exported="false"
+        android:excludeFromRecents="true"
+        android:launchMode="singleTask"
+        android:taskAffinity=""
+        android:showWhenLocked="false"
+        android:screenOrientation="portrait"
+        android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+
+    <!-- The alarm that starts a scheduled study session (explicit PendingIntent only). -->
+    <receiver
+        android:name=".FocusAlarmReceiver"
+        android:exported="false" />
+
+    <!-- Alarms do not survive a reboot or an app update; this re-arms them. -->
+    <receiver
+        android:name=".FocusBootReceiver"
+        android:exported="true">
+      <intent-filter>
+        <action android:name="android.intent.action.BOOT_COMPLETED" />
+        <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+      </intent-filter>
+    </receiver>
+  </application>
+</manifest>

@@ -1,6 +1,6 @@
 """The Directions proxy: the door that replaces a key the phone cannot use.
 
-The APK's Maps key is restricted to `com.lumi.app` + SHA-1, which Google
+The APK's Maps key is restricted to `meira.secretary` + SHA-1, which Google
 enforces through headers only the Maps SDK sends. Every Directions call from a
 React Native `fetch()` therefore came back REQUEST_DENIED — 107 of them in one
 day on her device, at a 99% error rate, while the card said there was no train.

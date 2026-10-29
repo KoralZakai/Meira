@@ -5,7 +5,7 @@
  * reach logcat: that is how the `.select('id')` regression was caught one
  * minute after install, and it is worth keeping. But the same channel has been
  * carrying things it should not — the live log showed `pulling from
- * …/tasks/972500000009`, task titles, addresses and Supabase error payloads.
+ * …/tasks/972542902729`, task titles, addresses and Supabase error payloads.
  * On a personal phone that is a diagnostic; on a stranger's phone, with their
  * data in it, it is an information leak, and Play's Data Safety declaration
  * asks about exactly this.
@@ -57,8 +57,12 @@ const RULES: Array<{ re: RegExp; to: string }> = [
   { re: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, to: '<email>' },
   // Coordinates precise enough to be a doorstep. Two signed decimals with 4+
   // places, comma-separated, is a GPS fix and nothing else.
-  { re: /-?\d{1,3}\.\d{4,}\s*,\s*-?\d{1,3}\.\d{4,}/g, to: '<lat,lng>' },
+  { re: /-?\d{1,3}\.\d{3,}\s*,\s*-?\d{1,3}\.\d{3,}/g, to: '<lat,lng>' },
 ];
+
+/** Object keys whose values never reach a release log. */
+export const SENSITIVE_KEY =
+  /^(lat|lng|latitude|longitude|text|title|subject|body|transcript|address|displayName|destination|origin|originAddress|contactName|contactPhone|phone|email|attendees|meetingUrl|notes|progress)$|(Lat|Lng|Address|Phone)$/;
 
 /** Replace every known-sensitive pattern in a string. */
 export function redactString(input: string): string {
@@ -94,7 +98,11 @@ export function redact(value: unknown, depth = 0, seen = new WeakSet<object>()):
     if (Array.isArray(value)) return value.map((v) => redact(v, depth + 1, seen));
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      out[k] = redact(v, depth + 1, seen);
+      // A field that IS a place, a position or her words is dropped whole —
+      // patterns cannot recognise "אבן גבירול 30" or a bare 32.08 (7.10).
+      out[k] = SENSITIVE_KEY.test(k) && v !== null && v !== undefined && v !== ''
+        ? '<redacted>'
+        : redact(v, depth + 1, seen);
     }
     return out;
   } catch {

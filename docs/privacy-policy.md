@@ -29,15 +29,23 @@ collect its data.
 |---|---|---|
 | **Email address and name** | To sign you in and keep your data yours | Supabase (authentication) |
 | **Your tasks, goals, schedules and notes** | The product | Supabase, and our server |
-| **Location** (precise, only while the app is open) | Travel times, when to leave, and confirming you arrived | Our server; coordinates are sent to Google Directions to plan a route |
+| **Location** (precise, while the app is open) | Travel times, when to leave, and confirming you arrived | Our server; coordinates are sent to Google Directions to plan a route |
+| **Location in the background** (only if you turn on "Nearby errands") | Near an open errand's place; reminders you set by place; "still going?" when an appointment's leave time passed and you haven't left — all decided on the phone | **Stays on your phone.** Never sent to our server or anyone else |
 | **Microphone audio** | Only while you are dictating a task, and only to turn speech into text | Converted to text on your device or by our server; the recording is not kept |
 | **Contacts** (read only) | So you can attach a person to a task. Lumi never modifies your contacts | Stays on your device unless you attach a contact to a task |
 | **Your messages to the assistant** | To answer them | Our server, and the AI provider that generates the reply |
 | **Phone number** | Only if you link WhatsApp, so both channels are one account | Our server and Meta (WhatsApp) |
 | **Notification token** | To send you reminders | Google (Firebase Cloud Messaging) |
 
-**Lumi does not track your location in the background.** The app does not hold
-the background-location permission at all.
+**Background location is off unless you turn on "Nearby errands"** (Profile ›
+Alerts). Then Android watches the places of your open errands and of reminders
+you set by place, on your phone, and Meira tells you when you are near one, also
+when the app is closed; when an appointment's leave time has passed and you are
+still where the trip starts, she asks if you are still going — decided on the
+phone, without routing. Your
+location is never sent to our server or to any third party and is not kept as a
+history. Never at night. Turn it off in the same card, or remove the location
+permission in Android Settings.
 
 ## What we do NOT collect
 

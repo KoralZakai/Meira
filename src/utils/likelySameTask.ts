@@ -36,6 +36,10 @@ import { textSimilarity } from './fuzzyMatch';
  * normal day, not a duplicate.
  */
 const ONCE_A_DAY: TaskCategory[] = ['interview', 'doctor', 'conference', 'hobby_class'];
+/** Things one attends at an hour — a calendar twin of one of these is the same hour. */
+const MEETING_LIKE: TaskCategory[] = ['meeting', 'call', 'zoom', 'interview'];
+const fromCalendar = (t: Task): boolean =>
+  /^(gcal|dcal|ocal)-/.test(String(t.id || '')) || (t as { source?: string }).source === 'calendar';
 
 /** Above this the silent merger takes it; asking would be noise. */
 const ALREADY_MERGED = 0.82;
@@ -85,6 +89,15 @@ export function looksLikeSameThing(a: Task, b: Task): string | null {
   if (a.id === b.id || a.date !== b.date) return null;
   if (a.status === 'complete' || b.status === 'complete') return null;
   if (a.status === 'moved' || b.status === 'moved') return null;
+  // One call, two doors (6.10): the calendar's "Meira <> Datadog Intro" and
+  // her typed "שיחה עם data dag" at the same minute — no shared word, and
+  // filed as meeting vs call. A calendar meeting and her own row that start at
+  // the same minute are worth ONE question; the card also offers "they're
+  // different — stop asking", so a wrong guess costs a tap.
+  if (timeOf(a) && timeOf(a) === timeOf(b) && fromCalendar(a) !== fromCalendar(b)
+      && MEETING_LIKE.includes(a.category as TaskCategory) && MEETING_LIKE.includes(b.category as TaskCategory)) {
+    return timeOf(a);
+  }
   if (a.category !== b.category) return null;
   if (!ONCE_A_DAY.includes(a.category as TaskCategory)) return null;
   // Near-identical wording is merged silently — but ONLY when the two rows

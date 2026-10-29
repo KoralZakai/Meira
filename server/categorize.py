@@ -12,9 +12,17 @@ Two rules govern the port:
 1. **Hebrew is not a fallback.** Every English keyword here has its Hebrew
    counterpart in the same rule, because the app's history is a long line of
    English-only regexes that silently returned nothing for the language the
-   user actually types in. Word boundaries (`\\b`) are deliberately NOT used —
-   they do not work against Hebrew letters, which is how one earlier
-   number-parsing path became dead code without anyone noticing.
+   user actually types in. `\\b` is ASCII-only in JavaScript (and the phone runs
+   a port of this table), so words are found by `has_keyword` below instead.
+
+   A keyword must START a word. It used to be a bare substring, and that filed
+   "דחוף לשלוח מייל" (urgent) under leisure because "חוף" (beach) sits inside
+   "דחוף", and "brunch with Dana" under gym because "run" sits inside "brunch".
+   Hebrew glues one-letter prefixes onto a word (ב in, ל to, מ from, ה the,
+   ו and, ש that, כ as), so a keyword may be preceded by up to two of those and
+   by no other letter. The END of a keyword stays open on purpose: "אימון" must
+   still find "אימונים" and "run" must find "running"; the stems in the table
+   ("אימונ", "מתאמנ") depend on it.
 
 2. **The model may only fill in what the table left blank.** `merge` takes the
    deterministic answer and the model's answer and prefers the table for
@@ -40,6 +48,47 @@ DEFAULT_DURATIONS = {
     "leisure": 60, "general": 30, "zoom": 45, "hobby_class": 90,
 }
 
+# One-letter Hebrew prefixes that may sit in front of a keyword: in, to, from,
+# the, and, that, as. Mirrored in src/utils/categorize.ts.
+_HEBREW_PREFIXES = "בלמהושכ"
+_WORD_CHAR = re.compile(r"[a-z0-9\u05d0-\u05ea]")     # the text is already lower-cased
+
+
+def _is_word_char(ch: str) -> bool:
+    return bool(_WORD_CHAR.match(ch))
+
+
+def _starts_a_word(text: str, i: int) -> bool:
+    """Does a keyword found at text[i:] begin a word (allowing Hebrew prefixes)?"""
+    for k in range(3):                       # 0, 1 or 2 prefix letters
+        j = i - k
+        if j < 0:
+            return False
+        if k and text[j] not in _HEBREW_PREFIXES:
+            return False
+        if j == 0 or not _is_word_char(text[j - 1]):
+            return True
+    return False
+
+
+def has_keyword(text: str, keyword: str) -> bool:
+    """Is `keyword` in `text` as the start of a word? See the module docstring.
+
+    A keyword ending in a digit ("1:1") must not run on into more digits, or
+    "1:15" and "11:15" would be a one-on-one.
+    """
+    start = 0
+    while True:
+        i = text.find(keyword, start)
+        if i < 0:
+            return False
+        end = i + len(keyword)
+        if _starts_a_word(text, i) and not (keyword[-1].isdigit() and end < len(text)
+                                            and text[end].isdigit()):
+            return True
+        start = i + 1
+
+
 # Order matters: the FIRST rule that matches wins, so the specific ones
 # ('interview') sit above the general ones ('meeting', 'work').
 _RULES: list[tuple[str, list[str], str, int]] = [
@@ -50,8 +99,10 @@ _RULES: list[tuple[str, list[str], str, int]] = [
     ("zoom",        ["zoom", "teams", "google meet", "video call", "webinar",
                      "זום", "מיטס", "וידאו"],                                    "have_to",    45),
     ("conference",  ["conference", "summit", "convention", "כנס", "כנסים"],       "have_to",   120),
-    ("gym",         ["gym", "workout", "training", "fitness", "run", "running",
-                     "yoga", "pilates", "swim", "אימון", "חדר כושר", "כושר",
+    # "work out" / "working out" are two words and the `work` rule below owns the
+    # word "work": without them here a workout was filed under 💼 Work (15.10).
+    ("gym",         ["gym", "workout", "work out", "working out", "training", "fitness", "run", "running",
+                     "yoga", "pilates", "swim", "אימון", "אימונ", "להתאמן", "מתאמנ", "חדר כושר", "כושר",
                      "ריצה", "יוגה", "שחייה", "פילאטיס", "קיקבוקס"],              "need_to",    60),
     ("course",      ["course", "study", "studying", "lecture", "homework",
                      "exam", "assignment", "קורס", "ללמוד", "לימודים",
@@ -59,20 +110,28 @@ _RULES: list[tuple[str, list[str], str, int]] = [
     ("class",       ["class", "lesson", "seminar", "שיעור", "סדנה"],              "have_to",    90),
     ("hobby_class", ["hobby", "workshop", "חוג", "חוגים"],                        "nice_to_do", 90),
     ("meeting",     ["meeting", "appointment", "1:1", "standup", "sync",
-                     "פגישה", "פגישות", "מפגש", "תור"],                           "have_to",    45),
+                     "פגישה", "פגישות", "פגישת", "פגישתי", "מפגש", "תור"],        "have_to",    45),
     ("call",        ["call", "phone", "ring", "voicemail",
                      "להתקשר", "שיחה", "טלפון", "לחזור אליו", "לחזור אליה"],      "need_to",    15),
     # Job hunting is work. "לשלוח קורות חיים ל-Checkpoint" matched nothing, so
     # the model's guess won — and on 22.9 that guess was 💪 Gym, which also
     # made the app demand a location for sending an email.
+    # Field work is work too — see src/utils/categorize.ts (parity).
     ("work",        ["work", "office", "project", "deploy", "shift", "client",
                      "cv", "resume", "job application", "reserve duty", "miluim",
+                     "site visit", "site survey", "survey", "install", "commissioning",
+                     "maintenance", "repair", "inspection", "field work", "on-site", "on site",
                      "עבודה", "לעבוד", "משרד", "פרויקט", "משמרת", "לקוח",
-                     "קורות חיים", "קו״ח", "מועמדות", "מילואים"],               "have_to",    60),
-    ("leisure",     ["movie", "cinema", "relax", "party", "dinner out", "beach",
-                     "karaoke", "concert",
+                     "קורות חיים", "קו״ח", "מועמדות", "מילואים",
+                     "ביקור באתר", "ביקור שטח", "סיור באתר", "התקנה", "תחזוקה", "תיקון",
+                     "עבודת שטח", "טכנאי"],                                    "have_to",    60),
+    # "ים" alone would be inside "מים" (water) and "שים" (put): only the sea
+    # with its prefix is a keyword.
+    ("leisure",     ["movie", "cinema", "relax", "party", "dinner out", "dinner", "brunch", "beach",
+                     "karaoke", "concert", "netflix",
                      "סרט", "קולנוע", "מסיבה", "לנוח", "חוף", "בילוי",
-                     "קריוקי", "הופעה"],                                         "nice_to_do", 60),
+                     "קריוקי", "הופעה", "ארוחת ערב", "ארוחת בוקר", "ארוחת צהריים",
+                     "לים", "הים", "בים", "סדרה", "נטפליקס"],                    "nice_to_do", 60),
     ("aspiration",  ["goal", "dream", "someday", "שאיפה", "חלום", "מתישהו"],      "nice_to_do", 30),
 ]
 
@@ -102,7 +161,7 @@ def infer(text: str, learned: Optional[dict] = None) -> dict:
     category, priority, duration, matched = "general", "need_to", 30, False
 
     for cat, keywords, pri, dur in _RULES:
-        if any(kw in lowered for kw in keywords):
+        if any(has_keyword(lowered, kw) for kw in keywords):
             category, priority, duration, matched = cat, pri, dur, True
             break
     if category == "interview" and _STUDY_FOR.search(lowered):

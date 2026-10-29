@@ -19,17 +19,21 @@
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View,
+  ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BRAND, FONTS, RADIUS, SHADOWS } from '../constants/theme';
+import { BRAND, FONTS, MIN_TOUCH, RADIUS, SHADOWS } from '../constants/theme';
 import { AppLanguage } from '../types/index';
 import { CaptureOutcome, captureErrorText, useVoiceCapture } from '../hooks/useVoiceCapture';
 import { VoiceContext, beginVoiceContext, buildVoiceHint, runVoicePlan } from '../services/VoicePlanFlow';
 import { getSettings } from '../services/TaskStorage';
-import { hebrewVoiceStatus, speak, voiceLanguageFor } from '../services/SpeechService';
+import { hebrewVoiceStatus, speak, stopSpeaking, voiceLanguageFor } from '../services/SpeechService';
 import { describePlan, spokenLine } from '../utils/voicePlan';
+import type { LookupAnswer } from '../utils/answerCard';
+import type { ChainAnswer } from '../utils/chainAnswer';
 import { WaveformAnimation } from './WaveformAnimation';
+import { perfMark } from '../utils/perf';
+import { warmServer } from '../services/LumiServer';
 
 type Stage =
   | { kind: 'listening' }
@@ -41,20 +45,34 @@ type Stage =
 
 const AUTO_CLOSE_MS = 2600;
 
+/** A question asked on the mic and Meira's answer — continued in the chat. */
+export interface VoiceTurn {
+  id: string;
+  question: string;
+  reply: string;
+  answer?: LookupAnswer;
+  chain?: ChainAnswer;
+}
+
 export default function VoiceSheet({
   onClose,
   onTypeInstead,
+  onAnswer,
 }: {
   /** `planned`: a plan was made, so the caller can show the day. */
   onClose: (planned?: boolean) => void;
   /** Open the chat, with whatever was heard already typed in. */
   onTypeInstead: (text?: string) => void;
+  /** She asked, Meira answered: open the chat with this exchange in it (her pick, 7.10). */
+  onAnswer?: (turn: VoiceTurn) => void;
 }) {
   const insets = useSafeAreaInsets();
+  const { height: windowH } = useWindowDimensions();
   const [language, setLanguage] = useState<AppLanguage>('en');
   const [stage, setStage] = useState<Stage>({ kind: 'listening' });
   const [ttsNote, setTtsNote] = useState<string | null>(null);
   const ctx = useRef<VoiceContext | null>(null);
+  const stoppedAt = useRef<number | null>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const alive = useRef(true);
   const he = language === 'he';
@@ -67,6 +85,8 @@ export default function VoiceSheet({
       return;
     }
     const transcript = outcome.text;
+    perfMark('voice: stop → transcript', stoppedAt.current ?? Date.now());
+    const planT0 = Date.now();
     setStage({ kind: 'understanding', transcript });
     try {
       const report = await runVoicePlan(
@@ -77,7 +97,21 @@ export default function VoiceSheet({
           if (alive.current && step === 'planning') setStage({ kind: 'planning', transcript });
         },
       );
+      perfMark(`voice: transcript → ${report.type === 'answer' ? 'answer' : 'plan'}`, planT0);
+      if (stoppedAt.current) perfMark('voice: stop → result (total)', stoppedAt.current);
       if (!alive.current) return;
+      // A question, answered: the answer — and its card — go to the chat,
+      // where she can act on it and keep asking. Meira says the first line.
+      if (report.type === 'answer' && onAnswer) {
+        const first = report.reply.split('\n')[0] ?? '';
+        if (first && !(voiceLanguageFor(first, language) === 'he-IL' && (await hebrewVoiceStatus()) === 'missing')) {
+          speak(first, language).catch(() => undefined);
+        }
+        onAnswer({ id: `v${Date.now()}`, question: transcript, reply: report.reply,
+          ...(report.answer ? { answer: report.answer } : {}),
+          ...(report.chain ? { chain: report.chain } : {}) });
+        return;
+      }
       // The outcome of THIS request: what was set, or Meira's question, or
       // the clash — her reply is read for questions and warnings in there.
       const { headline, problems } = describePlan(report, he, report.reply);
@@ -90,7 +124,10 @@ export default function VoiceSheet({
       } else {
         speak(line, language).catch(() => undefined);
       }
-      if (!problems.length) {
+      // Close by itself only after SAVING something with nothing to flag. An
+      // answer to a question ("which beach is fastest?") stays until she is
+      // done reading it — a 2.6 s answer is one she never saw (rule 5).
+      if (!problems.length && report.created.length) {
         closeTimer.current = setTimeout(() => alive.current && onClose(true), AUTO_CLOSE_MS);
       }
     } catch (e) {
@@ -103,17 +140,22 @@ export default function VoiceSheet({
         });
       }
     }
-  }, [he, language, onClose]);
+  }, [he, language, onClose, onAnswer]);
 
   const capture = useVoiceCapture({ onDone, hint: buildVoiceHint });
 
   const begin = useCallback(async () => {
+    // Her turn to talk: Meira stops mid-sentence, or the mic records her
+    // own voice and Whisper writes it down as what she said.
+    stopSpeaking();
     setTtsNote(null);
     setStage({ kind: 'listening' });
     const settings = await getSettings().catch(() => null);
     const lang: AppLanguage = settings?.language === 'he' ? 'he' : 'en';
     setLanguage(lang);
     ctx.current = beginVoiceContext(lang);
+    // She is about to ask Meira something: wake the server while she talks.
+    warmServer('mic');
     await capture.start();
   }, [capture]);
 
@@ -132,7 +174,10 @@ export default function VoiceSheet({
   }, []);
 
   useEffect(() => {
-    if (capture.phase === 'transcribing') setStage({ kind: 'transcribing' });
+    if (capture.phase === 'transcribing') {
+      stoppedAt.current = Date.now();
+      setStage({ kind: 'transcribing' });
+    }
   }, [capture.phase]);
 
   const close = (planned = false) => {
@@ -148,7 +193,10 @@ export default function VoiceSheet({
   return (
     <Modal visible transparent animationType="slide" onRequestClose={() => close()}>
       <Pressable style={styles.backdrop} onPress={() => close(stage.kind === 'done')} accessibilityLabel={he ? 'סגירה' : 'Close'} />
-      <View style={[styles.sheet, { paddingBottom: insets.bottom + 20 }]}>
+      {/* Capped at 85% of the screen: a long answer (headline + three warnings + the
+          Hebrew-voice note) grew the sheet past the top and pushed "See my day" off it.
+          The words scroll; the two buttons below them do not. */}
+      <View style={[styles.sheet, { paddingBottom: insets.bottom + 20, maxHeight: windowH * 0.85 }]}>
         <View style={styles.grabber} />
 
         {stage.kind === 'listening' && (
@@ -187,15 +235,17 @@ export default function VoiceSheet({
         )}
 
         {stage.kind === 'done' && (
-          <View>
-            {stage.transcript ? (
-              <Text style={styles.transcript} numberOfLines={3}>“{stage.transcript}”</Text>
-            ) : null}
-            <Text style={styles.headline}>{stage.headline}</Text>
-            {stage.problems.map((p) => (
-              <Text key={p} style={styles.problem}>{p}</Text>
-            ))}
-            {ttsNote ? <Text style={styles.problem}>{ttsNote}</Text> : null}
+          <>
+            <ScrollView style={styles.body} showsVerticalScrollIndicator={false}>
+              {stage.transcript ? (
+                <Text style={styles.transcript} numberOfLines={3}>“{stage.transcript}”</Text>
+              ) : null}
+              <Text style={styles.headline}>{stage.headline}</Text>
+              {stage.problems.map((p) => (
+                <Text key={p} style={styles.problem}>{p}</Text>
+              ))}
+              {ttsNote ? <Text style={styles.problem}>{ttsNote}</Text> : null}
+            </ScrollView>
             <View style={styles.row}>
               <TouchableOpacity style={styles.secondary} onPress={begin} activeOpacity={0.85}>
                 <Text style={styles.secondaryText}>{he ? '🎤 עוד' : '🎤 More'}</Text>
@@ -204,15 +254,17 @@ export default function VoiceSheet({
                 <Text style={styles.primaryText}>{he ? 'לראות את היום' : 'See my day'}</Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </>
         )}
 
         {stage.kind === 'error' && (
-          <View style={styles.center}>
-            {stage.transcript ? (
-              <Text style={styles.transcript} numberOfLines={3}>“{stage.transcript}”</Text>
-            ) : null}
-            <Text style={styles.errorText}>{stage.message}</Text>
+          <>
+            <ScrollView style={styles.body} contentContainerStyle={styles.center} showsVerticalScrollIndicator={false}>
+              {stage.transcript ? (
+                <Text style={styles.transcript} numberOfLines={3}>“{stage.transcript}”</Text>
+              ) : null}
+              <Text style={styles.errorText}>{stage.message}</Text>
+            </ScrollView>
             <View style={styles.row}>
               <TouchableOpacity
                 style={styles.secondary}
@@ -225,7 +277,7 @@ export default function VoiceSheet({
                 <Text style={styles.primaryText}>{he ? '🎤 שוב' : '🎤 Try again'}</Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </>
         )}
       </View>
     </Modal>
@@ -248,6 +300,8 @@ const styles = StyleSheet.create({
     backgroundColor: BRAND.line, marginBottom: 14,
   },
   center: { alignItems: 'center' },
+  // The scrolling words above the buttons: take only the room they need, give way when the sheet is capped.
+  body: { flexGrow: 0, flexShrink: 1 },
   title: {
     fontFamily: FONTS.bodyHeavy, fontSize: 18, color: BRAND.warmInk, textAlign: 'center',
   },
@@ -277,12 +331,12 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', gap: 10, marginTop: 14, alignSelf: 'stretch' },
   primary: {
     flex: 1, backgroundColor: BRAND.sunGold, borderRadius: RADIUS.button,
-    paddingVertical: 13, alignItems: 'center',
+    minHeight: MIN_TOUCH, paddingVertical: 13, alignItems: 'center', justifyContent: 'center',
   },
   primaryText: { fontFamily: FONTS.bodyHeavy, fontSize: 15, color: BRAND.onGold },
   secondary: {
     flex: 1, backgroundColor: BRAND.goldSoft, borderRadius: RADIUS.button,
-    paddingVertical: 13, alignItems: 'center',
+    minHeight: MIN_TOUCH, paddingVertical: 13, alignItems: 'center', justifyContent: 'center',
   },
   secondaryText: { fontFamily: FONTS.bodyBold, fontSize: 15, color: BRAND.goldInk },
 });

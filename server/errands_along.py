@@ -32,6 +32,7 @@ Places refused (the key), nothing found near the route, nothing open.
 from __future__ import annotations
 
 import json
+import re
 import logging
 import math
 from datetime import date as _date
@@ -39,7 +40,9 @@ from typing import Optional
 
 import httpx
 
+import ai_gate
 import config
+import geo
 import llm_usage
 import model_router
 
@@ -74,17 +77,57 @@ Return JSON only:
 {"errand": true|false, "query_he": "", "query_en": "", "minutes": 15, "why": "<=10 words"}"""
 
 
+# The errands any city has a shop for, by their words — code, not the model.
+# 1.10: the model answered "not an errand" for "לתקן את מכונת הקפה", the very
+# example this module was built for, and that "no" was final. A rule hit now
+# overrules a refusal; the model still writes the query for anything else.
+_RULES = [
+    (r"(?:^|\s)(?:לתקן|תיקון|fix|repair)\s+(?:את\s+|my\s+|the\s+)?(.+)", "תיקון {o}", "{o} repair"),
+    (r"(?:חבילה|דואר|parcel|package|post office)", "דואר ישראל", "post office"),
+    (r"(?:כביסה|ניקוי יבש|laundry|dry clean)", "מכבסה", "laundromat"),
+    (r"(?:תספורת|מספרה|haircut|barber)", "מספרה", "barber"),
+    (r"(?:להדפיס|הדפסה|print)", "דפוס", "print shop"),
+    (r"(?:מפתח|key cut|copy a key)", "שכפול מפתחות", "key cutting"),
+    (r"(?:שטיפת רכב|לשטוף את הרכב|car wash)", "שטיפת רכב", "car wash"),
+    (r"(?:בית מרקחת|תרופ|pharmacy|prescription)", "בית מרקחת", "pharmacy"),
+    (r"(?:סופר|מכולת|groceries|supermarket)", "סופרמרקט", "supermarket"),
+    (r"(?:מתנה|gift)", "חנות מתנות", "gift shop"),
+    (r"(?:^|\s)(?:לקנות|buy)\s+(?:את\s+|a\s+|an\s+|the\s+)?(.+)", "{o}", "{o}"),
+]
+
+
+def rule_understand(text: str) -> Optional[dict]:
+    t = str(text or "").strip()
+    for pattern, he, en in _RULES:
+        m = re.search(pattern, t, re.IGNORECASE)
+        if not m:
+            continue
+        obj = (m.group(1) if m.groups() else "").strip(" .,!?") if m.groups() else ""
+        hebrew = bool(re.search(r"[\u0590-\u05FF]", obj))
+        # One language per query: a Hebrew object never goes in the English one.
+        q_he = he.format(o=obj).strip() if (hebrew or "{o}" not in he) else ""
+        q_en = en.format(o=obj).strip() if (not hebrew or "{o}" not in en) else ""
+        return {"errand": True, "query_he": q_he, "query_en": q_en, "minutes": 20, "why": "rule"}
+    return None
+
+
 async def understand(text: str, memory: str = "") -> Optional[dict]:
-    from openai import AsyncOpenAI
+    got = await _model_understand(text, memory)
+    if got and got.get("errand"):
+        return got
+    return rule_understand(text) or got
+
+
+async def _model_understand(text: str, memory: str = "") -> Optional[dict]:
 
     user = f"TO-DO: {text}\n" + (f"\nMEMORY (private):\n{memory[:600]}\n" if memory else "")
     model = model_router.pick("errand_understand", prompt_chars=len(_SYSTEM) + len(user))
-    client = AsyncOpenAI(api_key=config.LLM_API_KEY, base_url=config.LLM_ENDPOINT)
+    client = ai_gate.client()
     try:
         resp = await client.chat.completions.create(
             model=model,
             messages=[{"role": "system", "content": _SYSTEM}, {"role": "user", "content": user}],
-            temperature=0.1, max_tokens=150,
+            temperature=0.1, max_tokens=300,
             response_format={"type": "json_object"}, timeout=30,
         )
     except Exception as exc:  # noqa: BLE001
@@ -216,21 +259,11 @@ def open_at(periods: Optional[list], day: _date, hhmm: str) -> Optional[bool]:
 
 # ── 4. search ───────────────────────────────────────────────────────────────
 
-class PlacesRefused(Exception):
-    pass
+PlacesRefused = geo.PlacesRefused
 
 
 async def _nearby(client: httpx.AsyncClient, query: str, lat: float, lng: float) -> list[dict]:
-    params = {"query": query, "location": f"{lat},{lng}", "radius": _RADIUS_M,
-              "region": "il", "key": config.GOOGLE_MAPS_API_KEY}
-    r = await client.get(_TEXTSEARCH, params=params)
-    data = r.json()
-    status = data.get("status")
-    if status in ("REQUEST_DENIED", "OVER_QUERY_LIMIT"):
-        raise PlacesRefused(f"{status}: {data.get('error_message') or ''}")
-    if status not in ("OK", "ZERO_RESULTS"):
-        logger.warning("errands_along textsearch %s", status)
-    return data.get("results") or []
+    return await geo.places_near(client, query, lat, lng, _RADIUS_M)
 
 
 async def _details(client: httpx.AsyncClient, place_id: str) -> dict:
@@ -259,12 +292,17 @@ def hours_today(weekday_text: list, day: _date) -> str:
 
 
 def score(c: dict) -> float:
-    """Better rating first, then closer to the line (1 km off costs a star)."""
-    return (c.get("rating") or 4.0) - (c.get("off_route_m") or 0) / 1000.0
+    """Better rating first, then closer to the line (1 km off costs a star) —
+    and a leg AFTER an event beats the leg TO one: a stop on the way to an
+    interview is a stop that can make her late (Koral, 1.10: "after the
+    interview, because I'm in Ra'anana")."""
+    return ((c.get("rating") or 4.0) - (c.get("off_route_m") or 0) / 1000.0
+            + (1.5 if c.get("after") else 0.0))
 
 
 async def along(task_text: str, trips: list[dict], *, memory: str = "",
-                plan: Optional[dict] = None, user_key: Optional[str] = None) -> dict:
+                plan: Optional[dict] = None, user_key: Optional[str] = None,
+                prices: bool = True) -> dict:
     """{ok, query, candidates[]} or {ok: false, reason}.
 
     trips: [{polyline, leave: "HH:MM", arrive: "HH:MM", date: "YYYY-MM-DD",
@@ -309,6 +347,7 @@ async def along(task_text: str, trips: list[dict], *, memory: str = "",
                             "pass_at": s["pass_at"],
                             "date": trip.get("date"),
                             "trip": trip.get("label") or "",
+                            "after": bool(trip.get("after")),
                         }
             if not found:
                 return {"ok": False, "reason": "nothing_on_route", "query": query}
@@ -367,13 +406,16 @@ async def along(task_text: str, trips: list[dict], *, memory: str = "",
             f"{best['off_route_m']} m off route",
         ) if w]
     # What it costs, from the web — each price verified against its source.
-    try:
-        import errand_prices
-        await errand_prices.enrich(top, p["query_he"] or p["query_en"] or query)
-        if best and best.get("price"):
-            best["why"].append(f"price {best['price']['price']}")
-    except Exception as exc:  # noqa: BLE001 — prices are a bonus, the route is the answer
-        logger.warning("errands_along: prices skipped: %s", exc)
+    # `prices=False`: a caller that only needs to know WHICH place is on the way
+    # (the Add screen's suggestion row) does not pay for web searches per place.
+    if prices:
+        try:
+            import errand_prices
+            await errand_prices.enrich(top, p["query_he"] or p["query_en"] or query)
+            if best and best.get("price"):
+                best["why"].append(f"price {best['price']['price']}")
+        except Exception as exc:  # noqa: BLE001 — prices are a bonus, the route is the answer
+            logger.warning("errands_along: prices skipped: %s", exc)
     for c in top:
         c["maps_url"] = f"https://www.google.com/maps/search/?api=1&query={c['lat']},{c['lng']}&query_place_id={c['place_id']}"
     return {"ok": True, "query": query, "minutes": p["minutes"], "candidates": top}

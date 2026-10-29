@@ -26,8 +26,10 @@ from typing import Optional
 from openai import AsyncOpenAI, APIConnectionError, APITimeoutError
 
 import agents_store
+import ai_gate
 import config
 import tavily_search
+import transit_alerts
 import model_router
 import geo
 import llm_usage
@@ -43,6 +45,7 @@ _POLL_SECONDS = 60
 GRACE_MINUTES = 30      # overdue past this (deploy/downtime) → skip, don't send stale brief
 _MAX_ROUTE_CALLS = 3    # bound Google Directions work inside a poller tick
 _ROUTE_TIMEOUT_S = 10
+_NEWS_TIMEOUT_S = 20
 _OUTPUT_MAX_CHARS = 1200
 
 # Same fabrication guard as lumi_agent: transit-emoji/time lines are only legal
@@ -56,7 +59,7 @@ _client: Optional[AsyncOpenAI] = None
 def _get_client() -> AsyncOpenAI:
     global _client
     if _client is None:
-        _client = AsyncOpenAI(api_key=config.LLM_API_KEY, base_url=config.LLM_ENDPOINT)
+        _client = ai_gate.client()
     return _client
 
 
@@ -181,7 +184,7 @@ async def _morning_facts(phone: str, prof: dict) -> tuple[str, bool]:
     today = today_il().isoformat()
     located = [t for t in _today_tasks(phone, today)
                if t.get("fixed_time") and t.get("location")][:_MAX_ROUTE_CALLS]
-    routes = []
+    routes, trips = [], []
     for t in located:
         loc = t["location"]
         dest = loc if isinstance(loc, str) else \
@@ -201,14 +204,50 @@ async def _morning_facts(phone: str, prof: dict) -> tuple[str, bool]:
                 timeout=_ROUTE_TIMEOUT_S,
             )
             plan = res.get("plan") if res.get("ok") else None
+            if plan:
+                trips.append((plan, dest))
             if plan and plan.get("routeText"):
                 routes.append(f"ROUTE for '{t.get('text', '')}' (paste VERBATIM):\n"
                               f"{plan['routeText']}")
         except Exception as exc:  # noqa: BLE001 — a dead route never kills the brief
             logger.warning("morning route for %s failed: %s", dest, exc)
+    news = await _transit_news_block(trips, home)
+    if news:
+        facts = facts + "\n\n" + news
     if routes:
         return facts + "\n\n" + "\n\n".join(routes), True
     return facts + "\n\n(couldn't fetch live routes — don't invent any)", False
+
+
+async def _transit_news_block(trips: list, home: str) -> str:
+    """One news check for every trip in the brief — closed lines, roadworks,
+    strikes on the route (transit_alerts). trips: [(plan, destination)].
+
+    Three different sentences, never one (silent-state rule 1): alerts with
+    their links, "checked, nothing reported", or "couldn't check"."""
+    if not trips:
+        return ""
+    places, stations, lines, modes = [], [], [], []
+    for plan, dest in trips:
+        t = transit_alerts.terms_from_plan(plan, origin=home, destination=dest or "")
+        places += t["places"]; stations += t["stations"]
+        lines += t["lines"]; modes += t["modes"]
+    try:
+        res = await asyncio.wait_for(
+            transit_alerts.disruptions_for(places=places, stations=stations,
+                                           lines=lines, modes=modes),
+            timeout=_NEWS_TIMEOUT_S)
+    except Exception as exc:  # noqa: BLE001 — news never kills the brief
+        logger.warning("brief transit news failed: %s", exc)
+        res = {"checked": False, "reason": "failed"}
+    if not res.get("checked"):
+        return "(couldn't check transit news today — don't mention disruptions)"
+    alerts = res.get("alerts") or []
+    if not alerts:
+        return "(checked transit news for these routes: nothing reported — you may say so in a few words)"
+    rows = "\n".join(f"- {a['title']} ({a['link']})" for a in alerts[:3])
+    return ("LIVE TRANSIT NEWS on her route — say 'there may be' and give the link; "
+            "keep the route as planned, suggest leaving earlier:\n" + rows)
 
 
 def _task_dest(t: dict) -> Optional[str]:
@@ -279,6 +318,9 @@ async def _alarm_facts(phone: str, prof: dict, agent_id: str) -> tuple[str, bool
             route_blocks.append(
                 f"ROUTE for '{t.get('text', '')}' (paste VERBATIM):\n{plan['routeText']}")
 
+    news = await _transit_news_block(
+        [(plans[str(t.get("id"))], _task_dest(t)) for t in fixed if str(t.get("id")) in plans],
+        home or "")
     facts = (
         f"Tomorrow ({tomorrow}) schedule:\n{_task_lines(all_rows)}\n\n"
         f"PRECOMPUTED (state these, never change them):\n"
@@ -287,6 +329,7 @@ async def _alarm_facts(phone: str, prof: dict, agent_id: str) -> tuple[str, bool
         f"- Recommended bedtime tonight: {bedtime} (8h sleep)\n"
         f"- Wake + leave reminders: scheduled"
         + ("\n\n" + "\n\n".join(route_blocks) if route_blocks else "")
+        + ("\n\n" + news if news else "")
     )
     return facts, bool(route_blocks)
 
@@ -326,12 +369,18 @@ async def _compose(agent: dict, facts: str, language: str) -> Optional[str]:
     return None
 
 
-async def _run_agent(agent: dict) -> None:
+async def _run_agent(agent: dict) -> Optional[str]:
+    """Compose and send one agent run. None when sent; otherwise the reason
+    nothing reached WhatsApp (the app's "Try now" shows it)."""
     # The hr_job_search template used to be intercepted here and handed to its
     # own multi-result pipeline. That agent is gone; a stored agent still
     # carrying the old template now falls through to the normal _compose path
     # rather than crashing the poller on a missing module.
     phone = agent["phone"]
+    import user_quota
+    if user_quota.state(user_quota.set_person(phone, new_request=True))["level"] == "over":
+        # Returned, not swallowed: the app's "Try now" shows this reason.
+        return "AI limit reached for this account — this agent resumes when it resets"
     prof = user_profile.get_profile(phone)
     language = prof.get("language") or "he"
     template = agent.get("template")
@@ -357,7 +406,7 @@ async def _run_agent(agent: dict) -> None:
             text = facts  # templates: raw facts still beat silence
         else:
             logger.warning("custom agent %s produced nothing — skipped", agent["id"])
-            return
+            return "empty"
     if not has_route:
         # No prefetched routes → any transit/time line is invented. Strip.
         kept = [ln for ln in text.split("\n") if not _ROUTE_LINE_RE.search(ln)]
@@ -365,8 +414,11 @@ async def _run_agent(agent: dict) -> None:
             logger.warning("agent %s: stripped invented route-looking line(s)", agent["id"])
         text = "\n".join(kept).strip() or text[:200]
     text = f"{agent.get('emoji', '🤖')} {agent.get('name', 'Agent')}\n{text}"[:_OUTPUT_MAX_CHARS]
-    await WhatsAppService.send_message(phone, text)
-    logger.info("agent %s (%s) fired for %s", agent["id"], agent.get("name"), phone)
+    if not await WhatsAppService.send_message(phone, text):
+        logger.warning("agent %s: WhatsApp send failed", agent["id"])
+        return "whatsapp_failed"
+    logger.info("agent %s fired", agent["id"])
+    return None
 
 
 async def run_due(now: Optional[datetime] = None) -> int:

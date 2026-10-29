@@ -1,0 +1,30 @@
+{"id": "i01", "text": "תעירי אותי ב-7", "expected": "wake_up"}
+{"id": "i02", "text": "wake me up at 6", "expected": "wake_up"}
+{"id": "i03", "text": "move the gym to 18:00", "expected": "task_update"}
+{"id": "i04", "text": "תזיז את היוגה ל-19:00", "expected": "task_update"}
+{"id": "i05", "text": "סיימתי עם הרופא", "expected": "check_in"}
+{"id": "i06", "text": "I finished the gym", "expected": "check_in"}
+{"id": "i07", "text": "add a meeting tomorrow", "expected": "add_tasks"}
+{"id": "i08", "text": "יוגה ב-11:00 ביגאל אלון", "expected": "add_tasks"}
+{"id": "i09", "text": "כלום", "expected": "empty_list"}
+{"id": "i10", "text": "nothing", "expected": "empty_list"}
+{"id": "i11", "text": "אני גר ביגאל אלון 94", "expected": "profile_update"}
+{"id": "i12", "text": "I usually wake up at 7", "expected": "profile_update"}
+{"id": "i13", "text": "תסדרי לי את היום", "expected": "optimize"}
+{"id": "i14", "text": "plan my day", "expected": "optimize"}
+{"id": "i15", "text": "יש התנגשות בין הפגישות", "expected": "conflict"}
+{"id": "i16", "text": "these two overlap", "expected": "conflict"}
+{"id": "i17", "text": "תמחק את הפגישה עם דני", "expected": "task_update"}
+{"id": "i18", "text": "cancel the dentist", "expected": "task_update"}
+{"id": "i19", "text": "remind me to call mom", "expected": "add_tasks"}
+{"id": "i20", "text": "תזכיר לי לשלם חשבונות", "expected": "add_tasks"}
+{"id": "i21", "text": "the doctor", "mode": "review", "expected": "check_in"}
+{"id": "i22", "text": "הרופא", "mode": "review", "expected": "check_in"}
+{"id": "i23", "text": "דחה את הפגישה ליום חמישי", "expected": "task_update"}
+{"id": "i24", "text": "I need to buy milk", "expected": "add_tasks"}
+{"id": "i25", "text": "צריך לקנות חלב", "expected": "add_tasks"}
+{"id": "i26", "text": "ביטלתי את האימון", "expected": "task_update", "note": "past-tense cancel: DELETE_RE only knows the imperative"}
+{"id": "i27", "text": "I'm done with the report", "expected": "check_in"}
+{"id": "i28", "text": "עשיתי את הכביסה", "expected": "check_in"}
+{"id": "i29", "text": "can you reschedule my 3pm", "expected": "task_update"}
+{"id": "i30", "text": "I live in Haifa", "expected": "profile_update"}

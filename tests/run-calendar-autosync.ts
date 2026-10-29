@@ -36,7 +36,7 @@ const memoryAsyncStorage = {
 const Module = require('module');
 const origLoad = Module._load;
 Module._load = function patched(request: string, ...rest: any[]) {
-  if (request === '@react-native-async-storage/async-storage') {
+  if (request === '@react-native-async-storage/async-storage' || request.endsWith('/EncryptedStorage')) {
     return { __esModule: true, default: memoryAsyncStorage };
   }
   if (request === './supabaseClient' || request.endsWith('/supabaseClient')) {
@@ -179,9 +179,13 @@ async function main() {
     today.includes('syncCalendarDate(dateKey'),
     'TodaySchedule day picker');
 
-  check('a refused pull is drawn on the day, not swallowed',
-    today.includes('calendarError') && /Google said|גוגל החזיר/.test(today),
-    'TodaySchedule banner');
+  // Drawn as one line that names the FIX (offline ≠ reconnect Google — the
+  // 30.9 card told her to reconnect over a DNS blip); the raw reason stays one
+  // tap away for the kinds that have no plain fix.
+  check('a refused pull is drawn on the day, not swallowed — in words that name the fix',
+    today.includes('calendarError') && today.includes('classifyCalendarError(calendarError)')
+      && today.includes('calendarErrorLine('),
+    'TodaySchedule calendar line');
 
   // ── 14. One announcement per event, both languages ───────────────────────
   check('the import announces itself (a silent background import is no import)',

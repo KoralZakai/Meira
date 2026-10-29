@@ -30,6 +30,7 @@ import time
 from typing import Optional
 
 import config
+import identity_keys
 import secure_store
 
 logger = logging.getLogger(__name__)
@@ -95,7 +96,11 @@ def record(user_key: str, surface: str, verdict: str, subject: str, *,
 
 
 def verdicts(user_key: str, surface: Optional[str] = None) -> list:
-    rows = _load().get(user_key, [])
+    """Her verdicts, oldest first — under every key she was stored with
+    (identity_keys): the app routes recorded them under her phone until 6.10."""
+    data = _load()
+    rows = [r for k in (identity_keys.keys_of(user_key) or [user_key]) for r in data.get(k, [])]
+    rows.sort(key=lambda r: r.get("at") or 0)
     return [r for r in rows if not surface or r.get("surface") == surface]
 
 

@@ -34,6 +34,8 @@ import inspect
 import json
 import logging
 import math
+import os
+import re
 import typing
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
@@ -45,7 +47,44 @@ logger = logging.getLogger(__name__)
 # Nebius occasionally answers a tool call with arguments that are not JSON. The
 # model is told, in the tool result, what it did wrong — the same recovery
 # LangGraph's handle_tool_errors gave us.
-_BAD_ARGS = "Error: could not parse the arguments as JSON. Call the tool again with valid JSON."
+_BAD_ARGS = "could not parse the arguments as JSON. Call the tool again with valid JSON."
+
+
+def _env_seconds(name: str, default: float) -> float:
+    """A positive number of seconds from the environment, else `default`."""
+    try:
+        value = float(os.environ.get(name, "") or default)
+    except ValueError:
+        logger.warning("%s is not a number - using %ss", name, default)
+        return default
+    return value if value > 0 else default
+
+
+#: How long ONE tool call may run before the loop stops waiting for it.
+#: Without a ceiling, a tool that never returns (a hung socket, a lock) holds
+#: the whole turn: the user's message gets no answer at all and the model never
+#: gets to say "I could not check". Read at call time, so a test or an eval can
+#: patch it; override per deployment with LUMI_TOOL_TIMEOUT_S.
+TOOL_TIMEOUT_S = _env_seconds("LUMI_TOOL_TIMEOUT_S", 20.0)
+
+#: Tools whose honest worst case is longer than the default: they chain several
+#: outside calls (geocode, then directions, then places), each allowed 12 s by
+#: its own httpx client. Cutting them at 20 s would turn a slow route into a
+#: false "timeout".
+TOOL_TIMEOUT_OVERRIDES = {"plan_departure": 35.0, "find_best_place": 35.0, "route_now": 35.0}
+
+
+def _failure(message: str) -> str:
+    """A failed tool result in the SAME shape the tools use: {"ok": false, "error"}.
+
+    A raised tool used to reach the anti-fabrication guard as the bare text
+    "Error: boom". That is not JSON, and the guard's rule is "unparseable is
+    success" (it must never strip a real confirmation), so a tool that blew up
+    counted as a save and "✓ נשמר" went out for something never written.
+    Reporting every loop-level failure as JSON with ok:false lets the guard,
+    the trace and the model all read the same fact.
+    """
+    return json.dumps({"ok": False, "error": message}, ensure_ascii=False)
 
 
 # ── messages ────────────────────────────────────────────────────────────────
@@ -56,6 +95,7 @@ class AIMessage:
     content: str = ""
     tool_calls: list = field(default_factory=list)   # [{"id", "name", "args"}]
     usage_metadata: Optional[dict] = None            # {"input_tokens","output_tokens"}
+    reasoning: str = ""                              # what the model thought, kept out of the reply
 
 
 @dataclass
@@ -172,7 +212,8 @@ class ChatOpenAI:
         self.temperature = temperature
         self.presence_penalty = presence_penalty
         self.frequency_penalty = frequency_penalty
-        self._client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+        import ai_gate
+        self._client = ai_gate.client(api_key=api_key, base_url=base_url)
 
     def _sampling(self) -> dict:
         out = {"max_tokens": self.max_tokens, "temperature": self.temperature}
@@ -216,6 +257,42 @@ def _serialize(value: Any) -> str:
         return json.dumps(value, ensure_ascii=False, default=str)
     except (TypeError, ValueError):
         return str(value)
+
+
+_THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
+
+
+def split_reasoning(content: Optional[str]) -> tuple:
+    """(what she reads, what the model thought) — the reasoning is KEPT, not thrown away.
+
+    Nemotron with thinking off (ai_gate.without_thinking) still, now and then,
+    writes a line of reasoning and closes it with a bare `</think>` — 20.10:
+    "No dentist appointment found. Let the user know. </think> I don't see…".
+    Everything up to the last `</think>` is reasoning. It never reaches her
+    screen, but it is logged and returned as the turn's `why` (Koral, 20.10:
+    "must have reasoning of why it acts the way it acts"). A reply that is ONLY
+    reasoning is kept as the reply rather than turned into an empty answer.
+    """
+    text = content or ""
+    thought = [m.strip() for m in re.findall(r"<think>(.*?)</think>", text, re.DOTALL)]
+    text = _THINK_RE.sub("", text)
+    if "</think>" in text:
+        before, after = text.rsplit("</think>", 1)
+        if after.strip():
+            thought.append(before.replace("</think>", " ").strip())
+            text = after
+        else:
+            text = text.replace("</think>", "")
+    return text.strip(), " ".join(t for t in thought if t).strip()
+
+
+def visible_text(content: Optional[str]) -> str:
+    """What the model meant her to read: its reasoning removed (see split_reasoning),
+    and the "Answer:" label it sometimes writes before the answer (live eval 20.10)."""
+    return _ANSWER_LABEL_RE.sub("", split_reasoning(content)[0], count=1)
+
+
+_ANSWER_LABEL_RE = re.compile(r"^\s*(?:final answer|answer|reply|response|תשובה)\s*:\s*", re.I)
 
 
 def _assistant_turn(message: Any) -> dict:
@@ -305,16 +382,20 @@ class ReActAgent:
         return _Graph(list(self.by_name))
 
     async def _run_tool(self, name: str, raw_args: str, call_id: str) -> ToolMessage:
-        """One tool call, including the two ways it can fail.
+        """One tool call, including the ways it can fail: a bad call, a raise, a hang.
 
         A failure is reported back to the model as a normal tool result rather
         than raised: that is how it recovers (calls infer_task_details after
         update_task says the id does not exist) instead of the whole turn dying
         and the user getting an apology for a message that was perfectly clear.
+
+        Every failure is `{"ok": false, "error": ...}` JSON with status="error",
+        never bare text: the anti-fabrication guard reads `ok`, and text it
+        cannot parse used to count as success (see `_failure`).
         """
         target = self.by_name.get(name)
         if target is None:
-            return ToolMessage(content=f"Error: no tool named {name!r}.",
+            return ToolMessage(content=_failure(f"no tool named {name!r}."),
                                name=name, tool_call_id=call_id, status="error")
         try:
             args = json.loads(raw_args) if raw_args else {}
@@ -322,14 +403,31 @@ class ReActAgent:
                 raise ValueError("arguments must be a JSON object")
         except (json.JSONDecodeError, ValueError):
             logger.warning("tool %s called with unparseable arguments: %r", name, raw_args[:120])
-            return ToolMessage(content=_BAD_ARGS, name=name,
+            return ToolMessage(content=_failure(_BAD_ARGS), name=name,
                                tool_call_id=call_id, status="error")
+        limit = TOOL_TIMEOUT_OVERRIDES.get(name, TOOL_TIMEOUT_S)
         try:
-            result = await target.ainvoke(args)
-        except Exception as exc:  # noqa: BLE001 — reported to the model, not raised
+            async with asyncio.timeout(limit) as budget:
+                result = await target.ainvoke(args)
+        except TimeoutError as exc:
+            if not budget.expired():
+                # The tool raised a TimeoutError of its own (a socket, an inner
+                # wait_for): an ordinary failure, not our ceiling.
+                logger.warning("tool %s raised: %s", name, exc)
+                return ToolMessage(content=_failure(f"{name} failed: {exc or 'timed out'}"),
+                                   name=name, tool_call_id=call_id, status="error")
+            logger.warning("tool %s timed out after %gs - handing the model a failure to answer from",
+                           name, limit)
+            return ToolMessage(
+                content=_failure(
+                    f"timeout: {name} did not answer within {limit:g}s. It may not have finished. "
+                    "Do NOT say it worked and do NOT guess its result: tell the user honestly "
+                    "that you could not do it right now and offer to try again."),
+                name=name, tool_call_id=call_id, status="error")
+        except Exception as exc:  # noqa: BLE001 - reported to the model, not raised
             logger.warning("tool %s raised: %s", name, exc)
-            return ToolMessage(content=f"Error: {exc}", name=name,
-                               tool_call_id=call_id, status="error")
+            return ToolMessage(content=_failure(f"{name} failed: {exc}"),
+                               name=name, tool_call_id=call_id, status="error")
         return ToolMessage(content=_serialize(result), name=name, tool_call_id=call_id)
 
     async def ainvoke(self, state: dict, config: Optional[dict] = None) -> dict:
@@ -366,8 +464,12 @@ class ReActAgent:
                 raise AgentCallError(exc, {"messages": collected, "wire": wire}) from exc
             choice = response.choices[0].message
             usage = getattr(response, "usage", None)
+            said, thought = split_reasoning(choice.content)
+            if thought:
+                logger.info("model reasoning: %s", thought[:400])
             ai = AIMessage(
-                content=choice.content or "",
+                content=said,
+                reasoning=thought,
                 tool_calls=[{"id": tc.id, "name": tc.function.name,
                              "args": tc.function.arguments}
                             for tc in (choice.tool_calls or [])],

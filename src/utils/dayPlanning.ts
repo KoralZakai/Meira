@@ -11,6 +11,7 @@
 import { Task, TaskLocation } from '../types/index';
 import { timeToMinutes } from './timeUtils';
 import { isMeetingLink } from './meetingLink';
+import { FeasibilityOptions, judgeDay } from './dayFeasibility';
 
 export const locOf = (t?: Task): TaskLocation | undefined =>
   t && t.location && typeof t.location === 'object' ? (t.location as TaskLocation) : undefined;
@@ -92,8 +93,13 @@ export function sortTimed(tasks: Task[]): Task[] {
 /**
  * What will go wrong on this day: appointments that overlap, and gaps between
  * two places too short for the travel between them. `timed` must be sorted.
+ *
+ * With `opts` (her buffer, habitual lateness, earliest wake — see
+ * utils/dayFeasibility) it also says what is merely POSSIBLE: a gap that
+ * holds the trip but not the margin, and a first trip that needs her up
+ * before she is willing to be. Both used to pass in silence.
  */
-export function dayWarnings(timed: Task[], he: boolean): string[] {
+export function dayWarnings(timed: Task[], he: boolean, opts?: FeasibilityOptions): string[] {
   const warnings: string[] = [];
   for (let k = 1; k < timed.length; k++) {
     const prev = timed[k - 1];
@@ -112,6 +118,20 @@ export function dayWarnings(timed: Task[], he: boolean): string[] {
       warnings.push(he
         ? `⚠️ זמן קצר מדי בין "${prev.text}" ל"${cur.text}" (${travel} דק' נסיעה)`
         : `⚠️ Too tight between "${prev.text}" and "${cur.text}" (${travel} min travel)`);
+    }
+  }
+  if (opts) {
+    for (const t of judgeDay(timed, opts)) {
+      if (t.status === 'WAKE_CONFLICT') {
+        warnings.push(he
+          ? `⏰ השכמה מוקדמת: "${t.text}" דורש לקום ב-${t.wake} — לפני ${t.earliestWake}`
+          : `⏰ Early start: "${t.text}" needs you up at ${t.wake} — before your ${t.earliestWake}`);
+      } else if (t.status === 'TIGHT') {
+        const spare = (t.gap ?? 0) - t.travel;
+        warnings.push(he
+          ? `⏱ צפוף: "${t.prevText}" ו"${t.text}" — ${spare} דק׳ רזרבה, צריך ${Math.ceil(t.margin)}`
+          : `⏱ Tight: "${t.prevText}" and "${t.text}" — ${spare} min spare, you want ${Math.ceil(t.margin)}`);
+      }
     }
   }
   return warnings;

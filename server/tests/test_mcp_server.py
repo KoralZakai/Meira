@@ -145,10 +145,10 @@ class Tools(Base):
     def test_get_my_day_carries_the_phones_leave_and_wake_times(self):
         rows = [
             {"id": "a", "text": "Meeting — Nebius team", "fixed_time": "13:00", "duration_minutes": 60,
-             "date": "2026-10-01", "status": "pending", "category": "meeting", "priority": "must",
+             "date": "2030-10-01", "status": "pending", "category": "meeting", "priority": "must",
              "location": {"address": "Azrieli Center", "leaveHomeBy": "12:18", "wakeUpBy": "07:30",
                           "transitPlan": {"legs": [{"type": "walk"}, {"type": "bus", "lineNumber": "251"}]}}},
-            {"id": "b", "text": "Old thing", "fixed_time": "09:00", "date": "2026-10-01", "status": "complete"},
+            {"id": "b", "text": "Old thing", "fixed_time": "09:00", "date": "2030-10-01", "status": "complete"},
         ]
         seen = {}
 
@@ -156,12 +156,16 @@ class Tools(Base):
             seen["key"] = key
             return rows
         with mock.patch("task_store.fetch_task_rows", fetch):
-            res = self._call("get_my_day", {"date": "2026-10-01"})
+            res = self._call("get_my_day", {"date": "2030-10-01"})
         data = res["structuredContent"]
         self.assertEqual(seen["key"], CALLER["key"], "identity must come from the token")
         self.assertEqual(data["done"], 1)
         [t] = data["tasks"]
-        self.assertEqual((t["leave_by"], t["wake_by"], t["route"]), ("12:18", "07:30", "bus 251"))
+        self.assertEqual((t["leave_by"], t["route"], t["source"]), ("12:18", "bus 251", "phone"))
+        # ONE wake time for the day — a per-task one said "wake at 17:27" for an
+        # 18:30 meetup. The phone's own wake for the first trip wins.
+        self.assertEqual(data["wake_by"], "07:30")
+        self.assertNotIn("wake_by", t)
 
     def test_date_words_go_through_the_one_parser(self):
         self.assertRegex(mcp_server._resolve_date("tomorrow"), r"^\d{4}-\d\d-\d\d$")

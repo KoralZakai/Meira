@@ -8,7 +8,7 @@ resolved successfully, yet the flush moved zero of them:
 user_id_for_phone normalizes generously (exact digits, then a last-9-digit
 suffix match, then a digits-normalized scan), which is why the link resolved.
 flush_pending compared with strict string equality, so a task queued as
-"0500000009" was invisible to a flush called with "972500000009". The tasks
+"0542902729" was invisible to a flush called with "972542902729". The tasks
 were never lost — they were unreachable, and the endpoint reported success.
 
 This is the same shape as the two bugs in HANDOFF.md: an operation that returns
@@ -26,25 +26,25 @@ import supabase_tasks
 
 class SamePhoneTests(unittest.TestCase):
     def test_local_and_international_forms_are_the_same_number(self):
-        self.assertTrue(supabase_tasks._same_phone("0500000009", "972500000009"))
-        self.assertTrue(supabase_tasks._same_phone("972500000009", "0500000009"))
-        self.assertTrue(supabase_tasks._same_phone("+972-50-000-0009", "0500000009"))
+        self.assertTrue(supabase_tasks._same_phone("0542902729", "972542902729"))
+        self.assertTrue(supabase_tasks._same_phone("972542902729", "0542902729"))
+        self.assertTrue(supabase_tasks._same_phone("+972-54-290-2729", "0542902729"))
 
     def test_identical_digits_match(self):
-        self.assertTrue(supabase_tasks._same_phone("972500000009", "972500000009"))
+        self.assertTrue(supabase_tasks._same_phone("972542902729", "972542902729"))
 
     def test_different_numbers_never_match(self):
-        self.assertFalse(supabase_tasks._same_phone("0500000009", "0501234567"))
+        self.assertFalse(supabase_tasks._same_phone("0542902729", "0501234567"))
         # Same tail, genuinely different subscriber numbers.
-        self.assertFalse(supabase_tasks._same_phone("0500000009", "0543902729"))
+        self.assertFalse(supabase_tasks._same_phone("0542902729", "0543902729"))
 
     def test_short_or_empty_values_do_not_match_by_accident(self):
         # "0001" sits in the live queue and must never be flushed to a real
         # account just because a suffix happens to line up.
-        self.assertFalse(supabase_tasks._same_phone("0001", "972500000009"))
-        self.assertFalse(supabase_tasks._same_phone("", "972500000009"))
-        self.assertFalse(supabase_tasks._same_phone("972500000009", ""))
-        self.assertFalse(supabase_tasks._same_phone(None, "972500000009"))
+        self.assertFalse(supabase_tasks._same_phone("0001", "972542902729"))
+        self.assertFalse(supabase_tasks._same_phone("", "972542902729"))
+        self.assertFalse(supabase_tasks._same_phone("972542902729", ""))
+        self.assertFalse(supabase_tasks._same_phone(None, "972542902729"))
 
 
 class FlushPendingTests(unittest.TestCase):
@@ -73,24 +73,24 @@ class FlushPendingTests(unittest.TestCase):
         return flushed, remaining, upserted
 
     def test_the_live_bug_queued_local_flushed_international(self):
-        flushed, remaining, upserted = self._run("0500000009", "972500000009")
+        flushed, remaining, upserted = self._run("0542902729", "972542902729")
         self.assertEqual(flushed, 1, "the queued task must reach Supabase")
         self.assertEqual(remaining, [], "and must not stay queued afterwards")
         self.assertEqual(upserted[0][1]["fixed_time"], "11:00",
                          "the time must survive the mirror")
 
     def test_the_reverse_direction_too(self):
-        flushed, remaining, _ = self._run("972500000009", "0500000009")
+        flushed, remaining, _ = self._run("972542902729", "0542902729")
         self.assertEqual(flushed, 1)
         self.assertEqual(remaining, [])
 
     def test_identical_forms_still_work(self):
-        flushed, remaining, _ = self._run("972500000009", "972500000009")
+        flushed, remaining, _ = self._run("972542902729", "972542902729")
         self.assertEqual(flushed, 1)
         self.assertEqual(remaining, [])
 
     def test_another_persons_task_is_never_flushed_to_this_account(self):
-        flushed, remaining, upserted = self._run("0501234567", "972500000009")
+        flushed, remaining, upserted = self._run("0501234567", "972542902729")
         self.assertEqual(flushed, 0)
         self.assertEqual(len(remaining), 1, "it stays queued for its real owner")
         self.assertEqual(upserted, [], "and is never written to the wrong account")
@@ -98,7 +98,7 @@ class FlushPendingTests(unittest.TestCase):
     def test_a_failed_upsert_keeps_the_task_queued(self):
         # No data loss: a task that could not be written must remain, or the
         # queue becomes a way to silently drop tasks.
-        flushed, remaining, _ = self._run("0500000009", "972500000009", upsert_ok=False)
+        flushed, remaining, _ = self._run("0542902729", "972542902729", upsert_ok=False)
         self.assertEqual(flushed, 0)
         self.assertEqual(len(remaining), 1)
 

@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Meira — gets you there on time</title>
+<meta name="description" content="Meira is a personal secretary on your phone. Keep your calendar; she works backwards from every meeting to wake you, get you ready and get you there on time.">
+<link rel="canonical" href="https://meirasecretary.github.io/en/">
+<link rel="alternate" hreflang="he" href="https://meirasecretary.github.io/">
+<link rel="alternate" hreflang="en" href="https://meirasecretary.github.io/en/">
+<link rel="alternate" hreflang="x-default" href="https://meirasecretary.github.io/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Meira">
+<meta property="og:title" content="Meira — gets you there on time">
+<meta property="og:description" content="She reads your calendar and works backwards: when to wake up, when to leave, which way to go. Free beta for Android.">
+<meta property="og:url" content="https://meirasecretary.github.io/en/">
+<meta property="og:image" content="https://meirasecretary.github.io/og-en.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#FFFDF5">
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Fredoka:wght@500;600&family=Nunito:wght@400;600;700;800&family=Rubik:wght@400;500;700;800&family=Varela+Round&display=swap">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="coin" viewBox="0 0 40 40">
+      <circle cx="20" cy="20" r="19" fill="#6C63FF"/>
+      <circle cx="20" cy="20" r="14.5" fill="none" stroke="#FFD166" stroke-width="2.5"/>
+      <path d="M20 11.5V20h7" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="20" cy="20" r="2" fill="#FFD166"/>
+    </symbol>
+    <symbol id="dl" viewBox="0 0 24 24">
+      <path d="M12 4v11M7 10l5 5 5-5M5 20h14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+  </defs>
+</svg>
+
+<div class="wrap">
+  <nav class="nav" aria-label="Main">
+    <a class="brand" href="#top" id="top">
+      <svg class="coin" aria-hidden="true"><use href="#coin"/></svg>
+      <span class="brand-name">Meira</span>
+    </a>
+    <div class="nav-right">
+      <a class="lang" href="../" hreflang="he" lang="he" data-lang="he">עברית</a>
+      <a class="btn btn-sm" href="#join">Download</a>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <div class="hero-copy">
+      <span class="eyebrow">A personal secretary on your phone</span>
+      <h1>You keep the calendar. <em>Meira gets you there.</em></h1>
+      <p class="lede">Meira reads your calendar, counts back from every meeting, and tells you when to wake up, when to leave and how to get there.</p>
+      <div class="get">
+        <a class="btn btn-lg" href="https://github.com/MeiraSecretary/meirasecretary.github.io/releases/latest/download/Meira.apk">
+          <svg width="20" height="20" aria-hidden="true"><use href="#dl"/></svg>Download for Android
+        </a>
+        <p class="get-fine">Beta · Free · Android 7 and up</p>
+        <details class="howto">
+          <summary>How to install</summary>
+          <ol>
+            <li>Tap <b>Download for Android</b> and open <b>Meira.apk</b>.</li>
+            <li>If Android asks, allow installs from this source (your browser).</li>
+            <li>If Play Protect warns you, tap <b>More details → Install anyway</b>. On Samsung, if the install is blocked: Settings → Security and privacy → Auto Blocker → off.</li>
+            <li>When you connect Google Calendar, Google says the app isn't verified yet. That's because we're in beta: tap <b>Advanced</b>, then go to the app.</li>
+          </ol>
+        </details>
+      </div>
+      <form class="signup" data-source="beta-hero" novalidate>
+        <div class="signup-row">
+          <label for="email-hero" class="sr-only">Email address</label>
+          <input id="email-hero" name="email" type="email" inputmode="email" autocomplete="email" placeholder="you@work.com" required>
+          <button class="btn btn-alt" type="submit">Join the beta</button>
+        </div>
+        <p class="signup-hint">We'll add you to the Google Play version.</p>
+        <p class="signup-status" role="status" aria-live="polite"></p>
+      </form>
+      <p class="fine">
+        <span><i class="dot"></i>Android</span>
+        <span>Works with Google Calendar, Outlook and your phone's calendar</span>
+        <span>Your calendar is read on your phone</span>
+      </p>
+    </div>
+
+    <div class="phone-stage">
+      <div class="phone" role="img" aria-label="Meira on a phone: an interview at 10:00 in Ra'anana, worked backwards to a 07:10 wake-up alarm.">
+        <div class="screen">
+          <div class="statusbar"><span class="t">07:10</span><span>Tue</span></div>
+          <div class="notif">
+            <svg class="coin" aria-hidden="true"><use href="#coin"/></svg>
+            <div><b>Meira · now</b>⏰ Wake up! Interview at 10:00 in Ra'anana</div>
+          </div>
+          <div class="day-head"><h3>Interview day</h3><span>counted from 10:00</span></div>
+          <ol class="chain">
+            <li class="step" data-k="wake"><span class="t">07:10</span><i class="pin"></i><span class="what">Wake-up alarm<small>set on your phone</small></span></li>
+            <li class="step"><span class="t">07:18</span><i class="pin"></i><span class="what">Review your notes<small>25 min, before the rush</small></span></li>
+            <li class="step"><span class="t">07:43</span><i class="pin"></i><span class="what">Get ready<small>45 min, learned from you</small></span></li>
+            <li class="step" data-k="leave"><span class="t">08:28</span><i class="pin"></i><span class="what">Leave home<small>8 min walk to the stop</small></span></li>
+            <li class="step"><span class="t">08:36</span><i class="pin"></i><span class="what">Bus 29<small>arrives 09:44</small></span></li>
+            <li class="step" data-k="event"><span class="t">10:00</span><i class="pin"></i><span class="what">Job interview<small>Ra'anana</small></span></li>
+          </ol>
+          <div class="backlabel">
+            <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M7 12V2M3 6l4-4 4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Meira counts backwards from the meeting
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+</div>
+
+<section class="band" id="features">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">What Meira solves</span>
+      <h2>You keep a calendar. She handles the rest.</h2>
+    </div>
+    <div class="tiles">
+      <article class="tile" data-f="calendars" tabindex="0" role="button" aria-haspopup="dialog"><span class="tile-ic" aria-hidden="true">🗓️</span><h3>Every calendar, one place</h3><p>Google, your phone, Outlook and Teams.</p></article>
+      <article class="tile" data-f="backwards" tabindex="0" role="button" aria-haspopup="dialog"><span class="tile-ic" aria-hidden="true">⏪</span><h3>Works backwards</h3><p>From the meeting to your alarm.</p></article>
+      <article class="tile" data-f="alarm" tabindex="0" role="button" aria-haspopup="dialog"><span class="tile-ic" aria-hidden="true">⏰</span><h3>An alarm that sets itself</h3><p>From the time you need to leave.</p></article>
+      <article class="tile" data-f="route" tabindex="0" role="button" aria-haspopup="dialog"><span class="tile-ic" aria-hidden="true">🚌</span><h3>The best way there</h3><p>Bus, train, taxi, car or bike.</p></article>
+      <article class="tile" data-f="disruptions" tabindex="0" role="button" aria-haspopup="dialog"><span class="tile-ic" aria-hidden="true">🚧</span><h3>Trouble on your route</h3><p>Strikes, works and traffic from the news.</p></article>
+      <article class="tile" data-f="clash" tabindex="0" role="button" aria-haspopup="dialog"><span class="tile-ic" aria-hidden="true">📍</span><h3>Clashes between places</h3><p>Can I make Herzliya to Holon?</p></article>
+      <article class="tile" data-f="moved" tabindex="0" role="button" aria-haspopup="dialog"><span class="tile-ic" aria-hidden="true">🔁</span><h3>Meeting moved?</h3><p>Alternatives based on where you'll be.</p></article>
+      <article class="tile" data-f="prep" tabindex="0" role="button" aria-haspopup="dialog"><span class="tile-ic" aria-hidden="true">🎯</span><h3>Interview prep</h3><p>Study time, research on the interviewer, a recap of last time.</p></article>
+      <article class="tile" data-f="knows" tabindex="0" role="button" aria-haspopup="dialog"><span class="tile-ic" aria-hidden="true">🧠</span><h3>Knows you</h3><p>Get-ready time, workouts, car or no car.</p></article>
+      <article class="tile" data-f="nudge" tabindex="0" role="button" aria-haspopup="dialog"><span class="tile-ic" aria-hidden="true">🔔</span><h3>Nudge meter</h3><p>You choose how hard she pushes.</p></article>
+      <article class="tile" data-f="focus" tabindex="0" role="button" aria-haspopup="dialog"><span class="tile-ic" aria-hidden="true">📵</span><h3>Study mode</h3><p>During study time she blocks WhatsApp, Instagram, TikTok and any app you pick.</p></article>
+      <article class="tile tile-soon" data-f="group" tabindex="0" role="button" aria-haspopup="dialog"><span class="tile-ic" aria-hidden="true">🤝</span><h3>Group time</h3><p>Finds a slot that works for everyone.</p><span class="tag tag-soon">Soon</span></article>
+    </div>
+  </div>
+</section>
+
+<section id="try">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">Try it</span>
+      <h2>Pick a meeting. Watch Meira plan the morning.</h2>
+    </div>
+    <div class="demo">
+      <div class="controls">
+        <fieldset class="seg" id="pick-event">
+          <legend class="control-label">The meeting</legend>
+          <input type="radio" name="ev" id="ev-interview" value="interview" checked><label for="ev-interview">Job interview</label>
+          <input type="radio" name="ev" id="ev-meeting" value="meeting"><label for="ev-meeting">Client meeting</label>
+          <input type="radio" name="ev" id="ev-exam" value="exam"><label for="ev-exam">Exam</label>
+        </fieldset>
+        <fieldset class="seg" id="pick-mode">
+          <legend class="control-label">You prefer to travel by</legend>
+          <input type="radio" name="mode" id="mode-train" value="train" checked><label for="mode-train">Train</label>
+          <input type="radio" name="mode" id="mode-bus" value="bus"><label for="mode-bus">Bus</label>
+          <input type="radio" name="mode" id="mode-car" value="car"><label for="mode-car">Car</label>
+        </fieldset>
+        <p class="assume">Sample times · leaving from Tel Aviv · 45 min to get ready (learned from your mornings)</p>
+      </div>
+      <div class="result" id="result" aria-live="polite">
+        <div class="result-head"><h3 id="r-title">Job interview</h3><span class="t" id="r-when">10:00 · Ra'anana</span></div>
+        <ol class="chain" id="r-chain"></ol>
+        <div class="note note-fallback" id="r-fallback" hidden>
+          <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l10 18H2L12 3z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 10v4M12 17.5v.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          <span id="r-fallback-text"></span>
+        </div>
+        <div class="note note-meira" id="r-note">
+          <svg class="coin" style="width:22px;height:22px" aria-hidden="true"><use href="#coin"/></svg>
+          <span id="r-note-text"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="fit">
+  <div class="wrap fit">
+    <div class="fit-copy">
+      <span class="eyebrow">Before you say yes</span>
+      <h2>"Can I make it?" answered with the drive included.</h2>
+    </div>
+    <div class="fit-card">
+      <p class="fit-q">Dentist at 13:00 in Holon?</p>
+      <div class="fit-row"><span class="t">12:00</span><span>Team meeting, Herzliya<small>ends 12:45 · can't move</small></span></div>
+      <div class="gapbar" aria-hidden="true">
+        <span class="g-meet" style="flex:45">meeting</span>
+        <span class="g-drive" style="flex:35">35 min drive</span>
+        <span class="g-late" style="flex:20">+20</span>
+      </div>
+      <div class="fit-row"><span class="t">13:00</span><span>Dentist, Holon<small>you'd arrive 13:20</small></span></div>
+      <div class="verdict">
+        <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" style="flex:none;margin-top:2px"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M9 9l6 6M15 9l-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <span><b>Doesn't fit.</b> The drive alone takes 35 min. 13:30 works.</span>
+      </div>
+      <div class="choices" aria-label="Example options">
+        <span class="chip">Book 13:30</span>
+        <span class="chip ghost">Find another day</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="band" id="one-place">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">Everything in one place</span>
+      <h2>No more checking five apps before you leave.</h2>
+      <p class="lede">No more Maps, Waze or Moovit. No more working out when to wake up and when to leave.</p>
+    </div>
+    <div class="swap">
+      <div class="pile" aria-label="What you juggle today">
+        <span>Alarm clock</span><span>Google Calendar</span><span>Outlook</span><span>Google Maps</span><span>Waze</span><span>Moovit</span><span>Train timetable</span><span>"When do I leave?"</span>
+      </div>
+      <svg class="arrow" width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6"/></svg>
+      <div class="one">
+        <svg class="coin" aria-hidden="true"><use href="#coin"/></svg>
+        <div><strong>Meira</strong><p>Wake time, get-ready time, the route, the "leave now" and the "did you make it?", all from the calendar you already keep.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="wrap" id="join">
+  <div class="final">
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <h2>Stop planning your mornings. Let Meira do it.</h2>
+      <p>Meira is in beta on Android. Download her now, or leave your email and we'll add you to the Google Play version.</p>
+    </div>
+    <div class="final-actions">
+      <div class="get">
+        <a class="btn btn-lg" href="https://github.com/MeiraSecretary/meirasecretary.github.io/releases/latest/download/Meira.apk">
+          <svg width="20" height="20" aria-hidden="true"><use href="#dl"/></svg>Download for Android
+        </a>
+        <p class="get-fine">Beta · Free · Android 7 and up</p>
+      </div>
+      <form class="signup" data-source="beta-footer" novalidate>
+        <div class="signup-row">
+          <label for="email-footer" class="sr-only">Email address</label>
+          <input id="email-footer" name="email" type="email" inputmode="email" autocomplete="email" placeholder="you@work.com" required>
+          <button class="btn btn-alt" type="submit">Join the beta</button>
+        </div>
+        <p class="signup-hint">We'll add you to the Google Play version.</p>
+        <p class="signup-status" role="status" aria-live="polite"></p>
+      </form>
+    </div>
+  </div>
+  <footer>
+    <span class="brand-name" style="font-size:1.2rem;color:var(--ink)">Meira</span>
+    <nav class="foot-links" aria-label="Legal">
+      <a href="../privacy.html#en">Privacy policy</a>
+      <a href="../delete-account.html#en">Delete your account</a>
+      <a href="mailto:koralzakai1@gmail.com">Contact</a>
+      <a href="../" hreflang="he" lang="he" data-lang="he">עברית</a>
+    </nav>
+    <p>Meira reads your calendar on your phone. We use the email you leave here only to add you to the beta and to tell you about Meira.</p>
+  </footer>
+</div>
+
+<dialog id="feat-dialog" aria-labelledby="fd-title">
+  <div class="fd">
+    <button type="button" class="fd-close" aria-label="Close">×</button>
+    <span class="fd-ic" id="fd-ic" aria-hidden="true"></span>
+    <h3 id="fd-title"></h3>
+    <p id="fd-detail"></p>
+    <div class="fd-phone"><div class="fd-bar"><span class="fd-dot"></span><b>Meira</b></div><ol class="fd-msgs" id="fd-msgs" aria-live="polite"></ol><button type="button" class="fd-replay" id="fd-replay"></button></div>
+  </div>
+</dialog>
+<script src="../app.js"></script>
+</body>
+</html>

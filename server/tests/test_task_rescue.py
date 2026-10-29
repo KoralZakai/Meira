@@ -70,11 +70,11 @@ class RescueTests(unittest.TestCase):
         self.assertEqual(t["text"], "לדבר עם יניר")
         self.assertEqual(t["fixed_time"], "16:00")
         # tomorrow, resolved by the same parser the webhook's date guard uses
-        self.assertEqual(t["date"], tz.resolve_date("מחר").isoformat())
+        self.assertEqual(t["date"], tz.resolve_date_at("מחר").isoformat())
         self.assertTrue(t["rescued"], "a rescued task is marked as such")
 
     def test_it_never_duplicates_a_real_save(self):
-        tomorrow = tz.resolve_date("מחר").isoformat()
+        tomorrow = tz.resolve_date_at("מחר").isoformat()
         existing = [{"text": "לדבר עם יניר", "date": tomorrow, "fixed_time": "16:00"}]
         self.assertIsNone(task_rescue.rescue("לדבר עם יניר מחר ב 16:00", existing))
 
@@ -85,7 +85,7 @@ class RescueTests(unittest.TestCase):
     def test_no_hour_saves_a_dated_task_without_a_time(self):
         t = task_rescue.rescue("לדבר עם יניר מחר", [])
         self.assertEqual(t["text"], "לדבר עם יניר")
-        self.assertEqual(t["date"], tz.resolve_date("מחר").isoformat())
+        self.assertEqual(t["date"], tz.resolve_date_at("מחר").isoformat())
         self.assertNotIn("fixed_time", t, "no hour invented")
 
     def test_no_date_waits_in_the_general_list(self):

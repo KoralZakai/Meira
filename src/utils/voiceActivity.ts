@@ -30,8 +30,18 @@ export const VAD = {
   SPEECH_ABOVE_FLOOR_DB: 12,
   /** Quiet = back within this distance of the floor. */
   QUIET_ABOVE_FLOOR_DB: 6,
-  /** Quiet this long after speech ends the recording (CLAUDE.md: ~1.5 s). */
-  SILENCE_MS: 1600,
+  /**
+   * Quiet this long after speech ends the recording. Was 1.6 s (CLAUDE.md's
+   * ~1.5 s): on 29.10 it cut "זה לא הגיוני, אני ביום שני בזומבה, ב..." at
+   * the breath she took to think — a thinking pause is ~2 s, not the end.
+   */
+  SILENCE_MS: 2800,
+  /**
+   * Talk shorter than this before the pause is an opening, not a request —
+   * "I want to schedule… hmm…" — so the pause may run HESITATION_EXTRA_MS longer.
+   */
+  SHORT_TALK_MS: 2500,
+  HESITATION_EXTRA_MS: 1500,
   /** Nobody spoke in this long: stop, and say so. */
   NO_SPEECH_MS: 8000,
   /**
@@ -128,7 +138,9 @@ export function stepVad(
     for (let i = state.dbs.length - 1; i > firstSpeech; i -= 1) {
       if (state.dbs[i] >= floor + VAD.QUIET_ABOVE_FLOOR_DB) { lastVoiceAt = state.times[i]; break; }
     }
-    if (now - lastVoiceAt >= VAD.SILENCE_MS) {
+    const talked = lastVoiceAt - state.times[firstSpeech];
+    const quietNeeded = VAD.SILENCE_MS + (talked < VAD.SHORT_TALK_MS ? VAD.HESITATION_EXTRA_MS : 0);
+    if (now - lastVoiceAt >= quietNeeded) {
       return { state, decision: { stop: true, reason: 'silence_after_speech', level } };
     }
     return { state, decision: { stop: false, level } };

@@ -1,0 +1,41 @@
+{
+  "_comment": [
+    "Hand-labelled task texts -> the category and priority they SHOULD get. Read by BOTH server/tests/test_categorize_boundaries.py and tests/run-categorize-parity.ts, so the Python table and its TypeScript port are checked against the same answers, not against each other.",
+    "The first block are words that CONTAIN a keyword without being it (the substring bug found by the eval harness, 15.10): 'דחוף' holds 'חוף', 'brunch' holds 'run', '11:15' holds '1:1'. The second block are the same keywords with a Hebrew one-letter prefix, which must still match."
+  ],
+  "cases": [
+    {"text": "דחוף לשלוח מייל לבוס",          "category": "general",  "priority": "must"},
+    {"text": "brunch with Dana on Friday",     "category": "leisure",  "priority": "nice_to_do"},
+    {"text": "bring the laptop",               "category": "general",  "priority": "need_to"},
+    {"text": "check the async queue",          "category": "general",  "priority": "need_to"},
+    {"text": "read during the break",          "category": "general",  "priority": "need_to"},
+    {"text": "recall the wifi password",       "category": "general",  "priority": "need_to"},
+    {"text": "buy headphones",                 "category": "general",  "priority": "need_to"},
+    {"text": "pick up the kids at 11:15",      "category": "general",  "priority": "need_to"},
+    {"text": "pick up the kids at 1:15",       "category": "general",  "priority": "need_to"},
+    {"text": "לקנות מים",                      "category": "general",  "priority": "need_to"},
+    {"text": "פגישת צוות",                     "category": "meeting",  "priority": "have_to"},
+    {"text": "ארוחת ערב עם חברים",             "category": "leisure",  "priority": "nice_to_do"},
+    {"text": "לצאת לים עם הילדים",             "category": "leisure",  "priority": "nice_to_do"},
+    {"text": "לראות סדרה",                     "category": "leisure",  "priority": "nice_to_do"},
+
+    {"text": "אימונים בשבוע",                  "category": "gym",      "priority": "need_to"},
+    {"text": "לאימון בערב",                    "category": "gym",      "priority": "need_to"},
+    {"text": "באימון של יוגה",                 "category": "gym",      "priority": "need_to"},
+    {"text": "בפגישה עם דני",                  "category": "meeting",  "priority": "have_to"},
+    {"text": "והפגישה מחר ב-9",                "category": "meeting",  "priority": "have_to"},
+    {"text": "ללכת לחוף עם חברים",             "category": "leisure",  "priority": "nice_to_do"},
+    {"text": "נפגשים בזום",                    "category": "zoom",     "priority": "have_to"},
+    {"text": "במילואים כל השבוע",              "category": "work",     "priority": "have_to"},
+    {"text": "going for a run",                "category": "gym",      "priority": "need_to"},
+    {"text": "swimming at 7",                  "category": "gym",      "priority": "need_to"},
+    {"text": "work out at the gym",            "category": "gym",      "priority": "need_to"},
+    {"text": "meeting 1:1 with Dana",          "category": "meeting",  "priority": "have_to"},
+    {"text": "ראיון עבודה בחיפה",              "category": "interview","priority": "must"},
+    {"text": "תור לרופא שיניים",               "category": "doctor",   "priority": "must"},
+    {"text": "ללמוד לראיון עבודה",             "category": "course",   "priority": "have_to"},
+    {"text": "maybe watch a movie",            "category": "leisure",  "priority": "nice_to_do"},
+    {"text": "ASAP call the bank",             "category": "call",     "priority": "must"},
+    {"text": "buy groceries",                  "category": "general",  "priority": "need_to"}
+  ]
+}

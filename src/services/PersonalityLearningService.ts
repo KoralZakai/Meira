@@ -7,7 +7,7 @@
  * Server twin: server/personality_learning_service.py — parity is guarded by
  * server/test_personality_parity.py; change the math in BOTH places.
  */
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from './EncryptedStorage';  // AES-256-GCM at rest (7.10)
 import {
   LearnedPersonality,
   MBTIType,

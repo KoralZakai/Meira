@@ -34,7 +34,7 @@ const Module = require('module');
 const origResolve = Module._resolveFilename;
 const origLoad = Module._load;
 Module._load = function patched(request: string, ...rest: any[]) {
-  if (request === '@react-native-async-storage/async-storage') {
+  if (request === '@react-native-async-storage/async-storage' || request.endsWith('/EncryptedStorage')) {
     return { __esModule: true, default: memoryAsyncStorage };
   }
   // Supabase client pulls in react-native internals we do not need here.

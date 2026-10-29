@@ -44,18 +44,24 @@ const clean = (phone: string) => (phone || '').replace(/[^\d]/g, '');
 // Every /agents route requires the Supabase token now; authedFetch returns
 // null when signed out, which each caller maps to its existing empty result.
 
+/**
+ * The agents, or WHY they could not be read. An empty list and a dead server
+ * must not look the same — she would think she has no agents (rule 1).
+ */
 export async function listAgents(
   phone: string,
-): Promise<{ agents: LumiAgent[]; templates: AgentTemplate[]; max: number }> {
+): Promise<{ agents: LumiAgent[]; templates: AgentTemplate[]; max: number; error?: string }> {
   const empty = { agents: [], templates: [], max: 5 };
-  if (!SERVER_URL || !clean(phone)) return empty;
+  if (!SERVER_URL) return { ...empty, error: 'no server' };
+  if (!clean(phone)) return { ...empty, error: 'no phone' };
   try {
     const res = await authedFetch(`${SERVER_URL}/agents/${clean(phone)}`);
-    if (!res || !res.ok) return empty;
+    if (!res) return { ...empty, error: 'signed out' };
+    if (!res.ok) return { ...empty, error: `HTTP ${res.status}` };
     return await res.json();
   } catch (e) {
     console.warn('[Agents] list failed', e);
-    return empty;
+    return { ...empty, error: 'network' };
   }
 }
 
@@ -107,5 +113,19 @@ export async function deleteAgent(phone: string, agentId: string): Promise<boole
   } catch (e) {
     console.warn('[Agents] delete failed', e);
     return false;
+  }
+}
+
+/** Run one agent now — its message goes to WhatsApp. Returns the reason on failure. */
+export async function runAgentNow(phone: string, agentId: string): Promise<{ ok?: boolean; error?: string }> {
+  if (!SERVER_URL || !clean(phone)) return { error: 'no server' };
+  try {
+    const res = await authedFetch(`${SERVER_URL}/agents/${clean(phone)}/${agentId}/run`, { method: 'POST' });
+    if (!res) return { error: 'signed out' };
+    const body = await res.json().catch(() => ({}));
+    return res.ok ? { ok: true } : { error: body.error || `HTTP ${res.status}` };
+  } catch (e) {
+    console.warn('[Agents] run failed', e);
+    return { error: 'network' };
   }
 }

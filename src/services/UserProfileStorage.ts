@@ -6,10 +6,11 @@
  * loadProfile() is the read path used by LumiCoachEngine and most screens;
  * null means onboarding hasn't finished.
  */
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from './EncryptedStorage';  // AES-256-GCM at rest (7.10)
 import * as SecureStore from 'expo-secure-store';
 import { UserProfile } from '../models/UserProfile';
 import { geocodeTaskLocation } from './NearbyTaskReminderService';
+import { settleHome, trustHomeFix } from '../utils/homeAddress';
 import * as repo from './supabaseRepo';
 import { isSupabaseConfigured } from './supabaseClient';
 import { getUserId } from './SupabaseAuthService';
@@ -56,10 +57,18 @@ async function mirrorProfile(profile: UserProfile): Promise<void> {
 /** Persist the profile (secrets to SecureStore) and geocode the home address. */
 export async function saveProfile(profile: UserProfile): Promise<void> {
   let homeLatLng = profile.homeLatLng;
-  const homeAddress = profile.homeAddress;
+  let homeAddress = profile.homeAddress;
 
   if (!homeLatLng && homeAddress.trim()) {
-    homeLatLng = await geocodeTaskLocation(homeAddress.trim());
+    // 13.10: "21, Mordei ha-Geta'ot Street, Tel Aviv" was re-said as "מורדי
+    // הגטאות 23" — no city — and the geocoder put her home in Be'er Sheva. An
+    // interview in Haifa was then planned from there: 212 minutes, four buses.
+    // A new home with no city keeps the city of the one before, and a home
+    // that jumps to another town without her naming one is not believed.
+    const before = await loadProfile().catch(() => null);
+    homeAddress = settleHome(homeAddress, before?.homeAddress);
+    const placed = await geocodeTaskLocation(homeAddress.trim());
+    homeLatLng = trustHomeFix(placed, homeAddress, before?.homeLatLng ?? null);
   }
 
   const { homeAddress: _omitHomeAddress, homeLatLng: _omitHomeLatLng, ...safeProfile } = profile;

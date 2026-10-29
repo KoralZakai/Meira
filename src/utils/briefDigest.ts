@@ -56,6 +56,14 @@ export interface BriefLike {
   history_en?: string[];
   questions_he?: string[];
   questions_en?: string[];
+  /** Interview sections (17.10). The digest does not carry them yet — the
+   *  alerts stay one line — but the shape is named so a reader can't miss it. */
+  role_he?: string[];
+  role_en?: string[];
+  likely_questions_he?: string[];
+  likely_questions_en?: string[];
+  prep_he?: string[];
+  prep_en?: string[];
   confidence?: 'high' | 'medium' | 'low';
   subjects?: { company?: string; person?: string; person_role?: string; role_title?: string };
 }

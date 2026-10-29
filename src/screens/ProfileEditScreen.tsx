@@ -5,9 +5,9 @@
  * Dependencies: UserProfileStorage, PushService (registerPush), TaskStorage,
  * GoogleService, AlarmService.
  */
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  View, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, Switch, Alert,
+  View, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, Switch, Alert, Linking,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -16,13 +16,17 @@ import {
   getSettings, loadStats, saveSettings, saveSettingsChecked, getTasksForDate,
 } from '../services/TaskStorage';
 import { loadProfile, saveProfile } from '../services/UserProfileStorage';
+import { invalidateRoutines } from '../services/GapFillService';
+import * as Questions from '../services/QuestionService';
 import { searchPlaces } from '../services/RoutePlanner';
 import { getCurrentLocationDetails } from '../services/NearbyTaskReminderService';
 import { registerPush, verifyPhoneLink } from '../services/PushService';
+import { linkStart, linkStatus } from '../services/LumiServer';
 import { deleteAccountEverywhere, describeOutcome } from '../services/AccountDeletion';
 import {
   signInWithGoogle, getVerifiedUser, signOut as supabaseSignOut, lastAuthStage,
 } from '../services/SupabaseAuthService';
+import { wipeDevice } from '../services/LocalWipe';
 import { isSupabaseConfigured } from '../services/supabaseClient';
 import { GoogleService } from '../services/GoogleService';
 import {
@@ -33,10 +37,23 @@ import {
   backgroundSyncRegistered, registerBackgroundCalendarSync, lastSyncAt,
 } from '../services/CalendarAutoSync';
 import { setSystemAlarm } from '../services/AlarmService';
+import { rescheduleDailyNotifications } from '../services/NotificationService';
+import CalendarConnections from '../components/CalendarConnections';
+import AiAssistants from '../components/AiAssistants';
+import FocusSessionSheet from '../components/FocusSessionSheet';
+import RoutineList from '../components/you/RoutineList';
+import LearnedRules from '../components/you/LearnedRules';
+import WhatMeiraKnows from '../components/you/WhatMeiraKnows';
+import NearbyNudgesCard from '../components/you/NearbyNudgesCard';
+import SkyBackdrop, { useSky } from '../components/ui/SkyBackdrop';
+import { profileFacts } from '../utils/profileFacts';
 import { getTomorrowString } from '../utils/timeUtils';
 import { AppSettings, TimeSetting, AppLanguage } from '../types/models';
 import { UserStats } from '../types';
 import { UserProfile, TransportMode, blankProfile } from '../models/UserProfile';
+import { DEFAULT_EARLIEST_WAKE } from '../utils/dayFeasibility';
+import { nudgeLevelOf } from '../utils/nudgeLevel';
+import NudgeSlider from '../components/NudgeSlider';
 
 /** HH:MM minus N minutes, wrapping at midnight (for the wake-time fallback). */
 function hhmmMinus(hhmm: string, mins: number): string {
@@ -47,6 +64,11 @@ function hhmmMinus(hhmm: string, mins: number): string {
 
 function fmtTime(t: TimeSetting) {
   return `${String(t.hour).padStart(2, '0')}:${String(t.minute).padStart(2, '0')}`;
+}
+
+function parseHHMM(hhmm: string): TimeSetting {
+  const [h, m] = hhmm.split(':').map(Number);
+  return { hour: Number.isFinite(h) ? h : 5, minute: Number.isFinite(m) ? m : 0 };
 }
 
 function shiftTime(t: TimeSetting, delta: number): TimeSetting {
@@ -71,11 +93,19 @@ function TimeRow({ label, value, onChange }: { label: string; value: TimeSetting
   );
 }
 
-export default function ProfileEditScreen({ navigation }: any) {
+export type ProfileSection = 'you' | 'alerts' | 'calendars' | 'helpers' | 'account';
+
+export default function ProfileEditScreen({ navigation, route }: any) {
   const insets = useSafeAreaInsets();
+  const sky = useSky();
+  // One screen, five pages, opened from the Menu's doors (6.10): every setting
+  // is drawn on exactly ONE of them — "nothing appears twice".
+  const section: ProfileSection = route?.params?.section ?? 'you';
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [stats, setStats] = useState<UserStats | null>(null);
+  // The learning-session chooser (17.10): blocked apps, permissions, start.
+  const [focusOpen, setFocusOpen] = useState(false);
 
   useFocusEffect(useCallback(() => {
     Promise.all([getSettings(), loadProfile(), loadStats()]).then(([s, p, st]) => {
@@ -90,12 +120,23 @@ export default function ProfileEditScreen({ navigation }: any) {
     const next = { ...settings, ...patch };
     setSettings(next);
     await saveSettings(next);
+    // A check-in hour moved: reschedule now, not at the next launch.
+    if ('morningTime' in patch || 'afternoonTime' in patch || 'eveningTime' in patch) {
+      rescheduleDailyNotifications(next).catch((e) => console.warn('[Alerts] check-ins not rescheduled', e));
+    }
   };
 
-  const setLanguage = (lang: AppLanguage) => patchSettings({ language: lang });
+  // Language is chosen in the Menu only (6.10: nothing appears twice).
 
   const [phone, setPhone] = useState('');
   const [linking, setLinking] = useState(false);
+  // What the SERVER says is linked — proved by a WhatsApp message, never the
+  // number typed into settings (7.10). undefined = not asked yet; null = no link.
+  const [linkedPhone, setLinkedPhone] = useState<string | null | undefined>(undefined);
+  useEffect(() => {
+    linkStatus().then((st) => setLinkedPhone(st ? (st.linked ? st.phone ?? '' : null) : undefined))
+      .catch(() => setLinkedPhone(undefined));
+  }, []);
   useEffect(() => { if (settings?.whatsAppPhone) setPhone(settings.whatsAppPhone); }, [settings?.whatsAppPhone]);
 
   // ── Calendar diagnostics ──
@@ -236,53 +277,72 @@ export default function ProfileEditScreen({ navigation }: any) {
     }
   };
 
-  const linkPhoneAlerts = async () => {
-    const clean = phone.replace(/[^\d]/g, '');
-    if (!clean) { Alert.alert('Phone alerts', 'Enter your WhatsApp number first (the one you message Lumi from).'); return; }
+  const connectWhatsApp = async () => {
     setLinking(true);
-    // Order matters: the number must reach Supabase FIRST — the server resolves
-    // this phone to an account by reading app_settings."whatsAppPhone". Then the
-    // push token, then confirm the link resolved and release anything queued.
-    const next = { ...(settings as AppSettings), whatsAppPhone: clean };
-    setSettings(next);
-    const sync = await saveSettingsChecked(next);
-    const ok = await registerPush(clean);
-    const flushed = sync.cloudSynced ? await verifyPhoneLink(clean) : null;
+    const start = await linkStart();
+    if (!start?.ok) {
+      setLinking(false);
+      Alert.alert(T('WhatsApp', 'וואטסאפ'), start
+        ? T('Could not create a link code. Try again in a minute.', 'לא הצלחתי ליצור קוד חיבור. אפשר לנסות שוב בעוד דקה.')
+        : T('Sign in first (☁️ Cloud sync above), then try again.', 'צריך קודם להתחבר לחשבון (☁️ למעלה), ואז לנסות שוב.'));
+      return;
+    }
+    if (start.url) {
+      await Linking.openURL(start.url).catch(() => {
+        Alert.alert(T('WhatsApp', 'וואטסאפ'), T(`Send Meira this message: ${start.text}`, `שלחי למאירה את ההודעה: ${start.text}`));
+      });
+    } else {
+      Alert.alert(T('WhatsApp', 'וואטסאפ'), T(`Send Meira this message on WhatsApp: ${start.text}`, `שלחי למאירה בוואטסאפ: ${start.text}`));
+    }
+    // Wait for the proof — bounded: 3 minutes, then say so.
+    const until = Date.now() + 180_000;
+    while (Date.now() < until) {
+      await new Promise((r) => setTimeout(r, 4000));
+      const st = await linkStatus();
+      if (st?.linked && st.phone) {
+        setLinkedPhone(st.phone);
+        setPhone(st.phone);
+        patchSettings({ whatsAppPhone: st.phone });
+        const pushed = await registerPush(st.phone);
+        const flushed = await verifyPhoneLink(st.phone);
+        setLinking(false);
+        Alert.alert(T('WhatsApp', 'וואטסאפ'),
+          T('Connected ✓', 'מחובר ✓') + (pushed ? T(' Reminders will also ping this phone.', ' התזכורות יגיעו גם לטלפון הזה.') : '')
+          + (flushed ? T(`\n\n${flushed} task(s) from WhatsApp synced across.`, `\n\n${flushed} משימות מוואטסאפ סונכרנו.`) : ''));
+        return;
+      }
+    }
     setLinking(false);
-
-    // The number never reached the cloud — say WHY. This used to show a generic
-    // "couldn't link yet" while the real error sat in a console nobody reads.
-    if (!sync.cloudSynced) {
-      Alert.alert(
-        'Phone alerts',
-        `Saved on this phone, but it didn't reach the cloud:\n\n${sync.reason}\n\n` +
-        'The WhatsApp sync needs that, so tasks stay queued until it works.\n\n' +
-        'Use ☁️ Cloud sync just above to sign in, then tap 🔗 Link again.',
-      );
-      return;
-    }
-
-    if (flushed === null) {
-      Alert.alert(
-        'Phone alerts',
-        'Your number saved, but the server could not match it yet.\n\n' +
-        "Make sure you've messaged Lumi on WhatsApp from this exact number, " +
-        'then tap this again.',
-      );
-      return;
-    }
-    Alert.alert(
-      'Phone alerts',
-      `Linked ✓${ok ? ' Reminders will also ping this phone.' : ''}` +
-      (flushed > 0 ? `\n\n${flushed} task${flushed === 1 ? '' : 's'} from WhatsApp just synced across.` : ''),
-    );
+    Alert.alert(T('WhatsApp', 'וואטסאפ'), T(
+      "WhatsApp hasn't confirmed yet. Send the prepared message to Meira, then tap Connect again.",
+      'עוד לא הגיע אישור מוואטסאפ. שלחי למאירה את ההודעה שהוכנה, ואז לחצי שוב "חיבור".'));
   };
 
   const handleSignOut = () => {
-    Alert.alert('Sign out', 'Are you sure?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign out', style: 'destructive', onPress: () => navigation.navigate('Onboarding') },
-    ]);
+    Alert.alert(
+      T('Sign out', 'יציאה מהחשבון'),
+      T('Everything Meira keeps on this phone will be erased. It comes back from your account when you sign in again.',
+        'כל מה שמאירה שומרת בטלפון יימחק. הוא יחזור מהחשבון כשתיכנסי שוב.'),
+      [
+        { text: T('Cancel', 'ביטול'), style: 'cancel' },
+        {
+          text: T('Sign out', 'יציאה'),
+          style: 'destructive',
+          // It used to only end the session: her tasks, home, places, chat and
+          // calendar tokens stayed on the phone for whoever used it next (7.10).
+          onPress: async () => {
+            await supabaseSignOut().catch((e) => console.warn('[Account] sign out failed', e));
+            const wipe = await wipeDevice();
+            setCloudId(null); setCloudEmail(undefined);
+            if (!wipe.ok) {
+              Alert.alert(T('Not everything was erased', 'לא הכל נמחק'),
+                T(`Still on the phone: ${wipe.failed.join(', ')}. Try again, or uninstall Meira.`,
+                  `עדיין בטלפון: ${wipe.failed.join(', ')}. אפשר לנסות שוב, או להסיר את האפליקציה.`));
+            }
+            navigation.navigate('Onboarding');
+          },
+        },
+      ]);
   };
 
   /**
@@ -433,25 +493,72 @@ export default function ProfileEditScreen({ navigation }: any) {
     }
   };
 
-  // ── Hobbies / routines (free text, saved on blur) ──
+  // ── Hobbies / routines (free text) ──
+  // 6.10: "changes in the profile don't save, and there's no save button".
+  // They saved on BLUR only — leaving with the keyboard up never blurred — and
+  // any other save (a toggle) reloaded the profile and wiped what was typed.
+  // Now: what she types is DIRTY until saved; it is saved 0.8 s after she
+  // stops, on blur, on leaving the screen, and by the Save button, and the
+  // line under the box says which (rule 3: a "saved" that can say "not saved").
   const [hobbies, setHobbies] = useState('');
   const [routinesNotes, setRoutinesNotes] = useState('');
+  const dirty = useRef({ hobbies: false, routinesNotes: false });
+  const [textSaved, setTextSaved] = useState<{ at?: string; error?: string; busy?: boolean }>({});
   useEffect(() => {
-    if (profile) {
-      setHobbies(profile.hobbies ?? '');
-      setRoutinesNotes(profile.routinesNotes ?? '');
-    }
+    if (!profile) return;
+    if (!dirty.current.hobbies) setHobbies(profile.hobbies ?? '');
+    if (!dirty.current.routinesNotes) setRoutinesNotes(profile.routinesNotes ?? '');
   }, [profile?.lastUpdated]);
 
   // Falls back to a blank profile instead of returning: loadProfile() is null
   // until onboarding completes, and this screen is exactly where someone who
   // skipped onboarding comes to set their home address. It used to no-op.
-  const saveProfileText = async (patch: Partial<UserProfile>) => {
-    const base = profile ?? blankProfile();
-    const next = { ...base, ...patch, lastUpdated: new Date().toISOString() };
-    setProfile(next);
-    await saveProfile(next);
+  // A routine she just wrote may need a question ("every day, or which days?").
+  // Asked when she is done with it — leaving the field or the screen — never
+  // while she is still typing (QuestionService, trigger 1: right after a save).
+  const routinesTouched = useRef(false);
+  const askAboutRoutines = () => {
+    if (!routinesTouched.current) return;
+    routinesTouched.current = false;
+    invalidateRoutines();
+    Questions.maybeAsk({ justSaved: true }).catch((e) => console.warn('[Profile] question check failed', e));
   };
+
+  const saveProfileText = async (patch: Partial<UserProfile>, opts: { ask?: boolean } = {}) => {
+    // From the STORED profile, not this screen's copy: her routines list, an
+    // answer to Meira's question or the chat may have written it since.
+    const base = (await loadProfile().catch(() => null)) ?? profile ?? blankProfile();
+    // What she typed and has not saved yet rides along with ANY save, so a
+    // toggle can never wipe it.
+    const pending: Partial<UserProfile> = {
+      ...(dirty.current.hobbies ? { hobbies } : {}),
+      ...(dirty.current.routinesNotes ? { routinesNotes } : {}),
+    };
+    const next = { ...base, ...pending, ...patch, lastUpdated: new Date().toISOString() };
+    setProfile(next);
+    setTextSaved((s) => ({ ...s, busy: true }));
+    try {
+      await saveProfile(next);
+      dirty.current = { hobbies: false, routinesNotes: false };
+      setTextSaved({ at: new Date().toTimeString().slice(0, 5) });
+      if (opts.ask) askAboutRoutines();
+    } catch (e) {
+      console.warn('[Profile] save failed', e);
+      setTextSaved({ error: String((e as Error)?.message || e) });
+    }
+  };
+  // The latest values, for the save that runs as the screen goes away.
+  const latest = useRef({ hobbies, routinesNotes, save: saveProfileText, ask: askAboutRoutines });
+  latest.current = { hobbies, routinesNotes, save: saveProfileText, ask: askAboutRoutines };
+  useEffect(() => {
+    if (!dirty.current.hobbies && !dirty.current.routinesNotes) return undefined;
+    const timer = setTimeout(() => { latest.current.save({}).catch(() => {}); }, 800);
+    return () => clearTimeout(timer);
+  }, [hobbies, routinesNotes]);
+  useEffect(() => () => {
+    if (dirty.current.hobbies || dirty.current.routinesNotes) latest.current.save({}, { ask: true }).catch(() => {});
+    else latest.current.ask();
+  }, []);
 
   // ── Home address ──
   // Without it RoutePlanner has no origin, so no wake time, no leave time and
@@ -539,269 +646,411 @@ export default function ProfileEditScreen({ navigation }: any) {
     ? ([...LEVELS].reverse().find((l) => stats.totalPoints >= l.minPoints) ?? LEVELS[0])
     : LEVELS[0];
 
+  const he = settings?.language === 'he';
+  const T = (en: string, hebrew: string) => (he ? hebrew : en);
+  const TITLE: Record<ProfileSection, [string, string]> = {
+    you: ['You', 'את'],
+    alerts: ['Alerts', 'התראות'],
+    calendars: ['Calendars & mail', 'יומנים ומייל'],
+    helpers: ['Helpers', 'עוזרים'],
+    account: ['Account', 'חשבון'],
+  };
+
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
+      <SkyBackdrop sky={sky} />
+      <View style={[styles.topBar, he && styles.rowRtl]}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}
+          accessibilityRole="button" accessibilityLabel={T('Back', 'חזרה')}>
+          <Text style={styles.backText}>{he ? '›' : '‹'}</Text>
+        </TouchableOpacity>
+        <Text style={[styles.topTitle, { color: sky.ink }]}>{T(...TITLE[section])}</Text>
+      </View>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
 
-        {/* Avatar + name */}
-        <View style={styles.profileHeader}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{profile?.name?.[0]?.toUpperCase() ?? 'L'}</Text>
-          </View>
-          <Text style={styles.profileName}>{profile?.name ?? 'Lumi User'}</Text>
-          <Text style={styles.profileLevel}>{levelInfo.titleEn}</Text>
-        </View>
+        {section === 'you' && (
+          <>
+            {/* Avatar + name */}
+            <View style={styles.profileHeader}>
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>{profile?.name?.[0]?.toUpperCase() ?? 'M'}</Text>
+              </View>
+              <Text style={[styles.profileName, { color: sky.ink }]}>{profile?.name ?? ''}</Text>
+              <Text style={[styles.profileLevel, { color: sky.ink, opacity: 0.8 }]}>{he ? levelInfo.titleHe : levelInfo.titleEn}</Text>
+            </View>
 
-        {/* Settings */}
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>SETTINGS</Text>
-          <View style={styles.card}>
-            <TimeRow
-              label="Wake time"
-              value={settings.morningTime}
-              onChange={(v) => patchSettings({ morningTime: v })}
-            />
-            <View style={styles.rowDiv} />
-            <TimeRow
-              label="Sleep time"
-              value={settings.eveningTime}
-              onChange={(v) => patchSettings({ eveningTime: v })}
-            />
-            <View style={styles.rowDiv} />
+            {/* v3: the facts every leave time is built from, at a glance (utils/profileFacts). */}
+            <WhatMeiraKnows facts={profileFacts(profile, he)} he={he}
+              onTell={() => navigation.navigate('CoachChat', { mode: 'tell' })} />
 
-            {/* Language */}
-            <View style={styles.settingRow}>
-              <Text style={styles.settingLabel}>Language</Text>
-              <View style={styles.pillRow}>
-                {(['en', 'he'] as AppLanguage[]).map((lang) => (
-                  <TouchableOpacity
-                    key={lang}
-                    style={[styles.pill, settings.language === lang && styles.pillActive]}
-                    onPress={() => setLanguage(lang)}
-                  >
-                    <Text style={[styles.pillText, settings.language === lang && styles.pillTextActive]}>
-                      {lang === 'en' ? 'EN' : 'HE'}
+            {/* Tell Meira — THE chat, opened on "about you" (her pick: one chat). */}
+            <View style={styles.tellBox}>
+              <Text style={[styles.tellTitle, he && styles.rtl]}>{T('Tell me about your habits', 'ספרי לי על ההרגלים שלך')}</Text>
+              <Text style={[styles.tellText, he && styles.rtl]}>
+                {T("Where you go, when, how you get there. I'll turn it into things I know — you'll see each one here.",
+                  'לאן את הולכת, מתי ואיך מגיעה. אהפוך את זה לדברים שאני יודעת — כל אחד יופיע כאן.')}
+              </Text>
+              <View style={[styles.tellBtns, he && styles.rowRtl]}>
+                <TouchableOpacity style={styles.tellBtn} accessibilityRole="button"
+                  onPress={() => navigation.navigate('CoachChat', { mode: 'tell', listen: true })}>
+                  <Text style={styles.tellBtnText}>{T('🎙️ Talk', '🎙️ לדבר')}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.tellBtn, styles.tellBtnSoft]} accessibilityRole="button"
+                  onPress={() => navigation.navigate('CoachChat', { mode: 'tell' })}>
+                  <Text style={styles.tellBtnText}>{T('💬 Type', '💬 לכתוב')}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Home & travel — the origin every route is planned backwards from */}
+            <View style={styles.section}>
+              <Text style={[styles.sectionLabel, he && styles.sectionLabelHe]}>{T('HOME & GETTING AROUND', 'בית ותחבורה')}</Text>
+              <View style={styles.card}>
+                <View style={styles.textAreaRow}>
+                  <Text style={styles.settingLabel}>{T('🏠 Home address', '🏠 כתובת הבית')}</Text>
+                  {profile?.homeAddress ? <Text style={styles.hint}>{profile.homeAddress}</Text> : null}
+                  <View style={styles.homeRow}>
+                    <TextInput
+                      style={styles.homeInput}
+                      value={homeQuery}
+                      onChangeText={setHomeQuery}
+                      onSubmitEditing={runHomeSearch}
+                      returnKeyType="search"
+                      placeholder={T('Street, city', 'רחוב, עיר')}
+                      placeholderTextColor={BRAND.inkSoft}
+                    />
+                    <TouchableOpacity style={styles.homeBtn} onPress={runHomeSearch} disabled={homeBusy}>
+                      <Text style={styles.homeBtnText}>{homeBusy ? '…' : '🔍'}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.homeBtn} onPress={useCurrentAsHome} disabled={homeBusy}>
+                      <Text style={styles.homeBtnText}>📍</Text>
+                    </TouchableOpacity>
+                  </View>
+                  {homeHits.map((hit) => (
+                    <TouchableOpacity key={hit.address} style={styles.homeHit} onPress={() => pickHome(hit)}>
+                      <Text style={styles.homeHitName}>{hit.name}</Text>
+                      <Text style={styles.homeHitAddr}>{hit.address}</Text>
+                    </TouchableOpacity>
+                  ))}
+                  {!profile?.homeAddress && !homeHits.length ? (
+                    <Text style={styles.homeWarn}>
+                      {T('Not set — I cannot work out when to wake you or leave without it.',
+                        'לא הוגדר — בלי זה אין לי ממה לחשב מתי להעיר אותך ומתי לצאת.')}
                     </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
+                  ) : null}
+                </View>
 
-            <View style={styles.rowDiv} />
+                <View style={styles.rowDiv} />
 
-            {/* Cloud account — everything below depends on it */}
-            {/* Only ever disabled WHILE signing in. Disabling it when signed in
-                is what made a stale session unrecoverable: the tick said all was
-                well and the tap did nothing. */}
-            <TouchableOpacity style={styles.settingRow} onPress={cloudId ? switchAccount : signIn} disabled={signingIn}>
-              <Text style={styles.settingLabel}>☁️ Cloud sync</Text>
-              <Text
-                style={[styles.settingLabel, cloudId ? { color: BRAND.sunGold } : { color: BRAND.danger }]}
-                numberOfLines={1}
-              >
-                {signingIn ? 'Signing in…' : cloudId ? `${cloudEmail || 'Signed in'} ✓` : 'Not signed in — tap ›'}
-              </Text>
-            </TouchableOpacity>
+                <View style={styles.settingRow}>
+                  <Text style={styles.settingLabel}>{T('🚌 Usual transport', '🚌 תחבורה רגילה')}</Text>
+                  <View style={styles.pillRow}>
+                    {([
+                      ['transit', '🚌'], ['car', '🚗'], ['bicycle', '🚴'], ['foot', '🚶'],
+                    ] as [TransportMode, string][]).map(([mode, icon]) => (
+                      <TouchableOpacity
+                        key={mode}
+                        style={[styles.pill, profile?.transportMode === mode && styles.pillActive]}
+                        onPress={() => saveProfileText({
+                          transportMode: mode,
+                          // Choosing the car says she has one; anything else says nothing about it.
+                          ...(mode === 'car' ? { hasCar: true } : {}),
+                        })}
+                      >
+                        <Text style={styles.pillText}>{icon}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
 
-            <View style={styles.rowDiv} />
+                <View style={styles.rowDiv} />
 
-            {/* WhatsApp phone alerts */}
-            <View style={styles.settingRow}>
-              <Text style={styles.settingLabel}>WhatsApp #</Text>
-              <TextInput
-                style={styles.phoneInput}
-                value={phone}
-                onChangeText={setPhone}
-                onBlur={() => patchSettings({ whatsAppPhone: phone.replace(/[^\d]/g, '') })}
-                placeholder="9725XXXXXXXX"
-                placeholderTextColor={BRAND.inkSoft}
-                keyboardType="phone-pad"
-              />
-            </View>
-            <TouchableOpacity style={styles.linkBtn} onPress={linkPhoneAlerts} disabled={linking}>
-              <Text style={styles.linkBtnText}>{linking ? 'Linking…' : '🔔 Enable phone alerts'}</Text>
-            </TouchableOpacity>
+                {/* Car — the travel ladder turns on it (utils/travelLadder). */}
+                <View style={styles.settingRow}>
+                  <Text style={styles.settingLabel}>{T('🚗 Do you have a car?', '🚗 יש לך רכב?')}</Text>
+                  <View style={styles.pillRow}>
+                    {([[true, T('Yes', 'כן')], [false, T('No', 'לא')]] as [boolean, string][]).map(([value, label]) => (
+                      <TouchableOpacity
+                        key={String(value)}
+                        style={[styles.pill, profile?.hasCar === value && styles.pillActive]}
+                        onPress={() => saveProfileText({ hasCar: value })}
+                      >
+                        <Text style={styles.pillText}>{label}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+                {profile?.hasCar === undefined ? (
+                  <Text style={styles.homeWarn}>
+                    {T('Not set — I assume no car unless your usual transport is the car.',
+                      'לא נבחר — אני מניחה שאין רכב, אלא אם התחבורה הרגילה היא רכב.')}
+                  </Text>
+                ) : null}
 
-            <View style={styles.rowDiv} />
+                <View style={styles.rowDiv} />
 
-            {/* Calendar: connected / found / imported, and a forced sync.
-                "I added events and don't see them" is impossible to diagnose
-                from outside the app — not-connected, connected-but-empty, and
-                imported-but-hidden all look the same. */}
-            <TouchableOpacity style={styles.settingRow} onPress={runCalendarCheck} disabled={calChecking}>
-              <Text style={styles.settingLabel}>📅 Calendar</Text>
-              <Text style={styles.linkChevron}>
-                {calChecking ? '…' : cal
-                  ? (cal.connected
-                    ? `${cal.eventsFound} events · ${cal.imported} imported`
-                    : 'not connected')
-                  : 'check ›'}
-              </Text>
-            </TouchableOpacity>
-
-            <View style={styles.rowDiv} />
-
-            {/* Points / level / category breakdown. Used to be the Stats
-                tab; the tab now belongs to Trips, which answers a question
-                the user actually has several times a day. */}
-            <TouchableOpacity style={styles.settingRow} onPress={() => navigation.navigate('Analytics')}>
-              <Text style={styles.settingLabel}>📊 Progress</Text>
-              <Text style={styles.linkChevron}>›</Text>
-            </TouchableOpacity>
-
-            <View style={styles.rowDiv} />
-
-            {/* Personality test */}
-            <TouchableOpacity style={styles.settingRow} onPress={() => navigation.navigate('PersonalityQuiz')}>
-              <Text style={styles.settingLabel}>🧭 Personality check</Text>
-              <Text style={styles.linkChevron}>›</Text>
-            </TouchableOpacity>
-
-            <View style={styles.rowDiv} />
-
-            {/* Google account — calendar events + event emails intake */}
-            <TouchableOpacity style={styles.settingRow} onPress={connectGoogle} disabled={connecting}>
-              <Text style={styles.settingLabel}>🔗 Google</Text>
-              <Text style={[styles.settingLabel, googleConnected && { color: BRAND.sunGold }]}>
-                {connecting ? 'Connecting…' : googleConnected ? 'Connected ✓' : 'Connect ›'}
-              </Text>
-            </TouchableOpacity>
-
-            <View style={styles.rowDiv} />
-
-            {/* Goals / wish list */}
-            <TouchableOpacity style={styles.settingRow} onPress={() => navigation.navigate('Goals')}>
-              <Text style={styles.settingLabel}>⭐ Goals & wish list</Text>
-              <Text style={styles.linkChevron}>›</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Home & travel — the origin every route is planned backwards from */}
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>HOME & TRAVEL</Text>
-          <View style={styles.card}>
-            <View style={styles.textAreaRow}>
-              <Text style={styles.settingLabel}>🏠 Home address</Text>
-              <View style={styles.homeRow}>
-                <TextInput
-                  style={styles.homeInput}
-                  value={homeQuery}
-                  onChangeText={setHomeQuery}
-                  onSubmitEditing={runHomeSearch}
-                  returnKeyType="search"
-                  placeholder="Street, city"
-                  placeholderTextColor={BRAND.inkSoft}
+                {/* The earliest she will be woken (utils/dayFeasibility). */}
+                <TimeRow
+                  label={T('⏰ Earliest I will wake', '⏰ הכי מוקדם שאקום')}
+                  value={parseHHMM(profile?.earliestWakeTime ?? DEFAULT_EARLIEST_WAKE)}
+                  onChange={(t) => saveProfileText({ earliestWakeTime: fmtTime(t) })}
                 />
-                <TouchableOpacity style={styles.homeBtn} onPress={runHomeSearch} disabled={homeBusy}>
-                  <Text style={styles.homeBtnText}>{homeBusy ? '…' : '🔍'}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.homeBtn} onPress={useCurrentAsHome} disabled={homeBusy}>
-                  <Text style={styles.homeBtnText}>📍</Text>
-                </TouchableOpacity>
+
+                <View style={styles.rowDiv} />
+
+                {/* Her bedtime — what the planners read (profile.sleepTime). The
+                    old "Sleep time" row moved the EVENING CHECK-IN instead,
+                    which now lives, by that name, in Alerts. */}
+                <TimeRow
+                  label={T('🌙 I go to sleep', '🌙 הולכת לישון')}
+                  value={parseHHMM(profile?.sleepTime ?? '23:00')}
+                  onChange={(t) => saveProfileText({ sleepTime: fmtTime(t) })}
+                />
               </View>
-              {homeHits.map((hit) => (
-                <TouchableOpacity key={hit.address} style={styles.homeHit} onPress={() => pickHome(hit)}>
-                  <Text style={styles.homeHitName}>{hit.name}</Text>
-                  <Text style={styles.homeHitAddr}>{hit.address}</Text>
-                </TouchableOpacity>
-              ))}
-              {!profile?.homeAddress && !homeHits.length ? (
-                <Text style={styles.homeWarn}>
-                  Not set — Lumi cannot work out when to wake you or leave without it.
-                </Text>
-              ) : null}
             </View>
 
-            <View style={styles.rowDiv} />
+            {/* How pushy Meira is around a study block (19.10, her pick "2": three cards, each
+                with a sample of what she will get). Radio semantics, 44dp rows. */}
+            <View style={styles.section}>
+              <Text style={[styles.sectionLabel, he && styles.sectionLabelHe]}>{T('HOW MUCH SHOULD I NUDGE?', 'כמה להציק לך?')}</Text>
+              <View style={styles.card}>
+                <NudgeSlider
+                  level={nudgeLevelOf(profile)}
+                  language={he ? 'he' : 'en'}
+                  onChange={(level) => saveProfileText({ nudgeLevel: level })}
+                />
+              </View>
+            </View>
 
-            {/* Transport — was only editable per-task, never as a default */}
-            <View style={styles.settingRow}>
-              <Text style={styles.settingLabel}>🚌 Usual transport</Text>
-              <View style={styles.pillRow}>
-                {([
-                  ['transit', '🚌'], ['car', '🚗'], ['bicycle', '🚴'], ['foot', '🚶'],
-                ] as [TransportMode, string][]).map(([mode, icon]) => (
-                  <TouchableOpacity
-                    key={mode}
-                    style={[styles.pill, profile?.transportMode === mode && styles.pillActive]}
-                    onPress={() => saveProfileText({ transportMode: mode })}
+            {/* Routines & habits — ONE list: her box and what she told Meira. */}
+            <View style={styles.section}>
+              <Text style={[styles.sectionLabel, he && styles.sectionLabelHe]}>{T('ROUTINES & HABITS', 'שגרה והרגלים')}</Text>
+              <View style={styles.card}>
+                <RoutineList he={he} />
+              </View>
+            </View>
+
+            {/* Hobbies — free text Meira plans around */}
+            <View style={styles.section}>
+              <Text style={[styles.sectionLabel, he && styles.sectionLabelHe]}>{T('HOBBIES', 'תחביבים')}</Text>
+              <View style={styles.card}>
+                <View style={styles.textAreaRow}>
+                  <TextInput
+                    style={styles.textArea}
+                    value={hobbies}
+                    onChangeText={(v) => { dirty.current.hobbies = true; setHobbies(v); }}
+                    onBlur={() => saveProfileText({})}
+                    placeholder={T('climbing, guitar, cooking…', 'טיפוס, גיטרה, בישול…')}
+                    placeholderTextColor={BRAND.inkSoft}
+                    multiline
+                  />
+                </View>
+                <View style={styles.saveRow}>
+                  <Text style={[styles.saveState, textSaved.error ? { color: BRAND.danger } : null]} numberOfLines={2}>
+                    {textSaved.busy ? T('Saving…', 'שומרת…')
+                      : textSaved.error ? T(`Not saved: ${textSaved.error}`, `לא נשמר: ${textSaved.error}`)
+                        : textSaved.at ? T(`✓ Saved ${textSaved.at}`, `✓ נשמר ${textSaved.at}`) : T('Saves as you type', 'נשמר תוך כדי הקלדה')}
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            {/* What she taught Meira, and what Meira still asks */}
+            <View style={styles.section}>
+              <Text style={[styles.sectionLabel, he && styles.sectionLabelHe]}>{T('WHAT I LEARNED FROM YOU', 'מה שלמדתי ממך')}</Text>
+              <View style={styles.card}>
+                <LearnedRules he={he} />
+              </View>
+            </View>
+
+            <View style={styles.section}>
+              <View style={styles.card}>
+                <TouchableOpacity style={styles.settingRow} onPress={() => navigation.navigate('PersonalityQuiz')}>
+                  <Text style={styles.settingLabel}>{T('🧭 Personality check', '🧭 בדיקת אישיות')}</Text>
+                  <Text style={styles.linkChevron}>›</Text>
+                </TouchableOpacity>
+                <View style={styles.rowDiv} />
+                <TouchableOpacity style={styles.settingRow} onPress={() => navigation.navigate('Goals')}>
+                  <Text style={styles.settingLabel}>{T('⭐ Goals & wish list', '⭐ מטרות ומשאלות')}</Text>
+                  <Text style={styles.linkChevron}>›</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </>
+        )}
+
+        {section === 'alerts' && settings && (
+          <>
+            {/* Nearby errands (28.10, her option B): disclosure + real state. */}
+            <NearbyNudgesCard he={he} />
+            <View style={styles.section}>
+              <View style={styles.card}>
+                <View style={styles.settingRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.settingLabel}>{T('⏰ Loud wake-up alarm', '⏰ שעון מעורר חזק')}</Text>
+                    <Text style={styles.hint}>{T('A clock alarm on wake days. The wake notification shows either way.',
+                      'צלצול חזק בימים שצריך לקום. ההתראה מופיעה כך או כך.')}</Text>
+                  </View>
+                  <Switch
+                    value={settings.wakeAlarmEnabled !== false}
+                    onValueChange={(v) => patchSettings({ wakeAlarmEnabled: v })}
+                    trackColor={{ true: BRAND.sunGold, false: BRAND.line }}
+                  />
+                </View>
+                <View style={styles.rowDiv} />
+                <TimeRow
+                  label={T('☀️ Morning check-in', '☀️ צ׳ק-אין בוקר')}
+                  value={settings.morningTime}
+                  onChange={(v) => patchSettings({ morningTime: v })}
+                />
+                <View style={styles.rowDiv} />
+                <TimeRow
+                  label={T('🌙 Evening check-in', '🌙 צ׳ק-אין ערב')}
+                  value={settings.eveningTime}
+                  onChange={(v) => patchSettings({ eveningTime: v })}
+                />
+              </View>
+            </View>
+
+            <View style={styles.section}>
+              <Text style={[styles.sectionLabel, he && styles.sectionLabelHe]}>{T('WHATSAPP & PHONE ALERTS', 'וואטסאפ והתראות לטלפון')}</Text>
+              <View style={styles.card}>
+                <View style={styles.settingRow}>
+                  <Text style={styles.settingLabel}>{T('WhatsApp', 'וואטסאפ')}</Text>
+                  <Text style={styles.settingLabel}>
+                    {linkedPhone
+                      ? T(`Connected ✓ ···${linkedPhone.slice(-3)}`, `מחובר ✓ ···${linkedPhone.slice(-3)}`)
+                      : linkedPhone === null
+                        ? T('Not connected', 'לא מחובר')
+                        : T("Couldn't check", 'לא הצלחתי לבדוק')}
+                  </Text>
+                </View>
+                <TouchableOpacity style={styles.linkBtn} onPress={connectWhatsApp} disabled={linking}>
+                  <Text style={styles.linkBtnText}>{linking
+                    ? T('Waiting for your WhatsApp message…', 'מחכה להודעה שלך בוואטסאפ…')
+                    : linkedPhone ? T('🔗 Connect again', '🔗 חיבור מחדש') : T('🔗 Connect WhatsApp', '🔗 חיבור וואטסאפ')}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={styles.section}>
+              <Text style={[styles.sectionLabel, he && styles.sectionLabelHe]}>{T('ALARM CLOCK', 'שעון מעורר')}</Text>
+              <View style={styles.card}>
+                <TimeRow label={T('⏰ Manual alarm', '⏰ שעון ידני')} value={alarmTime} onChange={setAlarmTime} />
+                <TouchableOpacity style={styles.linkBtn} onPress={setManualAlarm}>
+                  <Text style={styles.linkBtnText}>{T('Set system alarm', 'לכוון שעון במכשיר')}</Text>
+                </TouchableOpacity>
+                <View style={styles.rowDiv} />
+                <TouchableOpacity style={styles.linkBtn} onPress={setAlarmForTomorrowsFirstTask}>
+                  <Text style={styles.linkBtnText}>{T("⏰ Alarm for tomorrow's first task", '⏰ שעון למשימה הראשונה מחר')}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </>
+        )}
+
+        {section === 'calendars' && (
+          <>
+            <View style={styles.section}>
+              <CalendarConnections />
+            </View>
+            {/* "I added events and don't see them": not connected, connected but
+                empty and imported but hidden all look the same from outside. */}
+            <View style={styles.section}>
+              <View style={styles.card}>
+                <TouchableOpacity style={styles.settingRow} onPress={runCalendarCheck} disabled={calChecking}>
+                  <Text style={styles.settingLabel}>{T('🔎 Check my calendar now', '🔎 לבדוק את היומן עכשיו')}</Text>
+                  <Text style={styles.linkChevron}>
+                    {calChecking ? '…' : cal
+                      ? (cal.connected
+                        ? T(`${cal.eventsFound} events · ${cal.imported} imported`, `${cal.eventsFound} אירועים · ${cal.imported} יובאו`)
+                        : T('not connected', 'לא מחובר'))
+                      : '›'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </>
+        )}
+
+        {section === 'helpers' && (
+          <>
+            <View style={styles.section}>
+              <View style={styles.card}>
+                <TouchableOpacity style={styles.settingRow} onPress={() => navigation.navigate('Agents')}>
+                  <Text style={styles.settingLabel}>{T('🤖 My agents', '🤖 הסוכנים שלי')}</Text>
+                  <Text style={styles.linkChevron}>›</Text>
+                </TouchableOpacity>
+                {/* Learning sessions: block WhatsApp, Instagram… while she studies (17.10). */}
+                <TouchableOpacity style={styles.settingRow} onPress={() => setFocusOpen(true)} accessibilityRole="button">
+                  <Text style={[styles.settingLabel, { flex: 1, flexShrink: 1 }]}>{T('📚 Learning sessions — blocked apps', '📚 למידה ממוקדת — אפליקציות חסומות')}</Text>
+                  <Text style={styles.linkChevron}>›</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+            <View style={styles.section}>
+              <Text style={[styles.sectionLabel, he && styles.sectionLabelHe]}>{T('AI ASSISTANTS', 'עוזרי AI')}</Text>
+              <AiAssistants />
+            </View>
+          </>
+        )}
+
+        {section === 'account' && (
+          <>
+            <View style={styles.section}>
+              <View style={styles.card}>
+                {/* Only ever disabled WHILE signing in: disabling it when signed in
+                    is what made a stale session unrecoverable. */}
+                <TouchableOpacity style={styles.settingRow} onPress={cloudId ? switchAccount : signIn} disabled={signingIn}>
+                  <Text style={styles.settingLabel}>{T('☁️ Cloud sync', '☁️ סנכרון לענן')}</Text>
+                  <Text
+                    style={[styles.settingLabel, cloudId ? { color: BRAND.goldInk } : { color: BRAND.danger }]}
+                    numberOfLines={1}
                   >
-                    <Text style={styles.pillText}>{icon}</Text>
-                  </TouchableOpacity>
-                ))}
+                    {signingIn ? T('Signing in…', 'מתחברת…') : cloudId ? `${cloudEmail || T('Signed in', 'מחוברת')} ✓` : T('Not signed in — tap ›', 'לא מחוברת — לחצי ›')}
+                  </Text>
+                </TouchableOpacity>
               </View>
             </View>
-          </View>
-        </View>
 
-        {/* About me — free-text context Lumi plans around */}
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>ABOUT ME</Text>
-          <View style={styles.card}>
-            <View style={styles.textAreaRow}>
-              <Text style={styles.settingLabel}>🎨 Hobbies</Text>
-              <TextInput
-                style={styles.textArea}
-                value={hobbies}
-                onChangeText={setHobbies}
-                onBlur={() => saveProfileText({ hobbies })}
-                placeholder="climbing, guitar, cooking…"
-                placeholderTextColor={BRAND.inkSoft}
-                multiline
-              />
-            </View>
-            <View style={styles.rowDiv} />
-            <View style={styles.textAreaRow}>
-              <Text style={styles.settingLabel}>🔁 Routines</Text>
-              <TextInput
-                style={styles.textArea}
-                value={routinesNotes}
-                onChangeText={setRoutinesNotes}
-                onBlur={() => saveProfileText({ routinesNotes })}
-                placeholder="gym Mon/Wed 18:00, weekly review Sunday…"
-                placeholderTextColor={BRAND.inkSoft}
-                multiline
-              />
-            </View>
-          </View>
-        </View>
-
-        {/* Alarm clock — real Android system alarm */}
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>ALARM CLOCK</Text>
-          <View style={styles.card}>
-            <TimeRow label="⏰ Manual alarm" value={alarmTime} onChange={setAlarmTime} />
-            <TouchableOpacity style={styles.linkBtn} onPress={setManualAlarm}>
-              <Text style={styles.linkBtnText}>Set system alarm</Text>
+            <TouchableOpacity onPress={handleSignOut} style={styles.signOut}>
+              <Text style={styles.signOutText}>{T('Sign out', 'יציאה מהחשבון')}</Text>
             </TouchableOpacity>
-            <View style={styles.rowDiv} />
-            <TouchableOpacity style={styles.linkBtn} onPress={setAlarmForTomorrowsFirstTask}>
-              <Text style={styles.linkBtnText}>⏰ Alarm for tomorrow's first task</Text>
+
+            {/* Delete account — required by Google Play, promised by the privacy
+                policy. Quiet, and behind two confirmations: it is irreversible. */}
+            <TouchableOpacity onPress={handleDeleteAccount} style={styles.deleteAccount}>
+              <Text style={styles.deleteAccountText}>{T('Delete my account', 'מחיקת החשבון שלי')}</Text>
             </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Sign out */}
-        <TouchableOpacity onPress={handleSignOut} style={styles.signOut}>
-          <Text style={styles.signOutText}>Sign out</Text>
-        </TouchableOpacity>
-
-        {/* Delete account — required by Google Play for any app with accounts,
-            and promised by the privacy policy. Kept visually quiet and behind
-            two confirmations: it is irreversible, and it sits one finger-width
-            from "Sign out", which is not. */}
-        <TouchableOpacity onPress={handleDeleteAccount} style={styles.deleteAccount}>
-          <Text style={styles.deleteAccountText}>Delete my account</Text>
-        </TouchableOpacity>
+          </>
+        )}
 
         <View style={{ height: 120 }} />
       </ScrollView>
+      <FocusSessionSheet visible={focusOpen} lang={he ? 'he' : 'en'} onClose={() => setFocusOpen(false)} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  topBar: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingBottom: 6 },
+  rowRtl: { flexDirection: 'row-reverse' },
+  backBtn: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.75)' },
+  backText: { fontSize: 28, fontFamily: FONTS.bodyHeavy, color: BRAND.goldInk },
+  topTitle: { fontSize: 24, fontFamily: FONTS.display, color: BRAND.warmInk },
+  rtl: { textAlign: 'right', writingDirection: 'rtl' },
+  hint: { fontSize: 12, fontFamily: FONTS.body, color: BRAND.inkSoft, marginTop: 2 },
+  tellBox: { padding: 16, gap: 6, borderRadius: 22, borderWidth: 1.5, borderColor: BRAND.sunGold, backgroundColor: 'rgba(255,246,216,0.95)' },
+  tellTitle: { fontSize: 18, fontFamily: FONTS.display, color: BRAND.warmInk },
+  tellText: { fontSize: 13, fontFamily: FONTS.body, color: BRAND.inkSoft },
+  tellBtns: { flexDirection: 'row', gap: 10, marginTop: 8 },
+  tellBtn: { flex: 1, minHeight: 48, borderRadius: 14, backgroundColor: BRAND.sunGold, alignItems: 'center', justifyContent: 'center' },
+  tellBtnSoft: { backgroundColor: BRAND.creamCard, borderWidth: 1.5, borderColor: BRAND.line },
+  tellBtnText: { fontSize: 15, fontFamily: FONTS.bodyHeavy, color: BRAND.onGold },
+  saveRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 10 },
+  saveState: { flex: 1, fontFamily: FONTS.body, fontSize: 12, color: BRAND.inkSoft },
+  saveBtn: { backgroundColor: BRAND.sunGold, borderRadius: 999, paddingHorizontal: 16, paddingVertical: 8 },
+  saveBtnText: { fontFamily: FONTS.bodyHeavy, fontSize: 14, color: BRAND.onGold },
   root: { flex: 1, backgroundColor: BRAND.cream },
   scroll: { padding: 16, gap: 20 },
 
@@ -816,8 +1065,16 @@ const styles = StyleSheet.create({
   profileLevel: { fontSize: 13, fontFamily: FONTS.bodySemi, color: BRAND.inkSoft },
 
   section: { gap: 8 },
-  sectionLabel: { fontSize: 11, fontFamily: FONTS.bodyHeavy, color: BRAND.inkSoft, letterSpacing: 0.5 },
-  card: { backgroundColor: BRAND.creamCard, borderRadius: RADIUS.card, ...SHADOWS.card, overflow: 'hidden' },
+  // v3: labels sit on the sky in a soft pill; cards are white glass (canvas v4).
+  sectionLabel: {
+    alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 999, overflow: 'hidden',
+    backgroundColor: 'rgba(255,255,255,0.7)', fontSize: 11.5, fontFamily: FONTS.bodyHeavy, color: BRAND.goldInk, letterSpacing: 0.3,
+  },
+  sectionLabelHe: { alignSelf: 'flex-end', writingDirection: 'rtl' },
+  card: {
+    backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: 22, borderWidth: 1, borderColor: 'rgba(255,255,255,0.9)',
+    ...SHADOWS.card, overflow: 'hidden',
+  },
 
   settingRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
@@ -833,6 +1090,15 @@ const styles = StyleSheet.create({
   },
   stepBtnText: { fontSize: 18, fontFamily: FONTS.bodyHeavy, color: BRAND.warmInk, lineHeight: 22 },
   timeVal: { fontSize: 16, fontFamily: FONTS.bodyHeavy, color: BRAND.warmInk, minWidth: 48, textAlign: 'center' },
+
+  nudgeRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 56,
+    paddingHorizontal: 16, paddingVertical: 12,
+  },
+  nudgeRowOn: { backgroundColor: BRAND.cream },
+  nudgeDot: { width: 18, height: 18, borderRadius: 9, borderWidth: 2, borderColor: BRAND.inkSoft },
+  nudgeDotOn: { borderColor: BRAND.sunGold, backgroundColor: BRAND.sunGold },
+  nudgeSample: { fontSize: 12, fontFamily: FONTS.body, color: BRAND.inkSoft, marginTop: 2 },
 
   pillRow: { flexDirection: 'row', gap: 6 },
   pill: {

@@ -29,6 +29,8 @@ import {
   planTomorrowFromGoogle, acceptGmailSuggestion, dismissGmailSuggestion,
   ensureTravelChain, analyzeWeek, WeekDayPlan,
 } from '../services/GoogleSync';
+import { GMAIL_ENABLED, gmailOffLine } from '../utils/gmailAccess';
+import { checkTripOrigin } from '../services/QuestionService';
 import { nextGap, describeGap } from '../utils/taskRequirements';
 import { hydrateCustomCategories } from '../constants/categories';
 import { Task, AppLanguage, GapSuggestion, TaskLocation, UserProfile } from '../types';
@@ -92,6 +94,10 @@ export default function PlanTomorrow({ navigation }: PlanTomorrowProps) {
       if (await ensureTravelChain(tomorrow, settings.language)) {
         tomorrowData = await getTasksForDate(tomorrow);
       }
+      // She is looking at tomorrow's route, planned from HOME: if the phone says
+      // she is elsewhere, this is the moment to ask where she will leave from
+      // (kinds/tripOrigin). Never throws; a failure is warned about there.
+      checkTripOrigin('plan-tomorrow').catch(() => {});
       tomorrowData = [...tomorrowData].sort((a, b) =>
         ((a.fixedTime || a.scheduledTime || '99') < (b.fixedTime || b.scheduledTime || '99') ? -1 : 1));
       setTomorrowTasks(tomorrowData);
@@ -253,6 +259,9 @@ export default function PlanTomorrow({ navigation }: PlanTomorrowProps) {
           }
         />
 
+        {!GMAIL_ENABLED ? (
+          <Text style={[styles.suggestionReason, { color: subColor }]}>{gmailOffLine(language === 'he')}</Text>
+        ) : null}
         {gmailSuggestions.length > 0 && (
           <View>
             <Text style={[styles.sectionTitle, { color: textColor }]}>

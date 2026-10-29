@@ -161,7 +161,8 @@ async def _places(dry: bool) -> int:
             moved += 1
             if not dry:
                 await db.remember_place(user_key, activity, place.get("address"),
-                                        place.get("lat"), place.get("lng"))
+                                        place.get("lat"), place.get("lng"),
+                                        uses=place.get("count"))
     return moved
 
 

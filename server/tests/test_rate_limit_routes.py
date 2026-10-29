@@ -183,3 +183,61 @@ def test_the_webhook_ceiling_is_checked_before_the_body_is_parsed(_no_agent):
                     headers={"Content-Type": "application/json"})
     r = client.post("/webhook/whatsapp", json=_wa_body("972500000009", "after"))
     assert r.status_code == 429, "junk bodies bypassed the ceiling"
+
+
+# 19.10, before Play: the model-calling app doors that had no ceiling. Bodies
+# are deliberately invalid, so nothing under the cap reaches a model — and the
+# cap must still count them, because the check runs before the body is read.
+_APP_DOORS = [
+    ("/app/tasks/extract", {}, "error"),
+    ("/app/profile/extract", {}, "error"),
+    ("/app/email/events", {}, "error"),
+    ("/app/meeting/brief", {}, "ok"),
+    ("/app/task/prep", {}, "ok"),
+    ("/app/errands/along", {"task": "not-a-dict"}, "ok"),
+    ("/app/questions/answer", {}, "ok"),
+]
+
+
+@pytest.mark.parametrize("path,body,shape", _APP_DOORS)
+def test_model_calling_app_doors_refuse_past_the_ceiling(path, body, shape):
+    with _as(ALICE):
+        seen = [client.post(path, json=body, headers={"Authorization": "Bearer t"})
+                for _ in range(rate_limit.APP_MODEL_LIMIT + 2)]
+    codes = [r.status_code for r in seen]
+    assert 429 not in codes[:rate_limit.APP_MODEL_LIMIT], f"{path} refused under the cap: {codes}"
+    last = seen[-1]
+    assert last.status_code == 429, f"{path}: no 429 in {sorted(set(codes))} — the limit is not wired"
+    assert last.headers.get("retry-after")
+    # The refusal names itself in the door's own shape — never an empty result
+    # that reads as "nothing found" (silent-state rule 1).
+    want = {"ok": False, "reason": "rate_limited"} if shape == "ok" else {"error": "rate_limited"}
+    assert last.json() == want
+
+
+def test_app_door_limits_are_per_account_and_per_door():
+    with _as(ALICE):
+        for _ in range(rate_limit.APP_MODEL_LIMIT + 1):
+            client.post("/app/tasks/extract", json={}, headers={"Authorization": "Bearer t"})
+        other_door = client.post("/app/task/prep", json={}, headers={"Authorization": "Bearer t"})
+    with _as(BOB):
+        other_person = client.post("/app/tasks/extract", json={}, headers={"Authorization": "Bearer t"})
+    assert other_door.status_code != 429
+    assert other_person.status_code != 429
+
+
+def test_personality_resolve_is_counted_per_ip():
+    ip_a = {"Fly-Client-IP": "203.0.113.7"}
+    codes = [client.get("/personality/resolve", params={"token": f"guess{i}"}, headers=ip_a).status_code
+             for i in range(rate_limit.RESOLVE_LIMIT + 2)]
+    assert codes[-1] == 429, f"no 429 in {sorted(set(codes))} — guessing is unlimited"
+    assert 429 not in codes[:rate_limit.RESOLVE_LIMIT]
+    other = client.get("/personality/resolve", params={"token": "x"},
+                       headers={"Fly-Client-IP": "198.51.100.9"})
+    assert other.status_code != 429
+
+
+def test_health_publishes_no_model_configuration():
+    r = client.get("/health")
+    assert r.status_code == 200
+    assert r.json() == {"status": "ok"}

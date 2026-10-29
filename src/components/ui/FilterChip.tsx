@@ -1,4 +1,4 @@
-/** FilterChip — a pill that is on or off ("Today", "Tomorrow", "Mon 5 Oct ▾"). */
+/** FilterChip — a pill that is on or off ("Today", "Tomorrow", "Mon 5 Oct ▼"). */
 import React from 'react';
 import { Pressable, StyleSheet, Text } from 'react-native';
 import { BRAND, FONTS } from '../../constants/theme';

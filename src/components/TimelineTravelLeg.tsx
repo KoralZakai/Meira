@@ -16,6 +16,7 @@
  * handler Today uses), so choosing "train" here is the same choice as choosing
  * it there — one preference, two places to set it.
  */
+import { headsignText } from '../utils/transitParse';
 import React, { useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, LayoutAnimation, Platform, UIManager,
@@ -25,6 +26,7 @@ import { DepartureOption } from '../utils/departureOptions';
 import { missedPlannedDeparture, stillWorthGoingUntil } from '../utils/liveRoutePlan';
 import { getTodayString, timeToMinutes } from '../utils/timeUtils';
 import TransitOptionsList from './TransitOptionsList';
+import TransitAlertLine from './TransitAlertLine';
 import { BRAND, FONTS, RADIUS } from '../constants/theme';
 import { travelRowState, describeTravelRow, routeFailureOf } from '../utils/travelRowState';
 
@@ -109,6 +111,7 @@ export default function TimelineTravelLeg({
   onChangeOrigin, onCompareModes,
 }: Props) {
   const [open, setOpen] = useState(false);
+  const [showWhy, setShowWhy] = useState(false);
   const [busy, setBusy] = useState(false);
   // The next few departures, once she asks. Null = not asked.
   const [options, setOptions] = useState<DepartureOption[] | null>(null);
@@ -309,7 +312,7 @@ export default function TimelineTravelLeg({
               //
               // Koral, 2026-09-17, on her own Tomorrow screen: "where is the
               // clock alarm?" It was there — ⏰ and 🚿 rows, correct to the
-              // minute — behind a ▸ she had no reason to tap. The collapsed
+              // minute — behind a ▶ she had no reason to tap. The collapsed
               // line said "Leave 10:43" and nothing about the morning, so the
               // day read as though it started at 10:43.
               //
@@ -319,11 +322,23 @@ export default function TimelineTravelLeg({
               : [loc?.wakeUpBy ? `⏰ ${loc.wakeUpBy}` : '', summary]
                 .filter(Boolean).join(' · ')}
           </Text>
+          {/* Why it is not the vehicle she expects — "No train to Ra'anana —
+              bus", "Too far to ride — public transport", "No bus in time —
+              taxi". Stored on every plan since the ladder existed and shown
+              nowhere, which is rule 9 failing in the last inch: the plan
+              carried the sentence and no screen read it out. */}
+          {loc?.modeNote && !departureGone ? (
+            <Text style={styles.modeNoteText} numberOfLines={2}>ℹ️ {loc.modeNote}</Text>
+          ) : null}
         </View>
         <Text style={[styles.chevron, departureGone && styles.chevronMissed]}>
-          {open ? '▾' : '▸'}
+          {open ? '▼' : '▶'}
         </Text>
       </TouchableOpacity>
+
+      {/* Disruptions on the way (20.10, option A): headline, source, when it
+          was checked — on the COLLAPSED row, never behind the ▶ (rule 5). */}
+      {!departureGone ? <TransitAlertLine state={loc?.transitAlerts} he={he} /> : null}
 
       {open ? (
         <View style={styles.body}>
@@ -344,6 +359,17 @@ export default function TimelineTravelLeg({
               <Text style={styles.endValue} numberOfLines={2}>{toLabel}</Text>
             </View>
           </View>
+
+          {loc?.routeWhy?.length ? (
+            <TouchableOpacity onPress={() => setShowWhy((v) => !v)} activeOpacity={0.8}>
+              <Text style={styles.whyToggle}>
+                {showWhy ? '▼ ' : '▶ '}{he ? 'למה ככה?' : 'Why this way?'}
+              </Text>
+              {showWhy ? loc.routeWhy.map((line, i) => (
+                <Text key={i} style={styles.whyLine}>{line}</Text>
+              )) : null}
+            </TouchableOpacity>
+          ) : null}
 
           {onChangeOrigin ? (
             <View style={styles.originRow}>
@@ -512,9 +538,7 @@ export default function TimelineTravelLeg({
                       leg.stopName,
                       leg.platform
                         ? (he ? `רציף ${leg.platform}` : `platform ${leg.platform}`)
-                        : leg.headsign
-                          ? (he ? `לכיוון ${leg.headsign}` : `towards ${leg.headsign}`)
-                          : '',
+                        : headsignText(leg.headsign, he),
                     ].filter(Boolean).join(' · ')}
                   </Text>
                 ) : null}
@@ -586,6 +610,9 @@ export default function TimelineTravelLeg({
 }
 
 const styles = StyleSheet.create({
+  modeNoteText: { fontSize: 12, color: BRAND.inkFaint, marginTop: 2 },
+  whyToggle: { fontSize: 13, fontWeight: '600', color: '#6C63FF', marginTop: 8 },
+  whyLine: { fontSize: 12, color: BRAND.inkFaint, marginTop: 3, lineHeight: 16 },
   wrap: {
     backgroundColor: BRAND.creamCard, borderWidth: 1, borderColor: BRAND.line,
     borderRadius: RADIUS.chip + 4, overflow: 'hidden', marginBottom: 10,
@@ -607,7 +634,7 @@ const styles = StyleSheet.create({
   headerText: { flex: 1, gap: 1 },
   headerTitle: { fontFamily: FONTS.bodyBold, fontSize: 13, color: BRAND.warmInk },
   headerSub: { fontFamily: FONTS.body, fontSize: 11, color: BRAND.inkFaint },
-  chevron: { fontFamily: FONTS.bodyBold, fontSize: 13, color: BRAND.timeChipText },
+  chevron: { fontFamily: FONTS.bodyBold, fontSize: 11, color: BRAND.timeChipText },
   body: { borderTopWidth: 1, borderTopColor: BRAND.line, padding: 11, gap: 9 },
   routeEnds: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
   endCol: { flex: 1, flexShrink: 1, minWidth: 0, gap: 1 },

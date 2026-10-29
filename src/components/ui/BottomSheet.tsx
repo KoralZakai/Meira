@@ -27,6 +27,12 @@ export default function BottomSheet({ visible, onClose, children, heightRatio, b
     Animated.spring(rise, { toValue: 1, useNativeDriver: true, friction: 8, tension: 70 }).start();
   }, [visible, rise]);
   const screenH = Dimensions.get('window').height;
+  // Room under the last button. The Modal draws edge-to-edge, under Android's
+  // navigation bar, and inside a Modal the inset can come back as 0 — so the
+  // "Later" button sat under the gesture bar, cut (17.10, on her phone). A
+  // measured inset gets breathing room on top; an unmeasured one on Android
+  // gets a floor that clears both the gesture bar and 3-button navigation.
+  const bottomRoom = insets.bottom > 0 ? insets.bottom + 12 : (Platform.OS === 'android' ? 48 : 16);
   const translateY = rise.interpolate({ inputRange: [0, 1], outputRange: [screenH * 0.6, 0] });
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={onClose} statusBarTranslucent>
@@ -35,7 +41,7 @@ export default function BottomSheet({ visible, onClose, children, heightRatio, b
         <Animated.View
           style={[
             styles.sheet,
-            { backgroundColor: background, paddingBottom: Math.max(insets.bottom, 16), transform: [{ translateY }] },
+            { backgroundColor: background, paddingBottom: bottomRoom, transform: [{ translateY }] },
             heightRatio ? { height: screenH * heightRatio } : null,
             style,
           ]}

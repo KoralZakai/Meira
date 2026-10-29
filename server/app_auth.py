@@ -11,7 +11,8 @@ user, or 401. No JWT secret to store on this server, no signature code to get
 wrong, and revocation and expiry are handled where the session actually lives.
 
 The verified auth user id is then mapped to the phone the rest of the brain is
-keyed on (app_settings."whatsAppPhone"), so the app and WhatsApp are ONE user
+keyed on — the number it PROVED it owns (phone_links), never the
+user-writable app_settings."whatsAppPhone" — so the app and WhatsApp are ONE user
 with one memory — the whole point of the exercise. A user with no linked phone
 falls back to their user id as the key, which keeps the app usable on its own.
 
@@ -28,6 +29,7 @@ import httpx
 from fastapi import HTTPException, Request
 
 import config
+import identity_keys
 import supabase_tasks
 
 logger = logging.getLogger(__name__)
@@ -95,25 +97,15 @@ async def verify(authorization: Optional[str]) -> dict:
 
 
 async def phone_for_user_id(user_id: str) -> Optional[str]:
-    """The WhatsApp number linked to this account, from app_settings.
+    """The WhatsApp number this account PROVED it owns (phone_links), or None.
 
-    The reverse of supabase_tasks.user_id_for_phone. This is the join that makes
-    one person out of two channels: without it the app would build a separate
-    memory, separate tasks and a separate conversation under a different key.
-    """
-    if not supabase_tasks._enabled():   # noqa: SLF001 — same package, one config
-        return None
+    The join that makes one person out of two channels. It used to read
+    app_settings."whatsAppPhone", which the user writes herself — so typing a
+    stranger's number made you her (7.10 audit). Only a verified link counts."""
     try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            r = await client.get(
-                supabase_tasks._rest("app_settings"),   # noqa: SLF001
-                headers=supabase_tasks._headers(),      # noqa: SLF001
-                params={"select": "whatsAppPhone", "userId": f"eq.{user_id}", "limit": "1"},
-            )
-            rows = r.json() if r.status_code == 200 else []
-            phone = (rows[0].get("whatsAppPhone") if rows else None) or None
-            return supabase_tasks._digits(phone) if phone else None   # noqa: SLF001
-    except Exception as exc:  # noqa: BLE001 — best effort, never blocks a turn
+        import phone_links
+        return phone_links.phone_for(user_id)
+    except Exception as exc:  # noqa: BLE001 — no link is the safe answer
         logger.warning("phone_for_user_id failed: %s", exc)
         return None
 
@@ -127,6 +119,11 @@ async def identify(authorization: Optional[str]) -> dict:
     """
     identity = await verify(authorization)
     phone = await phone_for_user_id(identity["userId"])
+    # `key` stays what task_store and the /tasks, /agents routes are built on.
+    # The agent keeps her profile and memory under the account id instead —
+    # identity_keys.brain_key(caller) — and this tells it which phone is hers.
+    identity_keys.note_caller(identity["userId"], phone)
+    identity_keys.report_split(identity["userId"])
     return {**identity, "phone": phone, "key": phone or identity["userId"]}
 
 
@@ -144,9 +141,13 @@ async def require_caller(request: Request) -> dict:
     unconfigured, and that becomes a 401 here rather than an accidental allow.
     """
     try:
-        return await identify(request.headers.get("authorization"))
+        caller = await identify(request.headers.get("authorization"))
     except AuthError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
+    # Every model call this request makes is charged to this person (user_quota).
+    import user_quota
+    user_quota.set_person(caller.get("userId") or caller.get("key"))
+    return caller
 
 
 def storage_key_for(caller: dict, path_phone: Optional[str]) -> str:

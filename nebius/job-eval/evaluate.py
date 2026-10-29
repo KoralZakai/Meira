@@ -11,8 +11,8 @@ same parser function on a fair, held-out gold set against BOTH:
 
 For each candidate it issues one call per example with the canonical
 PARSER_SYSTEM_PROMPT (identical to Job A / the endpoint), parses {"tasks":[...]},
-and scores it with EDD-style field checks (the same checks tests/edd-evaluator.ts
-applies, ported here and aligned to the parser schema). It reports accuracy,
+and scores it with EDD-style field checks (implemented in this file and aligned
+to the parser schema). It reports accuracy,
 JSON-validity, per-field breakdown, latency and (optional) cost, then recommends
 the model the endpoint should serve.
 

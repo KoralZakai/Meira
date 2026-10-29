@@ -11,17 +11,24 @@
  * and no route could be planned (no Maps key). All of it failed silently, and
  * it read on the phone as "the app just doesn't sync".
  *
- * `eas env:pull` writes .env.local, but .easignore excludes `.env.*` from the
- * build tarball and whitelists exactly one file: `.env.production`. So pulling
- * alone is not enough — the public subset has to be copied there. The subset
- * matters: .env.local also holds WHATSAPP_API_TOKEN, DATABASE_URL and friends,
- * which must never travel with the app.
+ * .easignore excludes `.env.*` from the build tarball and whitelists exactly
+ * one file: `.env.production`. So the public subset has to be copied there.
+ *
+ * NO KEY IS EVER STORED ON DISK. The EAS preview environment also holds server
+ * secrets (WHATSAPP_API_TOKEN, DATABASE_URL, ANTHROPIC_API_KEY and friends), and
+ * a plain `eas env:pull` writes every one of them into .env.local in plaintext —
+ * that happened on 2026-09-28. So the pull goes to a private temp file that is
+ * deleted before this script does anything else, even when the pull fails, and
+ * .env.local only ever receives the build variables (EXPO_PUBLIC_*, APP_ENV).
+ * An existing .env.local holding anything else is stripped on every run.
  *
  * Usage:  node scripts/prepare-build-env.mjs        (runs from `npm run android:*`)
  *         REFRESH=1 node scripts/prepare-build-env.mjs   (re-pull from EAS first)
  */
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 // Without any one of these the app is broken in a way that is invisible on the
 // phone, so an absent value must stop the build rather than ship.
@@ -36,20 +43,114 @@ const REQUIRED = [
 const SOURCE = '.env.local';
 const TARGET = '.env.production';
 
+// The only names .env.local may hold. It is a build input and nothing else:
+// the server reads its secrets from Fly, never from a file on this laptop.
+const BUILD_VAR = /^(EXPO_PUBLIC_[A-Z0-9_]+|APP_ENV)$/;
+// `NAME=` and the `# NAME=***** (secret)` placeholder eas writes for secrets.
+const ASSIGNMENT = /^\s*#?\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/;
+// Safe to echo. eas writes values raw, so a multi-line value (a PEM key) puts
+// base64 lines in the file that parse as `CHUNK=`; a name without an
+// underscore could be one, and is only counted, never printed.
+const PRINTABLE_NAME = /^[A-Z][A-Z0-9]*(_[A-Z0-9]+)+$/;
+
+/** Split env-file text into the lines .env.local may keep and the ones it may not. */
+function buildVarsOnly(text, { keepComments }) {
+  const kept = [];
+  const dropped = [];
+  for (const line of text.split('\n')) {
+    const name = line.match(ASSIGNMENT)?.[1];
+    if (name) (BUILD_VAR.test(name) ? kept : dropped).push(line);
+    else if (!line.trim() || line.trimStart().startsWith('#')) {
+      if (keepComments) kept.push(line);
+    } else dropped.push(line);
+  }
+  return { kept, dropped };
+}
+
+/** Names only, and only those that cannot be a fragment of a value. */
+function describeDropped(dropped) {
+  const names = new Set();
+  let other = 0;
+  for (const line of dropped) {
+    const name = line.match(ASSIGNMENT)?.[1];
+    if (name && PRINTABLE_NAME.test(name)) names.add(name);
+    else other++;
+  }
+  return [...names, ...(other ? [`${other} other line(s)`] : [])].join(', ');
+}
+
+/**
+ * `eas env:pull` into a private temp dir, and return the text. The dir is
+ * removed in `finally`, so nothing survives a failed pull. SIGINT/SIGTERM/SIGHUP
+ * are held while the child runs: without a listener, Ctrl-C kills node on the
+ * spot and `finally` never runs. (SIGKILL cannot be caught; the dir is 0700 in
+ * the per-user tmpdir.)
+ */
+function pullPreviewEnv() {
+  const dir = mkdtempSync(join(tmpdir(), 'lumi-eas-env-'));
+  const file = join(dir, '.env');
+  const hold = () => {};
+  const signals = ['SIGINT', 'SIGTERM', 'SIGHUP'];
+  for (const s of signals) process.on(s, hold);
+  try {
+    // Pre-created 0600: eas overwrites in place, so the mode sticks.
+    writeFileSync(file, '', { mode: 0o600 });
+    execFileSync('npx', ['eas-cli', 'env:pull', '--environment', 'preview', '--non-interactive', '--path', file], {
+      stdio: 'inherit',
+    });
+    return readFileSync(file, 'utf8');
+  } catch (err) {
+    const why = err.signal ?? (err.status != null ? `exit ${err.status}` : err.code);
+    console.error(`x eas env:pull failed (${why}) — nothing was written.`);
+    return null;
+  } finally {
+    for (const s of signals) process.off(s, hold);
+    try {
+      rmSync(dir, { recursive: true, force: true });
+    } catch (err) {
+      console.error(`x could not delete ${dir} (${err.code}) — delete it by hand, it holds server secrets.`);
+      process.exit(1);
+    }
+  }
+}
+
 if (process.env.REFRESH || !existsSync(SOURCE)) {
-  console.log(`· pulling EAS preview env into ${SOURCE}`);
-  execFileSync('npx', ['eas-cli', 'env:pull', '--environment', 'preview', '--non-interactive'], {
-    stdio: 'inherit',
-  });
+  console.log('· pulling the EAS preview env into a temp file (deleted right after)');
+  const pulled = pullPreviewEnv();
+  if (pulled === null) process.exit(1);
+
+  const { kept, dropped } = buildVarsOnly(pulled, { keepComments: false });
+  // A file-type variable is written beside the project, not into the temp dir.
+  for (const line of dropped) {
+    const name = line.match(ASSIGNMENT)?.[1];
+    if (name) rmSync(join('.eas', '.env', name), { force: true });
+  }
+  writeFileSync(
+    SOURCE,
+    `# Generated by scripts/prepare-build-env.mjs from the EAS "preview" environment.\n` +
+      `# Build variables ONLY (EXPO_PUBLIC_*, APP_ENV). Server secrets are Fly secrets\n` +
+      `# and never touch this disk. Regenerate with: REFRESH=1 npm run build:env\n` +
+      `${kept.join('\n')}\n`,
+  );
+  console.log(`v ${SOURCE} written — ${kept.length} build vars`);
+  if (dropped.length) console.log(`  left out (never written here): ${describeDropped(dropped)}`);
+} else {
+  // A .env.local from an older, plain `eas env:pull` still holds every secret.
+  const { kept, dropped } = buildVarsOnly(readFileSync(SOURCE, 'utf8'), { keepComments: true });
+  if (dropped.length) {
+    writeFileSync(SOURCE, kept.join('\n'));
+    console.warn(`!  ${SOURCE} held non-build values — removed: ${describeDropped(dropped)}`);
+  }
 }
 
 if (!existsSync(SOURCE)) {
   console.error(`x ${SOURCE} is missing and could not be pulled.`);
-  console.error('  Run: npx eas-cli env:pull --environment preview');
+  console.error('  Run: REFRESH=1 npm run build:env   (never a bare `eas env:pull` — it writes server secrets)');
   process.exit(1);
 }
 
-// Keep only the client-visible half. Everything else is a server secret.
+// Keep only the client-visible half. .env.local holds nothing else now, but
+// the filter stays: .env.production is the one file that ships.
 const publicLines = readFileSync(SOURCE, 'utf8')
   .split('\n')
   .filter((line) => /^EXPO_PUBLIC_[A-Z0-9_]+=/.test(line));

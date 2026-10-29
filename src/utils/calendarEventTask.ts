@@ -10,8 +10,9 @@
  *
  * Pure: no storage, no network. Node-testable (tests/run-calendar-sources.ts).
  */
+import { sharesAName } from './nameSkeleton';
 import { categoryForCalendarEvent } from './categorize';
-import { isMeetingLink } from './meetingLink';
+import { isOnlineOnlyPlace } from './meetingLink';
 import type { CalendarEvent, Task } from '../types/index';
 
 /** Where an event came from. The id prefix carries it, so it survives storage. */
@@ -23,19 +24,9 @@ const PREFIX: Record<CalendarProvider, string> = {
   outlook: 'ocal-',
 };
 
-/**
- * "Microsoft Teams Meeting" is what Outlook writes into `location` for every
- * Teams call. It is not a URL, so isMeetingLink passes it, and it would be
- * geocoded, routed and given a wake alarm — the map-link bug in a new coat
- * (CLAUDE.md rule 8). A location that only names a video service is not a place.
- */
-const ONLINE_PLACE_RE =
-  /^\s*(microsoft\s+teams(\s+meeting)?|teams(\s+meeting)?|zoom(\s+meeting)?|google\s+meet|webex|skype(\s+meeting)?|online|virtual|remote|אונליין|זום|טימס|מקוון)\s*$/i;
-
-export function isOnlineOnlyPlace(location?: string | null): boolean {
-  if (!location) return false;
-  return ONLINE_PLACE_RE.test(location) || isMeetingLink(location);
-}
+// "Microsoft Teams Meeting" is not a place — the rule and its regex moved to
+// meetingLink, which isRemoteTask needs it from; re-exported for old imports.
+export { isOnlineOnlyPlace };
 
 /** Which calendar a stored task came from, read off its id. */
 export function providerOfTaskId(id: string): CalendarProvider | null {
@@ -69,7 +60,7 @@ export function calendarEventToTask(
   opts: { recurring?: boolean; calendarName?: string } = {},
 ): Task {
   // The title is the one field nobody controls. An invitation called
-  // "Ceva — Dana Levi" says nothing, while its body says "An in-person
+  // "Ceva — Marika Klubakov" says nothing, while its body says "An in-person
   // interview has been scheduled for you". Both are read.
   const label = categoryForCalendarEvent({
     title: e.title,
@@ -129,7 +120,41 @@ export function isSameMeeting(
   if (a.date !== b.date || !a.fixedTime || a.fixedTime !== b.fixedTime) return false;
   const ta = normTitle(a.text);
   const tb = normTitle(b.text);
-  return Boolean(ta) && (ta === tb || (ta.length >= 6 && tb.length >= 6 && (ta.includes(tb) || tb.includes(ta))));
+  return Boolean(ta) && (ta === tb || (ta.length >= 6 && tb.length >= 6 && (ta.includes(tb) || tb.includes(ta)))
+    // …or the same person in two scripts: "שיחה עם סגית" typed by her and
+    // "Sagit/Koral- intro" from Google, same minute (1.10).
+    || sharesAName(a.text, b.text));
+}
+
+const EXTERNAL_ID = /^(gcal|dcal|ocal)-/;
+const isExternalRow = (t: any): boolean => EXTERNAL_ID.test(String(t?.id || ''))
+  || t?.source === 'calendar' || t?.source === 'email';
+
+/**
+ * One card per meeting, whatever doors it came through. Her own row wins — her
+ * words, her ✓ — and borrows what the calendar knows better: the end time, the
+ * link, who is coming, and the event id it now answers for. The calendar twin
+ * stays in storage, unseen: `twinIds` names it.
+ */
+export function collapseSameMeetings<T extends { id: string; date: string; fixedTime?: string; text: string }>(
+  tasks: T[],
+): T[] {
+  const out: T[] = [];
+  for (const t of tasks) {
+    const i = out.findIndex((x) => isSameMeeting(x, t));
+    if (i === -1) { out.push(t); continue; }
+    const [mine, theirs] = isExternalRow(out[i]) && !isExternalRow(t) ? [t, out[i]] : [out[i], t];
+    const ext: any = isExternalRow(theirs) ? theirs : null;
+    out[i] = {
+      ...mine,
+      ...(ext && ext.durationMinutes ? { durationMinutes: ext.durationMinutes } : {}),
+      meetingUrl: (mine as any).meetingUrl || (theirs as any).meetingUrl,
+      attendees: (mine as any).attendees || (theirs as any).attendees,
+      calendarEventId: (mine as any).calendarEventId || (ext ? ext.calendarEventId || ext.id : undefined),
+      twinIds: [...((mine as any).twinIds || []), theirs.id],
+    } as T;
+  }
+  return out;
 }
 
 /**

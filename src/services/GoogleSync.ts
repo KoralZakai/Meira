@@ -16,7 +16,8 @@
  * Consumed by TodaySchedule (fire-and-forget on load) and ProfileEditScreen
  * (connect state). All functions are best-effort and never throw.
  */
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from './EncryptedStorage';  // AES-256-GCM at rest (7.10)
+import { GMAIL_ENABLED } from '../utils/gmailAccess';
 import { GoogleService } from './GoogleService';
 import { emailsToEvents } from './LumiServer';
 import {
@@ -28,7 +29,7 @@ import {
   calendarEventToTask, withoutDuplicates, type CalendarProvider,
 } from '../utils/calendarEventTask';
 import {
-  missingPrepTasks, isInterview, departureTimeOf, runawayPrepIds,
+  missingPrepTasks, isInterview, departureTimeOf, runawayPrepIds, twinPrepIds,
 } from '../utils/interviewPrep';
 import {
   pickByPreference, tierNote, marginNote, vehicleOf, arrivalBufferFor,
@@ -47,16 +48,28 @@ import { getTodayString, getTomorrowString, timeToMinutes, subtractMinutes } fro
 // Pure planning decisions (conflict detection, email-vs-calendar matching) live
 // in utils/dayPlanning so they can be unit-tested outside the Expo runtime.
 import { locOf, addrOf, timeOf, sortTimed, dayWarnings, alreadyScheduled, pickNextUpcoming } from '../utils/dayPlanning';
+import { feasibilityOptionsOf } from '../utils/dayFeasibility';
+import {
+  compactSteps, hasCarOf, isHighStakes, ladderNote, rungMode, straightKm, vehicleLeftBehind, walkLadder,
+} from '../utils/travelLadder';
+import { isMeetingLink } from '../utils/meetingLink';
 import { pickCoords, needsGeocode, locationIsPlaced } from '../utils/placeCoords';
 import { learnPlace } from './KnownPlacesStore';
+import { unplacedFailure } from '../questions/kinds/place';
 import { modeFor } from './TravelPreferenceStore';
-import { completeAddress } from '../utils/addressCompletion';
+import { completeAddress, completeDestination } from '../utils/addressCompletion';
 import { geocodeTaskLocation } from './NearbyTaskReminderService';
+import { getLastKnownLocation } from './LocationService';
+import { DayStart, StartKind, sameOrigin, startLine, tripStart, TripStart } from '../utils/tripStart';
+import { getDayStart } from './DayStartStore';
 import { decideAlarmState } from './AlarmPlanner';
 import { dayWakeOwner } from '../utils/alarmPlan';
 import {
   Task, AppLanguage, GapSuggestion, UserProfile, TaskLocation, TransportType, TransitPlan,
 } from '../types/index';
+import { describeChange } from '../utils/changeRecord';
+import { CalendarPrefix, describeCancel, judgeDay, MissLog } from '../utils/cancelledEvents';
+import { recordChange } from './ChangeRecordStore';
 
 const GMAIL_SCAN_KEY = 'lumi.gmailScan.v1';          // last scan date (once/day)
 const GMAIL_CACHE_KEY = 'lumi.gmailSuggestions.v1';  // cached suggestions for today
@@ -71,6 +84,13 @@ let lastCalendarSyncAt = 0;
  * "Google refused us" is true. They were the same sentence until now.
  */
 let lastCalendarError: string | null = null;
+/** Per Google account: the last refusal, so the Calendars screen can name WHICH account failed. */
+const lastCalendarErrors: Record<string, string> = {};
+
+/** The last calendar failure of each Google account (address → Google's words). */
+export function calendarErrorsByAccount(): Record<string, string> {
+  return { ...lastCalendarErrors };
+}
 const CALENDAR_SYNC_INTERVAL_MS = 30 * 60 * 1000;
 
 /**
@@ -120,21 +140,89 @@ export async function syncCalendarForDate(date: string, lang: AppLanguage): Prom
       return 0;
     }
 
-    const { events, error } = await GoogleService.fetchCalendarEvents(date);
-    // Only a real failure is remembered. A day that genuinely has nothing on
-    // it must not overwrite the 403 we learned about yesterday's day.
-    if (error) lastCalendarError = error;
-    else if (lastCalendarError && lastCalendarError !== 'not_connected') lastCalendarError = null;
-    if (!events.length) return 0;
-
-    const tasks: Task[] = events
-      .filter((e) => e.title)
-      .map((e) => calendarEventToTask(e, date, 'google'));
+    // Every account she connected for its calendar (private AND work, 6.10),
+    // each failing on its own: one refused token must not hide the other's day.
+    const accounts = (await GoogleService.listGoogleAccounts()).filter((a) => a.calendar);
+    const tasks: Task[] = [];
+    let failed = false;
+    for (const account of accounts.length ? accounts : [null]) {
+      const label = account?.email || '';
+      const { events, error } = await GoogleService.fetchCalendarEvents(date, account?.email || undefined);
+      // Only a real failure is remembered. A day that genuinely has nothing on
+      // it must not overwrite the 403 we learned about yesterday's day.
+      if (error) {
+        failed = true;
+        lastCalendarErrors[label] = error;
+        lastCalendarError = label ? `${label}: ${error}` : error;
+      } else {
+        delete lastCalendarErrors[label];
+      }
+      tasks.push(...events.filter((e) => e.title)
+        .map((e) => calendarEventToTask(e, date, 'google', label ? { calendarName: label } : {})));
+    }
+    if (!failed && lastCalendarError && lastCalendarError !== 'not_connected') lastCalendarError = null;
+    // Google ANSWERED for this day (every account): an event it no longer lists is a cancelled one.
+    // Before the early return below — a day whose every event was cancelled returns no tasks at all.
+    if (!failed) await noteCancellationsFor('gcal-', [date], new Set(tasks.map((t) => t.id)), accounts.map((a) => a.email).join('|'), tasks);
+    if (!tasks.length) return 0;
+    // The same meeting invited to both accounts has one Google id — merged by id.
     return await importCalendarTasks(tasks, lang, 'google');
   } catch (e) {
     lastCalendarError = `sync: ${String((e as Error)?.message || e).slice(0, 200)}`;
     console.warn('[GoogleSync] calendar sync failed', e);
     return 0;
+  }
+}
+
+const MISS_KEY = 'lumi.calendarMisses.v1';
+const ACCOUNTS_KEY = 'lumi.calendarAccounts.v1';
+
+/**
+ * An event a calendar no longer lists (cancelled) becomes a card on Today — after it has been gone
+ * from TWO syncs of the same day, and only ever to ASK (utils/cancelledEvents). One calendar at a
+ * time (`prefix`): Google reads a day at a time, the phone's calendars and Outlook a month in one
+ * go — they pass every date they covered. ONLY call this when that calendar ANSWERED (no failed
+ * account). `sourceKey` names what was read (accounts / calendar ids): when it changes, the count
+ * restarts, so a disconnected account is not a wave of cancellations. Triggers: every sync path
+ * (launch, foreground, heartbeat, pull-to-refresh, the closed-app job, picking a day).
+ * A failure here is a warning, never a failed sync (rule 2).
+ */
+export async function noteCancellationsFor(
+  prefix: CalendarPrefix, dates: string[], fetchedIds: Set<string>, sourceKey: string, fetched: Task[] = [],
+): Promise<void> {
+  try {
+    const accountsKey = `${ACCOUNTS_KEY}:${prefix}`;
+    const lastSource = await AsyncStorage.getItem(accountsKey);
+    if (lastSource !== sourceKey) {
+      await AsyncStorage.setItem(accountsKey, sourceKey);
+      await AsyncStorage.setItem(`${MISS_KEY}:${prefix}`, '{}');
+      if (lastSource !== null) return;
+    }
+    const all = await getAllTasks();
+    let log: MissLog = JSON.parse((await AsyncStorage.getItem(`${MISS_KEY}:${prefix}`)) || '{}');
+    const now = new Date();
+    const hhmm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    const today = getTodayString();
+    const gone: Task[] = [];
+    for (const date of dates) {
+      const r = judgeDay(all, fetchedIds, date, today, hhmm, log, prefix, fetched);
+      log = r.log;
+      gone.push(...r.cancelled);
+    }
+    await AsyncStorage.setItem(`${MISS_KEY}:${prefix}`, JSON.stringify(log));
+    // Only when something is being tracked: the line that says "an event is missing, 1 of 2" (rule 1 — an
+    // absence being counted must be visible somewhere, or a check that never fires looks like one that works).
+    const tracked = Object.keys(log).length;
+    if (tracked || gone.length) console.warn(`[GoogleSync] ${prefix} cancel-check: ${tracked} missing once, ${gone.length} confirmed gone`);
+    for (const ev of gone) {
+      const rec = describeCancel(ev, all, today, hhmm);
+      if (!rec) continue;
+      const noted = await recordChange(rec, today);
+      if (noted.error) console.warn('[GoogleSync] cancellation card not saved:', noted.error);
+      else console.warn(`[GoogleSync] ${prefix} ${ev.date}: an event is gone from its calendar — card raised`);
+    }
+  } catch (e) {
+    console.warn('[GoogleSync] cancellation check failed', e);
   }
 }
 
@@ -202,6 +290,25 @@ export async function importCalendarTasks(
  * interview that needs preparing may have been imported days ago, and its
  * prep days may be today.
  */
+/**
+ * Remove the prep blocks no interview earns any more — no network, no model.
+ * Its own trigger: the day she LOOKS at (Today), because the calendar sync
+ * that also runs it is throttled and silent when it succeeds (5.10: two
+ * "Prep for…" blocks stayed on Tuesday through two installs). Returns how
+ * many went, so the screen redraws only when something changed.
+ */
+export async function sweepStalePrep(): Promise<number> {
+  const all = await getAllTasks();
+  const stale = [...new Set([...runawayPrepIds(all), ...twinPrepIds(all, getTodayString())])];
+  if (!stale.length) return 0;
+  const gone = await deleteTasks(stale).catch((e) => {
+    console.warn('[GoogleSync] prep sweep could not delete', e);
+    return 0;
+  });
+  console.warn(`[GoogleSync] swept ${gone} prep block(s) no interview earns: ${stale.slice(0, 3).join(', ')}`);
+  return gone;
+}
+
 async function ensureInterviewPrep(lang: AppLanguage): Promise<number> {
   try {
     const today = getTodayString();
@@ -224,6 +331,15 @@ async function ensureInterviewPrep(lang: AppLanguage): Promise<number> {
         `[GoogleSync] removed ${gone} runaway prep block(s) — prep minted for prep`
         + `: ${runaway.slice(0, 3).join(', ')}`,
       );
+      all = await getAllTasks();
+    }
+    // The second set for one meeting: her typed row and the calendar's, one
+    // hour, each given its own blocks (5.10 — two "Prep for…" at 19:00).
+    const twins = twinPrepIds(all, today);
+    if (twins.length) {
+      const gone = await deleteTasks(twins).catch(() => 0);
+      console.warn(`[GoogleSync] removed ${gone} prep block(s) minted for a twin of the same meeting`
+        + `: ${twins.slice(0, 3).join(', ')}`);
       all = await getAllTasks();
     }
 
@@ -384,6 +500,22 @@ async function reconcileCalendarTasks(
         // wrong. A wake alarm for a meeting that no longer starts then is
         // worse than no alarm at all.
         const movedInTime = changed.includes('date') || changed.includes('fixedTime');
+        // Google moved it: tell her, on Today, in one card (utils/changeRecord). Every sync
+        // path reaches here — including the closed-app job — so the card is waiting when she
+        // opens the app. A failure to note it is a warning, never a failed sync (rule 2).
+        if (movedInTime && before) {
+          try {
+            const now = new Date();
+            const rec = describeChange(before, fresh, getTodayString(),
+              `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`);
+            if (rec) {
+              const noted = await recordChange(rec, getTodayString());
+              if (noted.error) console.warn('[GoogleSync] change card not saved:', noted.error);
+            }
+          } catch (e) {
+            console.warn('[GoogleSync] change card failed', e);
+          }
+        }
         if (movedInTime && fresh.fixedTime) {
           await withTaskAlertLock(fresh.id, async () => {
             if (before) await cancelTaskNotifications(before);
@@ -405,7 +537,9 @@ async function reconcileCalendarTasks(
     }
   }
   if (report.inserted || report.updated || report.blocked || report.failed) {
-    console.warn('[GoogleSync] reconcile:', JSON.stringify(report));
+    // Counts only: `notes` quote her event titles, which do not belong in logcat (7.10).
+    const { notes: _notes, ...counts } = report as any;
+    console.warn('[GoogleSync] reconcile:', JSON.stringify({ ...counts, notes: (_notes ?? []).length }));
   }
   lastReconcile = report;
   return report;
@@ -647,6 +781,9 @@ async function parseEmailsToEvents(
  * about appointments the user has NOT put in the calendar yet.
  */
 export async function getGmailEventSuggestions(lang: AppLanguage): Promise<GapSuggestion[]> {
+  // Off in this build (utils/gmailAccess). [] here means "not read"; every surface that
+  // shows these checks GMAIL_ENABLED and says so instead of showing an empty list.
+  if (!GMAIL_ENABLED) return [];
   try {
     if (!(await GoogleService.isGoogleConnected())) return [];
     const today = getTodayString();
@@ -658,7 +795,19 @@ export async function getGmailEventSuggestions(lang: AppLanguage): Promise<GapSu
       return cached.filter((s) => !dismissed.includes(s.id));
     }
 
-    const emails = await GoogleService.scanGmailForEvents();
+    // Every mailbox she connected for its mail; the same email sent to two of
+    // them is read once (subject + sender).
+    const boxes = (await GoogleService.listGoogleAccounts()).filter((a) => a.mail);
+    const emails: (Awaited<ReturnType<typeof GoogleService.scanGmailForEvents>>[number] & { account?: string })[] = [];
+    const seenMail = new Set<string>();
+    for (const box of boxes.length ? boxes : [null]) {
+      for (const m of await GoogleService.scanGmailForEvents(box?.email || undefined)) {
+        const key = `${m.subject}|${m.sender}`.toLowerCase();
+        if (seenMail.has(key)) continue;
+        seenMail.add(key);
+        emails.push({ ...m, account: box?.email || undefined });
+      }
+    }
     await AsyncStorage.setItem(GMAIL_SCAN_KEY, today);
     if (!emails.length) {
       await AsyncStorage.setItem(GMAIL_CACHE_KEY, '[]');
@@ -685,6 +834,8 @@ export async function getGmailEventSuggestions(lang: AppLanguage): Promise<GapSu
           durationMinutes: 60,
           source: 'email',
           gmailThreadId: src?.threadId,
+          // Accepting it writes to THIS account's calendar, not the first one's.
+          calendarName: src?.account,
           // What the email says must be prepared/completed — shown on the task.
           how: ev.prep,
         } as Partial<Task>,
@@ -732,6 +883,7 @@ export async function acceptGmailSuggestion(s: GapSuggestion, lang: AppLanguage)
       GoogleService.createCalendarEvent(
         task.text, task.date, task.fixedTime, task.durationMinutes || 60,
         typeof task.location === 'string' ? task.location : task.location?.address,
+        (s.taskToAdd as any).calendarName || undefined,
       ).then((eventId) => {
         if (eventId) updateTaskFields(task.id, { calendarEventId: eventId } as any);
       }).catch(() => {});
@@ -768,19 +920,68 @@ export async function acceptGmailSuggestion(s: GapSuggestion, lang: AppLanguage)
  *   1 — before this existed
  *   2 — margin for a `must`, integrity checks, the second arrive-by probe
  *   3 — the margin is a TARGET, not a floor (missesTargetBy)
+ *   4 — a train journey beats buses (railCarries, RAIL_PREFERENCE) — 13.10, Haifa
+ *   5 — her bike / car only where she left them; today starts where she is
+ *   6 — the margin target is 20, not 30: the latest train still on time (13.10)
  */
-export const ROUTE_RULES_VERSION = 3;
+export const ROUTE_RULES_VERSION = 7;
 
 /** A route recomputed less recently than this is treated as stale (traffic moves). */
 const PLAN_FRESH_MS = 30 * 60 * 1000;
 /** Only refresh routes whose departure is within this window — no point re-pricing tonight's traffic at 09:00. */
 const REFRESH_WINDOW_MIN = 180;
 
+/**
+ * A task whose place nobody could find (15.10, Koral's pick: "Where is X?").
+ *
+ * The geocode returned null and the card stayed a card with no pin, no route
+ * and no word about why. Now the place is looked up on the map (Places — never
+ * a model) and, when the map knows candidates, she is asked which one it is
+ * (QuestionService.askWhereIs → the popup). Either way the card's why-line
+ * carries the reason (utils/routeFailure `not_found`: "Google cannot place
+ * this address"), unless a more specific reason is already there.
+ *
+ * Lazy-imports QuestionService: it re-plans THROUGH this file, and a static
+ * import in both directions would load one of them half-built.
+ * Returns true when the task was written.
+ */
+async function askAboutUnplaced(t: Task, date: string, homeAddress?: string): Promise<boolean> {
+  try {
+    // From the store, not from `t`: a route that landed a moment ago may have
+    // brought the coordinates with it, and then there is nothing to ask.
+    const fresh = (await getTasksForDate(date)).find((x) => x.id === t.id) ?? t;
+    if (locationIsPlaced(locOf(fresh))) return false;
+    const placeText = addrOf(fresh);
+    if (!placeText) return false;
+    const { askWhereIs } = await import('./QuestionService');
+    const ask = await askWhereIs({ task: fresh, placeText, homeAddress });
+    // Warn, not log (a release build drops log); the reason of a failed search
+    // is here and nowhere else, because the card claims nothing about it.
+    console.warn(`[GoogleSync] geocode found nothing for ${t.id}; map lookup: ${ask.outcome}`
+      + (ask.outcome === 'skipped' ? ` (${ask.why})` : '')
+      + (ask.outcome === 'search_failed' ? ` (${ask.reason}) — will try again` : ''));
+    const failure = unplacedFailure(ask);
+    const loc = locOf(fresh);
+    // Keep a reason that is already there: "the key was refused" outranks "not found".
+    if (!failure || loc?.routeFailure) return false;
+    await updateTaskFields(t.id, {
+      location: { ...(loc ?? { address: placeText, confirmed: false }), routeFailure: failure },
+    } as any);
+    return true;
+  } catch (e) {
+    console.warn('[GoogleSync] could not ask where this place is', e);
+    return false;
+  }
+}
+
 /** Minutes from now until HH:MM today (negative when it already passed). */
 function minutesUntil(hhmm: string): number {
   const now = new Date();
   return timeToMinutes(hhmm) - (now.getHours() * 60 + now.getMinutes());
 }
+
+/** How long a NOT_FOUND address is left alone before Google is asked again. */
+export const NOT_FOUND_BACKOFF_MS = 30 * 60 * 1000;
 
 /**
  * Compute (or refresh) the travel plan for EVERY located, timed task of `date`,
@@ -813,6 +1014,19 @@ export async function ensureTravelChain(
      * it.
      */
     forceTaskId?: string;
+    /**
+     * With `forceTaskId`: a vehicle the ladder chose ITSELF is not her choice,
+     * so the ladder decides again.
+     *
+     * A forced recompute reads the stored vehicle as hers — right for the
+     * transport switcher, which wrote it. But when the START moved (17.10:
+     * tomorrow's interview, planned from home, now to be planned from
+     * Nahariya), the stored "bus, by the ladder" belongs to a 4 km trip across
+     * Tel Aviv; kept as hers it would force a bus-only route over 100 km and
+     * then freeze as her pick. A mode she chose herself (`transportTypeBy:
+     * 'her'`, or stored before the ladder existed) still stands.
+     */
+    reladder?: boolean;
   } = {},
 ): Promise<boolean> {
   try {
@@ -878,16 +1092,84 @@ export async function ensureTravelChain(
 
     let changed = false;
     let prevAddress: string = homeOrigin;
+    // Where the previous stop is on the map — the ladder needs the distance
+    // to judge "walkable" and "a short ride".
+    let prevCoords: { lat?: number; lng?: number } | undefined;
+    // TODAY the next trip starts where she IS (13.10, Koral: "it doesn't
+    // matter my home address — it matters where I am now"). The Haifa
+    // interview was planned from home, and home had been geocoded to Be'er
+    // Sheva: 212 minutes and four buses, while the phone knew she was in Tel
+    // Aviv. Home stays the start for other days and when the fix is unknown —
+    // and every plan says which one it used. See utils/tripStart.
+    const hereNow = isToday ? await getLastKnownLocation(15 * 60 * 1000).catch(() => null) : null;
+    // What she SAID about where this day starts (17.10: "will you leave tomorrow
+    // from your current location?" — kinds/tripOrigin). Unreadable is not "she
+    // said nothing": the day is planned from home, and the log says why.
+    const dayStart: DayStart | null = await getDayStart(date).catch((e) => {
+      console.warn('[GoogleSync] the day start she gave could not be read; planning from home', e);
+      return null;
+    });
+    // The start she named, once it is the chain's start (kind 'set'): kept so
+    // the first trip can tell, by identity, that it is the one planned from it.
+    let setStart: TripStart | null = null;
+    let startKind: StartKind | null = isToday ? null : 'home';
+    if (!isToday && dayStart) {
+      // A day that has not begun starts where she said, not at home.
+      const start = tripStart(null, profile?.homeLatLng, homeOrigin, false, dayStart);
+      if (start.kind === 'set') {
+        prevAddress = start.origin;
+        prevCoords = start.coords ?? undefined;
+        startKind = 'set';
+        setStart = start;
+      }
+    }
+    // How she reached the previous stop — undefined at the start of the day.
+    let prevMode: TransportType | undefined;
     for (const [index, t] of timed.entries()) {
       const firstTrip = index === 0;
       const arrival = timeOf(t)!;
+      // The first trip still ahead today: from here, not from wherever the
+      // chain (or home) would have put her.
+      // Unknown position: the chain stays — after an earlier stop she is far
+      // likelier there than at home — and a from-home start says it guessed.
+      if (startKind === null && minutesUntil(arrival) > 0 && !t.verifiedArrival) {
+        if (hereNow) {
+          // (The day start she gave is not passed: with a fix, where she IS wins.)
+          const start = tripStart(hereNow, profile?.homeLatLng, homeOrigin, true);
+          prevAddress = start.origin;
+          prevCoords = start.coords ?? undefined;
+          startKind = start.kind;
+          // At home her vehicles are with her; elsewhere, how she got there decides.
+          if (start.kind === 'home') prevMode = undefined;
+        } else if (dayStart && firstTrip) {
+          // No fix, but she told Meira where today starts (yesterday evening's
+          // answer): that beats guessing home. Only for the day's first trip —
+          // after an earlier stop the chain is likelier to be right.
+          const start = tripStart(null, profile?.homeLatLng, homeOrigin, true, dayStart);
+          if (start.kind === 'set') {
+            prevAddress = start.origin;
+            prevCoords = start.coords ?? undefined;
+            startKind = 'set';
+            setStart = start;
+          } else {
+            startKind = 'home_unknown_here';
+          }
+        } else {
+          startKind = 'home_unknown_here';
+        }
+      }
+      // Which start THIS trip is planned from — said on the plan.
+      const thisStart: StartKind | null = prevAddress === homeOrigin
+        ? (startKind === 'home_unknown_here' ? 'home_unknown_here' : 'home')
+        : startKind === 'here' && prevCoords === hereNow ? 'here'
+          : startKind === 'set' && setStart && prevCoords === setStart.coords ? 'set' : null;
       // "יגאל אלון 94" is an address; it is just not a complete one, and
       // region=il narrows it to a country that has several. Completing it from
       // her home city before it reaches Directions is the difference between
       // her gym and a street with the same name in another town — and a wrong
       // one is not an error, it is a confident route with an alarm on top.
       // A no-op for anything that already names a place. See addressCompletion.
-      const dest = completeAddress(addrOf(t)!, homeOrigin);
+      const dest = completeDestination(addrOf(t)!, t.text, homeOrigin);
 
       // Already standing there. The journey to this task is history, so do not
       // compute or refresh a route to a building she is inside, and leave no
@@ -898,6 +1180,7 @@ export async function ensureTravelChain(
       // iteration outright would measure the next trip from home again.
       if (t.verifiedArrival) {
         prevAddress = dest;
+        prevMode = locOf(t)?.transportType;
         continue;
       }
 
@@ -916,28 +1199,56 @@ export async function ensureTravelChain(
       const wrongOrigin = Boolean(
         existing
           && (existing.originAddress
-            ? existing.originAddress !== prevAddress
+            ? !sameOrigin(existing.originAddress, prevAddress)
             : prevAddress !== homeOrigin),
       );
       // Chosen by rules we have since replaced — see ROUTE_RULES_VERSION.
       // Deliberately outside the age and departure-window tests below: those
       // ask "has the world moved", and this asks "did we change our mind".
       const byOldRules = Boolean(existing && (existing.rulesVersion ?? 1) < ROUTE_RULES_VERSION);
-      const stale = wrongOrigin || byOldRules || Boolean(
-        existing
+      // Her own pick from the arrows: only a new origin re-plans it.
+      const herPick = existing?.pickedBy === 'her';
+      const stale = wrongOrigin || (!herPick && byOldRules) || Boolean(
+        !herPick
+          && existing
           && isToday
           && Date.now() - (existing.fetchedAt || 0) > PLAN_FRESH_MS
           && minutesUntil(existing.leaveHomeAt) > -5
           && minutesUntil(existing.leaveHomeAt) < REFRESH_WINDOW_MIN,
       );
       const forced = opts.forceTaskId === t.id;
+      // A trip that has already STARTED is the live re-plan's, not the chain's (21.10, 09:38 → 10:55:
+      // the doctor at 10:30, she was late. The live plan — "leave 11:19, arrive 12:26" — carries no
+      // rulesVersion, so `byOldRules` read it as stale and the chain re-planned it ARRIVE-BY 10:30:
+      // "leave 09:18, 32 min in hand", a time 90 minutes gone, over the true one.) A task whose start
+      // has passed keeps the plan it has; with none, there is nothing honest to compute to a deadline
+      // that is behind her — the live re-plan answers "from now".
+      const startedAlready = isToday && Boolean(t.fixedTime || t.scheduledTime)
+        && minutesUntil(String(t.fixedTime || t.scheduledTime)) < 0;
+      if (startedAlready && !forced) {
+        prevAddress = dest;
+        prevMode = locOf(t)?.transportType;
+        continue;
+      }
+      // Google could not PLACE this address a moment ago. Asking again on every
+      // foreground, heartbeat and refresh gets the same NOT_FOUND each time — five
+      // parallel Directions calls per sweep for nothing (18.10, the slowness in the
+      // logs). The reason stays on the card; she fixing the place, or the retry
+      // button, both reach here as `forced` or as a fresh location object.
+      const lastFailure = locOf(t)?.routeFailure;
+      if (!existing && !forced && lastFailure?.kind === 'not_found'
+        && Date.now() - (lastFailure.at ?? 0) < NOT_FOUND_BACKOFF_MS) {
+        prevAddress = dest;
+        prevMode = locOf(t)?.transportType;
+        continue;
+      }
       if (!existing || stale || forced) {
         try {
           const gProfile = {
             ...profile,
             homeAddress: prevAddress, // chain: leave from the PREVIOUS place
-            homeLat: prevAddress === homeOrigin ? profile.homeLatLng?.lat : undefined,
-            homeLng: prevAddress === homeOrigin ? profile.homeLatLng?.lng : undefined,
+            homeLat: prevAddress === homeOrigin ? profile.homeLatLng?.lat : thisStart === 'here' || thisStart === 'set' ? prevCoords?.lat : undefined,
+            homeLng: prevAddress === homeOrigin ? profile.homeLatLng?.lng : thisStart === 'here' || thisStart === 'set' ? prevCoords?.lng : undefined,
           } as unknown as UserProfile;
           // How she gets to THIS place, if she has ever said.
           //
@@ -950,7 +1261,19 @@ export async function ensureTravelChain(
           const learnedMode = await modeFor(
             { place: dest, category: t.category }, preferredMode,
           ).catch(() => ({ mode: preferredMode, from: 'default' as const, timesSeen: 0 }));
-          const mode = (locOf(t)?.transportType ?? learnedMode.mode) as TransportType;
+          // Her choice for THIS trip, when there is one: picked on the card
+          // (forced, or stored before the ladder existed), or remembered for
+          // this place / kind of thing. Then that is the plan. Otherwise the
+          // ladder decides from what she has (car or not), the distance and
+          // what actually arrives in time — utils/travelLadder.
+          const stored0 = locOf(t);
+          const keepsStored = (forced && !(opts.reladder && stored0?.transportTypeBy === 'ladder'))
+            || stored0?.transportTypeBy !== 'ladder';
+          const explicit: TransportType | undefined =
+            stored0?.transportType && keepsStored
+              ? stored0.transportType
+              : learnedMode.from !== 'default' ? learnedMode.mode : undefined;
+          const mode = (explicit ?? preferredMode) as TransportType;
           // Direct train ‹ direct bus ‹ mixed. Koral's ordering, and it is
           // about DIRECTNESS, not the vehicle: a transfer on the morning of an
           // interview is a second chance to miss something.
@@ -965,8 +1288,8 @@ export async function ensureTravelChain(
           //
           // Private modes keep the single call: someone who drives does not
           // want a bus timetable as a consolation prize.
-          const publicTransport = mode === 'train' || mode === 'bus';
-          let chosen: RankedChoice | null = null;
+          // Written by the transit rung (askTransit), read after the ladder.
+          let chosen = null as RankedChoice | null;
           let plan: TransitPlan | null = null;
           // WHY there is no plan, when there is no plan.
           //
@@ -977,7 +1300,10 @@ export async function ensureTravelChain(
           // any routing ran, reported on the card as "no route for the chosen
           // way of getting there". The app had never had a route to show.
           let failure: RouteFailure | undefined;
-          if (publicTransport) {
+          // The public-transport rung: every rail / bus / mixed journey
+          // Google offers, ranked by transitFallback (in time › direct train ›
+          // direct bus › mixed).
+          const askTransit = async (): Promise<TransitPlan | null> => {
             // ONE round trip for all three preferences.
             //
             // "Is there a direct train" and "is there a direct bus" is one
@@ -1043,26 +1369,77 @@ export async function ensureTravelChain(
                 + 'route(s) failed their own arithmetic and were discarded',
               );
             }
-            chosen = pickByPreference(sound, arrival, { minBufferMinutes: buffer });
+            // Her tap on 🚌 or 🚆 is a request for THAT vehicle. Ranked together, a
+            // direct train always beat the bus she had just chosen (27.10: bus
+            // tapped, train 14:21→15:28 came back). Only when that vehicle has
+            // no sound journey does the whole field answer — and the plan then
+            // carries the sentence that says so (rule 9, fallbackNote).
+            const herVehicle = explicit === 'bus' || explicit === 'train' ? explicit : undefined;
+            const wanted = herVehicle ? sound.filter((c) => vehicleOf(c) === herVehicle) : sound;
+            chosen = pickByPreference(wanted.length ? wanted : sound, arrival, { minBufferMinutes: buffer });
             plan = chosen?.plan ?? null;
             // worstFailure, not "the first one": if two queries say ZERO_RESULTS
             // and one says REQUEST_DENIED, "there is no train" is a lie — the
             // third question was never actually answered.
             if (!plan) failure = worstFailure([rail.failure, buses.failure, any.failure]);
-          } else {
-            const single = await GoogleService.planForMode(mode, dest, arrival, gProfile, date)
-              .catch((e: unknown) => ({ plan: null as TransitPlan | null, failure: networkFailure(e, mode) }));
-            plan = single.plan;
-            if (!plan) failure = single.failure;
+            return plan;
+          };
+          // The ladder. Car if she has one and drives; else walk a short hop,
+          // public transport, a bike or scooter if the ride is short, and her
+          // car or a taxi last — see utils/travelLadder. An explicit choice is
+          // the only rung.
+          const here = prevAddress === homeOrigin ? profile?.homeLatLng : prevCoords;
+          // The distance decides "walkable" and "a short ride", so a place the
+          // app has never placed is placed FIRST. It used to be geocoded only
+          // after routing, which left every new event at "distance unknown" and
+          // a 600 m hop routed by bus. One lookup per new place: the route
+          // below stores the coordinates it ends at.
+          let there: { lat?: number; lng?: number } | null | undefined = locOf(t);
+          if (straightKm(here, there) === undefined && here) {
+            there = await geocodeTaskLocation(dest).catch(() => null);
           }
+          // Her bike and her car are where she LEFT them (13.10: 5 minutes by bike
+          // from a Haifa interview she had reached by train — the bike was in
+          // Tel Aviv). After a leg by bus, train, foot or taxi, only a choice she
+          // made herself puts her on her own vehicle again.
+          const leftBehind = vehicleLeftBehind(prevMode, explicit);
+          const ladderCtx = {
+            preferred: (leftBehind && (mode === 'bike' || mode === 'car') ? 'bus' : mode) as TransportType,
+            hasCar: hasCarOf(normalizeProfile(profile) as any) && !leftBehind,
+            km: straightKm(here, there),
+            highStakes: isHighStakes(t),
+            explicit,
+          };
+          const choice = await walkLadder(ladderCtx, arrival, async (rung) => {
+            if (rung === 'transit') return askTransit();
+            const rm = rungMode(rung, mode);
+            const single = await GoogleService.planForMode(rm, dest, arrival, gProfile, date)
+              .catch((e: unknown) => ({ plan: null as TransitPlan | null, failure: networkFailure(e, rm) }));
+            if (!single.plan && !failure) failure = single.failure;
+            return single.plan;
+          });
+          // The reasoning, kept WITH the plan — shown under "Why this way?" on
+          // the trip — rather than printed: a route she can question is one
+          // she can correct.
+          const routeWhy = [
+            ...(thisStart ? [startLine(thisStart, lang, thisStart === 'set' ? setStart?.label : undefined)] : []),
+            ...compactSteps(choice?.steps ?? [], lang),
+          ];
+          plan = choice?.plan ?? null;
+          if (choice && choice.rung !== 'transit') chosen = null;
+          if (plan) failure = undefined;
           // Which journey actually answered — not the one she asked for.
-          const planMode = (chosen ? vehicleOf(chosen.plan) : mode) as TransportType;
-          // Two things can be worth saying: it is not the vehicle she asked
-          // for, and it leaves earlier than it has to. Either, both, or neither.
-          const note = chosen
-            ? [tierNote(chosen, dest, lang), marginNote(chosen, lang)]
-              .filter(Boolean).join(' · ') || undefined
-            : undefined;
+          const planMode = (chosen
+            ? vehicleOf(chosen.plan)
+            : choice ? rungMode(choice.rung, mode) : mode) as TransportType;
+          // Things worth saying: the ladder stepped down (too far to ride, no
+          // bus in time — a taxi), it is not the vehicle she asked for, and it
+          // leaves earlier than it has to. Any, all, or none.
+          const note = [
+            ladderNote(choice, lang),
+            chosen ? tierNote(chosen, dest, lang) : undefined,
+            chosen ? marginNote(chosen, lang) : undefined,
+          ].filter(Boolean).join(' · ') || undefined;
           if (note) console.warn('[GoogleSync]', note);
           if (!plan) {
             // Train is strict — no rail route means none, not "here is a bus".
@@ -1072,13 +1449,18 @@ export async function ensureTravelChain(
             if (failure) {
               console.warn('[GoogleSync]', failureLogLine(failure, dest));
             }
-            const sameReason = base0?.routeFailure?.kind === failure?.kind;
+            // "Meira could not place this" (askAboutUnplaced) is a reason too, and
+            // a route lookup that said nothing must not wipe it — it would be
+            // written back a moment later, on every sweep.
+            const reason = failure
+              ?? (base0?.routeFailure?.status === 'NO_PLACE' ? base0.routeFailure : undefined);
+            const sameReason = base0?.routeFailure?.kind === reason?.kind;
             if (base0 && (base0.noRouteForMode !== mode || !sameReason)) {
               await updateTaskFields(t.id, {
                 location: {
-                  ...base0, noRouteForMode: mode, transitPlan: undefined, routeFailure: failure,
+                  ...base0, noRouteForMode: mode, transitPlan: undefined, routeFailure: reason,
                 },
-              } as any).catch(() => {});
+              } as any).catch((e) => console.warn('[GoogleSync] route failure not recorded on the task', e));
               changed = true;
             }
           }
@@ -1111,7 +1493,15 @@ export async function ensureTravelChain(
               ...base,
               noRouteForMode: undefined,   // a route exists again
               routeFailure: undefined,     // …and so the reason it failed is gone too
-              transitPlan: { ...plan, originAddress: prevAddress, rulesVersion: ROUTE_RULES_VERSION },
+              transitPlan: {
+                ...plan,
+                originAddress: prevAddress,
+                // A start she named is shown by name, never as "32.9,35.1".
+                ...(thisStart === 'set'
+                  ? { originLabel: setStart?.label || (lang === 'he' ? 'המקום שאמרת' : 'Where you said') }
+                  : {}),
+                rulesVersion: ROUTE_RULES_VERSION,
+              },
               leaveHomeBy: plan.leaveHomeAt,
               travelMinutes: plan.totalDurationMinutes,
               wakeUpBy,
@@ -1119,14 +1509,16 @@ export async function ensureTravelChain(
               // so when it was not the one she wanted. A bus arriving under a
               // 🚆 chip is the complaint already on the known-open list.
               transportType: planMode,
+              transportTypeBy: explicit ? 'her' : 'ladder',
               modeNote: note,
+              routeWhy,
               ...(pickCoords(base, plan) ?? {}),
             };
             // Replace the old alerts so a traffic refresh doesn't stack them.
             // Under the per-task lock: armTaskAlerts re-plans the same task
             // from five other call sites, and two runs interleaving here is
             // how "time to start getting ready" arrived four times over.
-            console.warn(`[GoogleSync] chain saved ${plan.leaveHomeAt}→${plan.arriveAt} for "${t.text.slice(0, 30)}" at ${arrival} on ${date}`);
+            console.warn(`[GoogleSync] chain saved ${plan.leaveHomeAt}→${plan.arriveAt} for task ${t.id} at ${arrival} on ${date}`);
             await withTaskAlertLock(t.id, async () => {
               await cancelTaskNotifications(t).catch(() => {});
               const notifTask = { ...t, location, notificationIds: [] } as Task;
@@ -1166,6 +1558,8 @@ export async function ensureTravelChain(
               location: {
                 ...(placed ?? { address: dest, confirmed: false }),
                 ...coords,
+                // "Meira could not place this" (askAboutUnplaced) is no longer true.
+                ...(placed?.routeFailure?.status === 'NO_PLACE' ? { routeFailure: undefined } : {}),
               },
             } as any);
             changed = true;
@@ -1173,6 +1567,10 @@ export async function ensureTravelChain(
             // Warn, not log: a release build drops console.log entirely, and
             // this is precisely the line that explains an empty map.
             console.warn('[GoogleSync] could not geocode', dest, '— no map pin for', t.id);
+            // …and it used to end there: a card with no pin, no route and no
+            // word about why. Meira now looks the place up on the map and asks
+            // her which one it is (15.10), and the card says it could not place it.
+            if (await askAboutUnplaced(t, date, profile?.homeAddress)) changed = true;
           }
         }
       } catch (e) {
@@ -1197,6 +1595,8 @@ export async function ensureTravelChain(
       }
 
       prevAddress = dest;
+      prevCoords = locOf(t);
+      prevMode = locOf(t)?.transportType;
     }
     return changed;
   } catch (e) {
@@ -1239,6 +1639,13 @@ export async function ensureTravelChainAhead(
     if (await ensureInterviewPrep(lang)) changed = true;
   } catch (e) {
     console.warn('[GoogleSync] interview prep after travel chain failed', e);
+  }
+  // The way home after the day's last trip is a task too (services/ReturnHomeTasks).
+  try {
+    const { ensureReturnHomeTasks } = await import('./ReturnHomeTasks');
+    if (await ensureReturnHomeTasks(lang)) changed = true;
+  } catch (e) {
+    console.warn('[GoogleSync] way-home tasks failed', e);
   }
 
   // A route implies a wake time; record whether that wake time needs a REAL
@@ -1351,6 +1758,9 @@ export interface WeekDayPlan {
 export async function analyzeWeek(lang: AppLanguage, days = 7): Promise<WeekDayPlan[]> {
   const he = lang === 'he';
   const out: WeekDayPlan[] = [];
+  // Her margin and wake floor, so "possible but tight" and "needs you up at
+  // 04:49" are said too — not only what is outright impossible.
+  const feasibility = feasibilityOptionsOf(normalizeProfile(await loadProfile().catch(() => null)));
   for (let i = 0; i < days; i++) {
     const date = dateOffset(i);
     const tasks = (await getTasksForDate(date)).filter((t) => t.status !== 'complete');
@@ -1364,7 +1774,7 @@ export async function analyzeWeek(lang: AppLanguage, days = 7): Promise<WeekDayP
       taskCount: tasks.length,
       leaveHomeBy: departures[0],
       firstTaskTime: timed[0] ? timeOf(timed[0]) : undefined,
-      warnings: dayWarnings(timed, he),
+      warnings: dayWarnings(timed, he, feasibility),
     });
   }
   return out;

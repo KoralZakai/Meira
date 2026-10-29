@@ -21,6 +21,11 @@ import { isExpoGo } from '../utils/isExpoGo';
  * HH:MM, so anything more than 24h away is skipped.
  * Returns true if the alarm intent was fired.
  */
+/** "Meira · 07:35" — never the task text (it carries places and people). */
+export function alarmLabel(hhmm: string, _message?: string): string {
+  return `Meira · ${hhmm}`;
+}
+
 export async function setSystemAlarm(hhmm: string, message: string, date?: string): Promise<boolean> {
   if (Platform.OS !== 'android' || isExpoGo) return false;
   const [h, m] = hhmm.split(':').map(Number);
@@ -44,13 +49,38 @@ export async function setSystemAlarm(hhmm: string, message: string, date?: strin
       extra: {
         'android.intent.extra.alarm.HOUR': h,
         'android.intent.extra.alarm.MINUTES': m,
-        'android.intent.extra.alarm.MESSAGE': message,
+        // The Clock app shows this on the lock screen and keeps it after she
+        // signs out, so it names no task and no place (7.10 privacy).
+        'android.intent.extra.alarm.MESSAGE': alarmLabel(hhmm, message),
         'android.intent.extra.alarm.SKIP_UI': true,
       },
     });
     return true;
   } catch (e) {
     console.warn('[AlarmService] set alarm failed', e);
+    return false;
+  }
+}
+
+/**
+ * Cancel the Clock alarm Meira set at `hhmm` — found by its label, which names
+ * only the hour ("Meira · 07:35"), so it never touches one she set herself.
+ * ACTION_DISMISS_ALARM (API 23+). Used when she turns the morning ⏰ off or
+ * moves it (MorningAlarmService). Returns true if the intent was fired.
+ */
+export async function dismissSystemAlarm(hhmm: string): Promise<boolean> {
+  if (Platform.OS !== 'android' || isExpoGo) return false;
+  try {
+    await IntentLauncher.startActivityAsync('android.intent.action.DISMISS_ALARM', {
+      extra: {
+        'android.intent.extra.alarm.SEARCH_MODE': 'android.label',
+        'android.intent.extra.alarm.MESSAGE': alarmLabel(hhmm),
+        'android.intent.extra.alarm.SKIP_UI': true,
+      },
+    });
+    return true;
+  } catch (e) {
+    console.warn('[AlarmService] dismiss alarm failed', hhmm, e);
     return false;
   }
 }

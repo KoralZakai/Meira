@@ -14,6 +14,35 @@
 import { Task } from '../types/index';
 import { timeToMinutes, addMinutes } from './timeUtils';
 import { isRemoteTask } from './meetingLink';
+import { classifyOverlap } from './overlapKind';
+import { isFlexibleTask } from './taskShape';
+
+/**
+ * What kind of problem a clash is — the one thing the screen and Meira both
+ * need settled before either can say anything useful about it.
+ *
+ *   travel   — no shared minute, but the places are too far apart for the gap
+ *   overlap  — placeless work sits on a short appointment or its departure
+ *   double   — two appointments at once in one place (or with no place)
+ *   spatial  — two places at once
+ *   parallel — not a problem: a call rides along, or two pieces of her own work
+ *
+ * On 30.9 the server reported the 18:30 business-plan-over-meetup and the phone
+ * hid it; both now reach the verdict through the same rule, mirrored in
+ * server/clashes.py (clash_kind) and pinned by the parity golden.
+ */
+export type ClashKind = 'travel' | 'overlap' | 'double' | 'spatial' | 'parallel';
+
+export function clashKind(a: Task, b: Task, overlap: number, travelNeeded: number): ClashKind {
+  if (overlap <= 0) return 'travel';
+  if (isFlexibleTask(a) && isFlexibleTask(b)) return 'parallel';
+  switch (classifyOverlap(a, b, travelNeeded)?.kind) {
+    case 'displaced': return 'overlap';
+    case 'same-place': return 'double';
+    case 'spatial': return 'spatial';
+    default: return 'parallel';
+  }
+}
 
 export type ClashResolutionKind =
   | 'attend-remotely' | 'move' | 'shorten' | 'choose' | 'end-earlier' | 'delay-next';
@@ -31,6 +60,8 @@ export interface ClashOption {
 export interface Clash {
   a: Task;
   b: Task;
+  /** Whether this is a problem at all, and which one. See clashKind. */
+  kind: ClashKind;
   overlapMinutes: number;
   /** Minutes of travel still unaccounted for between the two places. */
   travelShortfall?: number;
@@ -141,9 +172,24 @@ export function overlapMinutes(a: Task, b: Task): number {
  *   move            — one side has no fixed time and the day has room
  *   choose          — nothing else works; the user decides, and is asked to
  */
-export function resolveClashes(tasks: Task[], dayEnd = '23:00'): Clash[] {
+export function resolveClashes(
+  tasks: Task[],
+  dayEnd = '23:00',
+  opts: {
+    /**
+     * HH:MM, for TODAY. Nothing is offered before it: at 15:00, "move the
+     * study block to 07:00" is a slot that has already gone, and "leave the
+     * conference at 14:30" is advice about the past. Omit for any other day.
+     */
+    now?: string;
+  } = {},
+): Clash[] {
   const day = timed(tasks);
   const out: Clash[] = [];
+  const nowMin = opts.now ? timeToMinutes(opts.now) : undefined;
+  const notPast = (m: number) => nowMin === undefined || m >= nowMin;
+  const fromNow = (hhmm: string) =>
+    (nowMin !== undefined && timeToMinutes(hhmm) < nowMin ? opts.now! : hhmm);
 
   for (let i = 0; i < day.length; i += 1) {
     for (let j = i + 1; j < day.length; j += 1) {
@@ -177,7 +223,7 @@ export function resolveClashes(tasks: Task[], dayEnd = '23:00'): Clash[] {
       // 2. Whichever side is not pinned to a clock can move, if there is room.
       for (const [flexible, other] of [[a, b], [b, a]] as const) {
         if (flexible.isFixed) continue;
-        const after = endOf(other);
+        const after = fromNow(endOf(other));
         const slot = firstFreeSlot(day, flexible.durationMinutes || 30, after, dayEnd);
         if (slot) {
           options.push({
@@ -203,7 +249,7 @@ export function resolveClashes(tasks: Task[], dayEnd = '23:00'): Clash[] {
       if (mins > 0 || shortfall > 0) {
         const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
         const mustEndBy = timeToMinutes(startOf(second)!) - travelNeeded;
-        if (canLeaveEarly(first) && mustEndBy - timeToMinutes(startOf(first)!) >= 15) {
+        if (canLeaveEarly(first) && mustEndBy - timeToMinutes(startOf(first)!) >= 15 && notPast(mustEndBy)) {
           const trip = travelNeeded > 0
             ? { en: ` — ${travelNeeded} min to "${second.text}"`, he: ` — ${travelNeeded} דק' ל"${second.text}"` }
             : { en: ` — in time for "${second.text}"`, he: ` — בזמן ל"${second.text}"` };
@@ -216,7 +262,7 @@ export function resolveClashes(tasks: Task[], dayEnd = '23:00'): Clash[] {
           });
         }
         const newStart = timeToMinutes(endOf(first)) + travelNeeded;
-        if (canStartLater(second) && newStart < timeToMinutes(dayEnd)) {
+        if (canStartLater(second) && newStart < timeToMinutes(dayEnd) && notPast(newStart)) {
           options.push({
             kind: 'delay-next',
             taskId: second.id,
@@ -234,7 +280,7 @@ export function resolveClashes(tasks: Task[], dayEnd = '23:00'): Clash[] {
       for (const [flexible, other] of [[a, b], [b, a]] as const) {
         if (flexible.isFixed) continue;
         if (options.some((o) => o.kind === 'move' && o.taskId === flexible.id)) continue;
-        const start = endOf(other);
+        const start = fromNow(endOf(other));
         const left = timeToMinutes(dayEnd) - timeToMinutes(start);
         if (left >= 30 && left < (flexible.durationMinutes || 30)) {
           options.push({
@@ -269,16 +315,20 @@ export function resolveClashes(tasks: Task[], dayEnd = '23:00'): Clash[] {
 
       const both = `"${a.text}" ${'&'} "${b.text}"`;
       out.push({
-        a, b, overlapMinutes: mins, travelShortfall: shortfall || undefined, options,
-        questionEn: options[0].kind === 'choose'
-          ? `${both} overlap by ${mins} min and neither can move. Which matters more today?`
-          : mins <= 0
-            ? `"${first.text}" ends when "${second.text}" starts, but they are ${travelNeeded} min apart. Which gives?`
+        a, b, kind: clashKind(a, b, mins, travelNeeded),
+        overlapMinutes: mins, travelShortfall: shortfall || undefined, options,
+        // A journey that does not fit is worded as one. It used to fall into
+        // the 'choose' branch first and read "overlap by 0 min" (30.9, Nebius →
+        // Dana) — a sentence that is true and tells her nothing.
+        questionEn: mins <= 0
+          ? `"${first.text}" ends at ${endOf(first)} and "${second.text}" starts at ${startOf(second)} — ${travelNeeded} min apart. Which gives?`
+          : options[0].kind === 'choose'
+            ? `${both} overlap by ${mins} min and neither can move. Which matters more today?`
             : `${both} overlap by ${mins} min.`,
-        questionHe: options[0].kind === 'choose'
-          ? `${both} חופפות ב-${mins} דק' ואי אפשר להזיז אף אחת. מה יותר חשוב לך היום?`
-          : mins <= 0
-            ? `"${first.text}" נגמרת כש"${second.text}" מתחילה, אבל יש ביניהן ${travelNeeded} דק' נסיעה. מה מוותר?`
+        questionHe: mins <= 0
+          ? `"${first.text}" נגמרת ב-${endOf(first)} ו"${second.text}" מתחילה ב-${startOf(second)}, ${travelNeeded} דק' נסיעה משם. מה מוותר?`
+          : options[0].kind === 'choose'
+            ? `${both} חופפות ב-${mins} דק' ואי אפשר להזיז אף אחת. מה יותר חשוב לך היום?`
             : `${both} חופפות ב-${mins} דק'.`,
       });
     }

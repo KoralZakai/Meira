@@ -1,0 +1,125 @@
+# Run the test suites on every push and pull request — and act as the gate
+# fly-deploy.yml waits on.
+#
+# WHY THIS EXISTS
+# There were 629 Python tests and 64 TypeScript suites in this repo and nothing
+# ran any of them. Every push to master went straight to `flyctl deploy` with
+# no gate at all, so the only thing standing between a broken commit and the
+# live server was whether someone remembered to run `npm run test:all` first.
+#
+# Two things had already slipped through by the time this was written:
+#   · tests/run-wake-request.ts had been failing since the alarm policy became
+#     'every-morning' — a stale expectation, red for a week, seen by no one
+#     because the hand-written test:all chain never invoked it.
+#   · The four GDPR account-erase tests failed on any machine that did not
+#     happen to have pytest-asyncio installed, because no file declared it.
+#     server/requirements-dev.txt declares it now, and this workflow installs
+#     that file, so "green" is a fact about the code rather than about a laptop.
+#
+# Runtime versions match production: python:3.11-slim (Dockerfile), Node 22
+# (eas-build.yml).
+
+name: Tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_call: {}     # fly-deploy.yml depends on this workflow
+  workflow_dispatch: {}
+
+jobs:
+  python:
+    name: Python (server)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r server/requirements.txt
+          pip install -r server/requirements-dev.txt
+      # tests/conftest.py points DATA_DIR at a temp dir, so the suite cannot
+      # write into the checkout. That is load-bearing here: a test that edits a
+      # tracked JSON file would show up as drift in the golden check below.
+      - name: pytest
+        working-directory: server
+        run: python -m pytest tests/ -q
+      # THE EVALUATION MATRIX (server/evals): accuracy, reliability, performance,
+      # scalability, cost and RAG quality, measured offline — a scripted model,
+      # simulated Google/Tavily, no network and no key. ~1 minute.
+      #
+      # It fails the job ONLY when something is RED: a number past its
+      # regression line in server/evals/thresholds.json, or a suite that crashed.
+      # Yellow (a known gap) and "not run" (the live suites) exit 0 — but the
+      # whole table, failing examples and every reason a suite did not run, goes
+      # into the job summary either way, so nothing is a silent green.
+      # `set +e` + explicit exit: the summary must be written when the run is red.
+      - name: Evaluation matrix (offline)
+        working-directory: server
+        run: |
+          set +e
+          python -m evals --offline --quiet --out evals/out
+          rc=$?
+          if [ -f evals/out/report.md ]; then
+            cat evals/out/report.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### Evaluation matrix: NO REPORT WRITTEN (python -m evals exited $rc before producing one)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit $rc
+      - name: Upload evaluation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evals-report-offline
+          path: |
+            server/evals/out/report.json
+            server/evals/out/report.md
+          if-no-files-found: warn
+
+  typescript:
+    name: TypeScript (app)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Discovers every tests/run-*.ts rather than reading a hand-kept list —
+      # see scripts/run-ts-tests.mjs for why that matters. Reports ALL failing
+      # suites in one run instead of stopping at the first.
+      - name: Suites
+        run: npm run test:all
+
+  clash-golden:
+    name: Clash golden is current
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # tests/fixtures/clash-golden.json is GENERATED from resolveClashes.ts and
+      # is what server/tests/test_clash_parity.py compares Python against. If
+      # someone changes the TypeScript rule and does not regenerate it, the
+      # Python parity test keeps passing against a golden that no longer
+      # describes the app — the two copies drift and the test says nothing.
+      # So: regenerate, and fail if the result differs from what is committed.
+      - name: Regenerate and compare
+        run: |
+          ./node_modules/.bin/tsx tests/run-clash-parity.ts
+          if ! git diff --quiet -- tests/fixtures/clash-golden.json; then
+            echo "::error::clash-golden.json is stale. resolveClashes.ts changed without"
+            echo "::error::regenerating it. Run: npx tsx tests/run-clash-parity.ts"
+            git --no-pager diff -- tests/fixtures/clash-golden.json
+            exit 1
+          fi
+          echo "golden matches resolveClashes.ts"

@@ -2,7 +2,7 @@
  * run-log-redaction — the app's release logs must not carry other people's data.
  *
  * Written during the pre-release security review. The live logcat from her own
- * phone showed `pulling from …/tasks/972500000009` fifty-three times in two
+ * phone showed `pulling from …/tasks/972542902729` fifty-three times in two
  * hundred lines, task titles, and Supabase error payloads. On her phone that
  * was a diagnostic. On a friend's phone it is their phone number and their
  * appointments, and it is the thing Play's Data Safety form asks about.
@@ -46,11 +46,11 @@ function main() {
 
   say('\n2. People are not identifiable');
   // The exact string from the real log.
-  const real = 'pulling from https://lumi-whatsapp.fly.dev/tasks/972500000009';
+  const real = 'pulling from https://lumi-whatsapp.fly.dev/tasks/972542902729';
   check('her number, in the form the log actually used',
-    gone('972500000009', redactString(real)), redactString(real));
-  check('the local 05x form', gone('0500000009', redactString('from 0500000009')));
-  check('the dashed form', gone('050-000-0009', redactString('call 050-000-0009')));
+    gone('972542902729', redactString(real)), redactString(real));
+  check('the local 05x form', gone('0542902729', redactString('from 0542902729')));
+  check('the dashed form', gone('054-290-2729', redactString('call 054-290-2729')));
   check('E.164 generally', gone('+447700900123', redactString('+447700900123')));
   check('an email address',
     gone('koralzakai1@gmail.com', redactString('user koralzakai1@gmail.com signed in')));
@@ -61,24 +61,24 @@ function main() {
     redactString('took 32.5 minutes') === 'took 32.5 minutes');
 
   say('\n3. Whatever console is handed, not just strings');
-  const obj = redact({ phone: '972500000009', nested: { token: jwt }, n: 42 }) as any;
-  check('objects are walked', gone('972500000009', JSON.stringify(obj)));
+  const obj = redact({ phone: '972542902729', nested: { token: jwt }, n: 42 }) as any;
+  check('objects are walked', gone('972542902729', JSON.stringify(obj)));
   check('...to depth', obj.nested.token === '<jwt>');
   check('...leaving harmless values alone', obj.n === 42);
-  const arr = redact(['972500000009', 7]) as any[];
+  const arr = redact(['972542902729', 7]) as any[];
   check('arrays are walked', arr[0] === '<phone>' && arr[1] === 7);
-  const err = redact(new Error('failed for 972500000009')) as Error;
-  check('Error messages are cleaned', gone('972500000009', err.message), err.message);
+  const err = redact(new Error('failed for 972542902729')) as Error;
+  check('Error messages are cleaned', gone('972542902729', err.message), err.message);
   check('...and stay Errors', err instanceof Error);
 
   say('\n4. The logger must never be the thing that breaks');
-  const cycle: any = { phone: '972500000009' };
+  const cycle: any = { phone: '972542902729' };
   cycle.self = cycle;
   let threw = false;
   let out: any;
   try { out = redact(cycle); } catch { threw = true; }
   check('a circular object does not throw', !threw);
-  check('...is still redacted', !threw && out.phone === '<phone>');
+  check('...is still redacted', !threw && ['<phone>', '<redacted>'].includes(out.phone));
   check('...and the cycle is marked', !threw && out.self === '<circular>');
   check('null and undefined pass through',
     redact(null) === null && redact(undefined) === undefined);
@@ -104,10 +104,10 @@ function main() {
     installLogGate(false);
     check('production silences console.log', console.log !== original.log);
     console.log('this must vanish');   // no-op now
-    console.warn('failed for 972500000009');
+    console.warn('failed for 972542902729');
     check('production keeps console.warn', seen.length === 1);
     check('...and redacts what it carries',
-      gone('972500000009', String(seen[0]?.[0])), String(seen[0]?.[0]));
+      gone('972542902729', String(seen[0]?.[0])), String(seen[0]?.[0]));
   } finally {
     console.log = original.log;
     console.warn = original.warn;

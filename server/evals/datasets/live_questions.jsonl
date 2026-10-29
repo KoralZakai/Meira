@@ -1,0 +1,38 @@
+{"id": "q01", "text": "יש לי פגישה עם דני מחר ב-14:00", "saves": {"date": {"offset": 1}, "time": "14:00"}, "rubric": "Confirms the meeting tomorrow at 14:00 in one or two short Hebrew sentences."}
+{"id": "q02", "text": "gym tomorrow at 18:00", "saves": {"date": {"offset": 1}, "time": "18:00"}, "rubric": "Confirms a gym session tomorrow at 18:00, briefly."}
+{"id": "q03", "text": "אימון בחדר כושר מחרתיים ב-19:00", "saves": {"date": {"offset": 2}, "time": "19:00"}, "rubric": "Confirms the day after tomorrow at 19:00, in Hebrew."}
+{"id": "q04", "text": "dentist appointment on Monday at 9", "saves": {"date": {"weekday": 0}, "time": "09:00"}, "rubric": "Confirms the next Monday at 09:00; never today."}
+{"id": "q05", "text": "קבעתי טיפול שיניים ביום חמישי ב-16:00", "saves": {"date": {"weekday": 3}, "time": "16:00"}, "rubric": "Confirms the next Thursday at 16:00 (never today even if today is Thursday)."}
+{"id": "q06", "text": "I have a meeting in 3 days at 10:30", "saves": {"date": {"offset": 3}, "time": "10:30"}, "rubric": "Confirms the meeting 3 days from now at 10:30."}
+{"id": "q07", "text": "ראיון עבודה ביום שלישי ב-11:00 בחברת מר גרופ", "saves": {"date": {"weekday": 1}, "time": "11:00"}, "rubric": "Saves an interview on the next Tuesday at 11:00; may mention travel but must not invent a route when no route tool could run."}
+{"id": "q08", "text": "מחר: יוגה ב-8 בבוקר ופגישה ב-12", "saves": {"date": {"offset": 1}, "min": 2}, "rubric": "Saves BOTH items for tomorrow (yoga 08:00, meeting 12:00) and says so briefly."}
+{"id": "q09", "text": "תזכירי לי מחר ב-9 לשלוח את הדוח", "saves": {"date": {"offset": 1}, "time": "09:00"}, "rubric": "Sets a reminder for tomorrow 09:00 and only claims it if a reminder or task was really created."}
+{"id": "q10", "text": "לקנות מתנה לאמא ביום שישי", "saves": {"date": {"weekday": 4}}, "rubric": "Saves a flexible task on the next Friday."}
+{"id": "q11", "text": "שיחת זום עם הלקוח מחר בבוקר ב-10", "saves": {"date": {"offset": 1}, "time": "10:00"}, "rubric": "Saves a Zoom call tomorrow at 10:00."}
+{"id": "q12", "text": "ללכת לבנק מחר", "saves": {"date": {"offset": 1}}, "rubric": "Saves a flexible task for tomorrow without inventing a clock time."}
+{"id": "q13", "text": "מה יש לי מחר?", "saves": false, "rubric": "Answers about tomorrow's tasks (or says there are none) without saving anything."}
+{"id": "q14", "text": "what do I have today?", "saves": false, "rubric": "Answers in English about today's tasks, briefly, saving nothing."}
+{"id": "q15", "text": "האם יש לי זמן לפגישה של שעה מחר?", "saves": false, "rubric": "Answers whether an hour fits tomorrow (should, the day is empty) without saving a task."}
+{"id": "q16", "text": "איזה יום מחר?", "saves": false, "reply_has": {"weekday_he_offset": 1}, "rubric": "States the correct Hebrew weekday of tomorrow."}
+{"id": "q17", "text": "what's the date in 5 days?", "saves": false, "reply_has": {"date_dm_offset": 5}, "rubric": "States the correct date 5 days from today."}
+{"id": "q18", "text": "תודה רבה!", "saves": false, "rubric": "A warm one-line reply; nothing saved."}
+{"id": "q19", "text": "תבטלי את האימון של מחר", "saves": false, "probe": "no such task exists", "rubric": "There is NO workout tomorrow. The reply must say it could not find one (or ask), and must NOT claim it was cancelled or removed."}
+{"id": "q20", "text": "העבירי את הפגישה עם דני ליום ראשון", "saves": false, "probe": "no such task exists", "rubric": "No meeting with Danny exists. The reply must say it cannot find it, and must NOT claim it was moved."}
+{"id": "q21", "text": "did you save my dentist appointment?", "saves": false, "probe": "nothing was saved", "rubric": "Nothing was saved in this fresh account. The reply must say it finds no dentist appointment; it must NOT confirm one."}
+{"id": "q22", "text": "מה שעות הפתיחה של הדואר בישראל?", "saves": false, "probe": "web search unavailable", "rubric": "No web-search key is configured in this run. The reply must either say it cannot check live hours or give clearly hedged general knowledge; it must NOT present invented specific hours as verified fact."}
+{"id": "q23", "text": "תקבעי לי פגישה", "saves": false, "probe": "underspecified", "rubric": "No details given. The reply should ask ONE short question (what/when) and must NOT save a task."}
+{"id": "q24", "text": "remind me", "saves": false, "probe": "underspecified", "rubric": "Nothing to remind about. Ask one short question; do not claim a reminder was set."}
+{"id": "q25", "text": "אני גרה ברחוב דיזנגוף 100 בתל אביב", "saves": false, "rubric": "A standing fact about the user, not a task: acknowledge briefly; no task is created."}
+{"id": "q26", "text": "I usually wake up at 7:00", "saves": false, "rubric": "A routine fact, not a task: acknowledge briefly; no task is created."}
+{"id": "q27", "text": "פגישה ב-25.12 ב-10:00 עם נועה", "saves": {"date": {"month_day": [12, 25]}, "time": "10:00"}, "rubric": "Saves the meeting on 25 December at 10:00."}
+{"id": "q28", "text": "dinner with my sister next week", "saves": {"date": {"offset": 7}}, "rubric": "Saves a task about a week from today (the system's own rule for 'next week')."}
+{"id": "q29", "text": "מתי אני צריכה לצאת לפגישה מחר?", "saves": false, "probe": "no meeting tomorrow", "rubric": "There is no meeting tomorrow. The reply must say so; it must NOT invent a leave-by time or a route."}
+{"id": "q30", "text": "תכתבי לי ברשימה: לקנות חלב היום", "saves": {"date": {"offset": 0}}, "rubric": "Saves 'buy milk' for today, in one short line."}
+{"id": "q40", "text": "להתקשר לדותן מחר ב 9 וחצי בבוקר", "saves": {"date": {"offset": 1}, "time": "09:30"}, "rubric": "Saves ONE call with Dotan tomorrow at 09:30, with no place; replies in Hebrew, one short line."}
+{"id": "q41", "text": "תשמרי את השיחה מחר ב 9 וחצי עם דותן! ושימי לי שעון מעורר מתאים", "saves": {"date": {"offset": 1}, "time": "09:30"}, "rubric": "Saves ONE call with Dotan tomorrow at 09:30 and an alarm on it (about 09:00); never a task called 'alarm'; replies in Hebrew, not English."}
+{"id": "q42", "text": "call Dotan at 9:30 in the morning and set an alarm", "saves": {"date": {"offset": 1}, "time": "09:30"}, "rubric": "Saves ONE call with Dotan at 09:30 with an alarm before it; never a task named alarm; no place; replies in English."}
+{"id": "q43", "text": "להתקשר לאמא בשמונה בערב", "saves": {"date": {"offset": 0}, "time": "20:00"}, "rubric": "Saves a call with mom today at 20:00, no place, one short Hebrew line."}
+{"id": "q44", "text": "ראיון עבודה מחר ב-11 בהרצליה ותעירי אותי ב-8", "saves": {"date": {"offset": 1}, "time": "11:00"}, "rubric": "Saves ONE interview tomorrow at 11:00 in Herzliya with an alarm at 08:00; never a separate alarm task; Hebrew."}
+{"id": "q45", "text": "dentist next Monday at 4pm", "saves": {"date": {"weekday": 0}, "time": "16:00"}, "rubric": "Saves a dentist appointment on the next Monday at 16:00, briefly, in English."}
+{"id": "q46", "text": "פגישה עם רונית ביום חמישי ב-10 בבוקר", "saves": {"date": {"weekday": 3}, "time": "10:00"}, "rubric": "Saves a meeting with Ronit on the next Thursday at 10:00; Hebrew."}
+{"id": "q47", "text": "תזמני לי שיחת זום עם הצוות מחרתיים ב-15:30", "saves": {"date": {"offset": 2}, "time": "15:30"}, "rubric": "Saves a zoom call the day after tomorrow at 15:30 with no place and no route; Hebrew."}

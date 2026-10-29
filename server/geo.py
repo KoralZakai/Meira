@@ -65,7 +65,28 @@ def _next_occurrence(hhmm: str) -> int:
 _COORDS_RE = re.compile(r"^(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)$")
 
 
+# Addresses do not move: one Google call per address per month, per process.
+# A miss is remembered for an hour so a bad address is not paid for on every save.
+_GEOCODE_TTL_S = 30 * 24 * 3600
+_GEOCODE_MISS_TTL_S = 600   # short: a None can also be a network blip
+_GEOCODE_MAX = 2000
+_geocode_cache: dict = {}
+
+
 async def geocode(address: str, bounds: Optional[str] = None) -> Optional[dict]:
+    import time as _t
+    key = (str(address or "").strip().lower(), bounds or "")
+    hit = _geocode_cache.get(key)
+    if hit and hit[0] > _t.time():
+        return dict(hit[1]) if hit[1] else None
+    found = await _geocode_uncached(address, bounds)
+    if len(_geocode_cache) >= _GEOCODE_MAX:
+        _geocode_cache.pop(next(iter(_geocode_cache)))
+    _geocode_cache[key] = (_t.time() + (_GEOCODE_TTL_S if found else _GEOCODE_MISS_TTL_S), dict(found) if found else None)
+    return found
+
+
+async def _geocode_uncached(address: str, bounds: Optional[str] = None) -> Optional[dict]:
     """Resolve an address to {formatted, lat, lng, place_id, partial}. None if not found.
 
     `bounds` is Google's "lat,lng|lat,lng" viewport hint — a BIAS, not a filter:
@@ -95,7 +116,7 @@ async def geocode(address: str, bounds: Optional[str] = None) -> Optional[dict]:
             r = await client.get("https://maps.googleapis.com/maps/api/geocode/json", params=params)
             data = r.json()
         if data.get("status") != "OK":
-            logger.warning("geocode '%s' -> %s", address, data.get("status"))
+            logger.warning("geocode -> %s", data.get("status"))
             return None
         res = data["results"][0]
         loc = res["geometry"]["location"]
@@ -132,7 +153,7 @@ async def find_place(query: str) -> Optional[dict]:
         status = data.get("status")
         if status != "OK" or not data.get("results"):
             # REQUEST_DENIED usually = Places API not enabled on the key.
-            logger.warning("find_place '%s' -> %s", query, status)
+            logger.warning("find_place -> %s", status)
             return None
         res = data["results"][0]
         loc = res["geometry"]["location"]
@@ -232,11 +253,49 @@ def _transit_legs(steps: list) -> list:
     return legs
 
 
+# A drive that has to arrive by HH:MM is asked about this long before it, so
+# Google prices the traffic of roughly the right hour (see _time_params).
+_DRIVE_LEAD_S = 40 * 60
+
+
+def _time_params(mode: str, arrival_hhmm: Optional[str]) -> dict:
+    """The clock parameters Google accepts for this mode.
+
+    `arrival_time` is a TRANSIT parameter, and Google refuses a request that
+    carries it together with `departure_time`. This function used to send both
+    for every car trip with an arrival hour — while route_proxy, the app's path,
+    had already learned the rule (test_route_proxy). Same API, two readers, and
+    only one of them knew. So: transit takes the arrival; driving takes a
+    departure (traffic-aware), placed a little before the arrival; walking and
+    cycling take neither."""
+    if mode == "transit":
+        return {"arrival_time": _next_occurrence(arrival_hhmm)} if arrival_hhmm else {}
+    if mode == "driving":
+        if not arrival_hhmm:
+            return {"departure_time": "now"}
+        depart = _next_occurrence(arrival_hhmm) - _DRIVE_LEAD_S
+        soon = int(now_il().timestamp()) + 60
+        return {"departure_time": "now" if depart <= soon else depart}
+    return {}
+
+
 async def directions(origin: dict, destination: dict, transport: str,
                      arrival_hhmm: Optional[str]) -> Optional[dict]:
-    """Real route. Returns {minutes, mode, modeLabel, transit?}. None on failure."""
+    """Real route. Returns {minutes, mode, modeLabel, transit?}. None on failure.
+
+    The reason for a None is in directions_detailed."""
+    route, _reason = await directions_detailed(origin, destination, transport, arrival_hhmm)
+    return route
+
+
+async def directions_detailed(origin: dict, destination: dict, transport: str,
+                              arrival_hhmm: Optional[str]) -> tuple[Optional[dict], Optional[str]]:
+    """(route, None) or (None, reason) — "no route between these two" and "Google
+    refused the key" are different fixes (silent-state rule 1).
+
+    reason: "not_configured" | "refused" | "no_route" | "unreachable"."""
     if not config.GOOGLE_MAPS_API_KEY:
-        return None
+        return None, "not_configured"
     mode = _MODE_MAP.get(transport, "driving")
     params = {
         "origin": f"place_id:{origin['place_id']}" if origin.get("place_id") else f"{origin['lat']},{origin['lng']}",
@@ -247,11 +306,8 @@ async def directions(origin: dict, destination: dict, transport: str,
         # Hebrew station/street names — what Israeli users actually recognize
         # (and what keeps the agent from "translating" into invented names).
         "language": "iw",
+        **_time_params(mode, arrival_hhmm),
     }
-    if arrival_hhmm:
-        params["arrival_time"] = _next_occurrence(arrival_hhmm)
-    if mode == "driving":
-        params["departure_time"] = "now"  # enables traffic-aware duration_in_traffic
     # 'bus' vs 'train' both map to transit, but each PREFERS its vehicle —
     # this is what lets plan_departure offer "by bus vs by train" side by side.
     if mode == "transit" and transport in _TRANSIT_PREF:
@@ -260,10 +316,12 @@ async def directions(origin: dict, destination: dict, transport: str,
         async with httpx.AsyncClient(timeout=12) as client:
             r = await client.get("https://maps.googleapis.com/maps/api/directions/json", params=params)
             data = r.json()
-        if data.get("status") != "OK":
-            logger.warning("directions %s -> %s [%s]", origin.get("formatted"),
-                           destination.get("formatted"), data.get("status"))
-            return None
+        status = data.get("status")
+        if status != "OK":
+            logger.warning("directions [%s] %s", status, (data.get("error_message") or "")[:120])
+            if status in ("REQUEST_DENIED", "OVER_QUERY_LIMIT", "OVER_DAILY_LIMIT", "INVALID_REQUEST"):
+                return None, "refused"
+            return None, "no_route"
         leg = data["routes"][0]["legs"][0]
         secs = (leg.get("duration_in_traffic") or leg["duration"])["value"]
         out = {
@@ -286,10 +344,65 @@ async def directions(origin: dict, destination: dict, transport: str,
             # walking, and when you actually arrive at the door.
             out["departAt"] = _extract_hhmm((leg.get("departure_time") or {}).get("text"))
             out["arriveAtReal"] = _extract_hhmm((leg.get("arrival_time") or {}).get("text"))
-        return out
-    except (httpx.HTTPError, KeyError, IndexError) as exc:
+        return out, None
+    except (httpx.HTTPError, KeyError, IndexError, ValueError) as exc:
         logger.error("directions error: %s", exc)
-        return None
+        return None, "unreachable"
+
+
+class PlacesRefused(Exception):
+    """Google answered REQUEST_DENIED / over quota — the key, not the place."""
+
+
+async def text_search(query: str, place_type: Optional[str] = None,
+                      radius_m: Optional[int] = None) -> list[dict]:
+    """Places Text Search for the APP (POST /app/place/search): up to 5
+    {name, address, lat, lng}. [] = Google found nothing; a refused or missing
+    key RAISES PlacesRefused, so the two never look alike (silent-state rule 1).
+
+    The phone used to ask Google itself with the key compiled into the APK.
+    That key is Android-restricted, so every such call was REQUEST_DENIED —
+    and while it carried a web-service API at all, anyone who unzipped the
+    APK could bill Places to her account by copying two public headers."""
+    if not config.GOOGLE_MAPS_API_KEY:
+        raise PlacesRefused("no server Maps key")
+    params = {"query": query, "region": "il", "language": "iw", "key": config.GOOGLE_MAPS_API_KEY}
+    if place_type:
+        params["type"] = place_type
+    if radius_m:
+        params["radius"] = radius_m
+    async with httpx.AsyncClient(timeout=12) as client:
+        r = await client.get("https://maps.googleapis.com/maps/api/place/textsearch/json", params=params)
+        data = r.json()
+    status = data.get("status")
+    if status in ("REQUEST_DENIED", "OVER_QUERY_LIMIT", "INVALID_REQUEST"):
+        raise PlacesRefused(f"{status}: {data.get('error_message') or ''}")
+    out = []
+    for res in (data.get("results") or [])[:5]:
+        loc = (res.get("geometry") or {}).get("location") or {}
+        if res.get("name") and loc.get("lat") is not None:
+            out.append({"name": res["name"], "address": res.get("formatted_address") or res["name"],
+                        "lat": loc["lat"], "lng": loc.get("lng")})
+    return out
+
+
+async def places_near(client: httpx.AsyncClient, query: str, lat: float, lng: float,
+                      radius_m: int) -> list[dict]:
+    """Places Text Search biased to a point: Google's raw results, possibly [].
+
+    [] means Google found nothing; a refused key RAISES PlacesRefused, so the two
+    can never be the same value (silent-state rule 1). Shared by errands_along
+    (errands on the way) and place_ranker (the nearest X)."""
+    params = {"query": query, "location": f"{lat},{lng}", "radius": radius_m,
+              "region": "il", "language": "iw", "key": config.GOOGLE_MAPS_API_KEY}
+    r = await client.get("https://maps.googleapis.com/maps/api/place/textsearch/json", params=params)
+    data = r.json()
+    status = data.get("status")
+    if status in ("REQUEST_DENIED", "OVER_QUERY_LIMIT", "INVALID_REQUEST"):
+        raise PlacesRefused(f"{status}: {data.get('error_message') or ''}")
+    if status not in ("OK", "ZERO_RESULTS"):
+        logger.warning("places_near -> %s", status)
+    return data.get("results") or []
 
 
 async def fetch_route_map(plan: dict) -> Optional[bytes]:

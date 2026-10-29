@@ -44,10 +44,143 @@ _RANGE = re.compile(r"(\d{1,2})[:.](\d{2})\s*(?:-|–|—|עד|to|until)\s*(\d{1
 _CLOCK = re.compile(r"(?<!\d)(\d{1,2}):(\d{2})(?!\d)")
 
 _WEEKDAYS_HE = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"]   # 0 = Sunday
-_WEEKDAYS_EN = [("sunday", "sun"), ("monday", "mon"), ("tuesday", "tue", "tues"),
-                ("wednesday", "wed"), ("thursday", "thu", "thur", "thurs"),
-                ("friday", "fri"), ("saturday", "sat")]
-_EVERY_DAY = re.compile(r"every ?day|daily|כל יום|יומיומי", re.IGNORECASE)
+_WEEKDAYS_EN = [("sunday", "sundays", "sun"), ("monday", "mondays", "mon"),
+                ("tuesday", "tuesdays", "tue", "tues"), ("wednesday", "wednesdays", "wed"),
+                ("thursday", "thursdays", "thu", "thur", "thurs"), ("friday", "fridays", "fri"),
+                ("saturday", "saturdays", "sat")]
+_DAY_LETTERS = ["א", "ב", "ג", "ד", "ה", "ו", "ש"]   # א׳ = Sunday … ש׳ = Saturday
+_EN_ABBR = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+
+# ── Which days a line names (6.10) ────────────────────────────────────────────
+# ONE spec with src/utils/routines.ts readDays, pinned by the hand-written
+# tests/fixtures/weekday-lines.json. The two used to disagree on "בשלישי",
+# "שני ורביעי", ranges and "Tuesdays", and [] meant both "she never said" and
+# "every day". `from` now says which: 'unsaid' is a question for her.
+_GERESH = "['׳’]"
+_NOT_HE = "(?:^|[^א-ת])"
+_EVERY_DAY = re.compile(
+    r"\b(?:every ?day|daily|each day|every (?:morning|evening|night))\b"
+    r"|כל יום|כל יומ|יומיומי|כל בוקר|כל ערב|כל לילה", re.IGNORECASE)
+_VARIES = re.compile(r"ימים משתנים|משתנה כל שבוע|\bdays vary\b|\bvaries (?:each|every) week\b", re.IGNORECASE)
+_WORKWEEK = re.compile(r"\bweekdays\b|ימי חול|באמצע השבוע", re.IGNORECASE)   # Israel: Sun–Thu
+_WEEKEND = re.compile(r"\bweekends?\b|סוף ה?שבוע|סופ[\"״]ש", re.IGNORECASE)
+_HE_PER_WEEK = re.compile(r"(?:(\d+)\s*פעמים|(פעמיים)|(פעם אחת|פעם))\s*ב?שבוע")
+_EN_PER_WEEK = re.compile(r"\b(?:(\d+)\s*(?:x|times)|(twice)|(once))\s*(?:a|per|each|/)?\s*week\b", re.IGNORECASE)
+_EN_DAY = r"(sun|mon|tue|wed|thu|fri|sat)[a-z]*"
+_EN_RANGE = re.compile(rf"\b{_EN_DAY}\s*(?:-|–|to|until|through|thru)\s*{_EN_DAY}\b", re.IGNORECASE)
+_HE_NAMES = "|".join(_WEEKDAYS_HE)
+_HE_RANGE = re.compile(rf"{_NOT_HE}[מב]?({_HE_NAMES})\s*(?:-|–|עד)\s*[הל]?({_HE_NAMES})(?![א-ת])")
+# "א-ה" and "א׳–ה׳" are ranges; "ו-ד׳" is "and Wednesday": both letters carry
+# a geresh or neither does.
+_LETTER_RANGE = re.compile(rf"{_NOT_HE}([אבגדהוש])({_GERESH})?\s*(?:-|–|עד)\s*([אבגדהוש])({_GERESH})?(?![א-ת])")
+# A single letter is a day only WITH its geresh: "ב 8 וחצי" is not Monday.
+_LETTER_DAY = re.compile(rf"{_NOT_HE}(?:ו-?)?([אבגדהוש]){_GERESH}(?![א-ת])")
+_HE_DAY_RES = [re.compile(rf"{_NOT_HE}(?:וב|ומ|ול|[ובמל])?{name}(?![א-ת])") for name in _WEEKDAYS_HE]
+_EN_DAY_RES = [re.compile(rf"\b(?:{'|'.join(names)})\b", re.IGNORECASE) for names in _WEEKDAYS_EN]
+
+
+def _add_range(found: set, start: int, end: int) -> None:
+    if start < 0 or end < 0:
+        return
+    for i in range(7):
+        day = (start + i) % 7
+        found.add(day)
+        if day == end:
+            break
+
+
+def _en_index(word: str) -> int:
+    w = word.lower()
+    for i, names in enumerate(_WEEKDAYS_EN):
+        if any(w.startswith(n) for n in names):
+            return i
+    return -1
+
+
+def read_days(text: str) -> dict:
+    """{days, from, per_week?} — which days a line names, and whether it named any.
+
+    from: 'said' | 'unsaid' | 'varies'. Named days win over "every day": "כל יום
+    שלישי" is every TUESDAY."""
+    text = str(text or "")
+    if _VARIES.search(text):
+        return {"days": [], "from": "varies"}
+    found: set = set()
+    for m in _EN_RANGE.finditer(text):
+        _add_range(found, _en_index(m.group(1)), _en_index(m.group(2)))
+    for m in _HE_RANGE.finditer(text):
+        _add_range(found, _WEEKDAYS_HE.index(m.group(1)), _WEEKDAYS_HE.index(m.group(2)))
+    for m in _LETTER_RANGE.finditer(text):
+        if bool(m.group(2)) == bool(m.group(4)):
+            _add_range(found, _DAY_LETTERS.index(m.group(1)), _DAY_LETTERS.index(m.group(3)))
+    for m in _LETTER_DAY.finditer(text):
+        found.add(_DAY_LETTERS.index(m.group(1)))
+    for i, rx in enumerate(_HE_DAY_RES):
+        if rx.search(text):
+            found.add(i)
+    for i, rx in enumerate(_EN_DAY_RES):
+        if rx.search(text):
+            found.add(i)
+    if _WORKWEEK.search(text):
+        found.update(range(5))
+    if _WEEKEND.search(text):
+        found.update((5, 6))
+    if found:
+        return {"days": sorted(found), "from": "said"}
+    if _EVERY_DAY.search(text):
+        return {"days": list(range(7)), "from": "said"}
+    he, en = _HE_PER_WEEK.search(text), _EN_PER_WEEK.search(text)
+    per_week = None
+    if he:
+        per_week = int(he.group(1)) if he.group(1) else (2 if he.group(2) else 1)
+    elif en:
+        per_week = int(en.group(1)) if en.group(1) else (2 if en.group(2) else 1)
+    return {"days": [], "from": "unsaid", **({"per_week": per_week} if per_week else {})}
+
+
+# ── Writing her answer back into her line (same phrase as the phone) ──────────
+_DAYS_PHRASE = re.compile(
+    r"\s*·\s*(?:ימי\s[^·]+|כל יום|ימים משתנים|every day|days vary"
+    r"|(?:Sun|Mon|Tue|Wed|Thu|Fri|Sat)(?:\s*[&/–-]\s*(?:Sun|Mon|Tue|Wed|Thu|Fri|Sat))*)\s*$")
+
+
+def _is_run(days: list) -> bool:
+    return len(days) >= 3 and all(d == days[i - 1] + 1 for i, d in enumerate(days) if i)
+
+
+def days_phrase(days, script: str) -> str:
+    """The days as a short phrase in her script ('he' | 'en'), or 'varies'. No commas."""
+    if days == "varies":
+        return "· ימים משתנים" if script == "he" else "· days vary"
+    ds = sorted({int(d) for d in days if 0 <= int(d) <= 6})
+    if not ds:
+        return ""
+    if len(ds) == 7:
+        return "· כל יום" if script == "he" else "· every day"
+    if script == "he":
+        L = lambda d: f"{_DAY_LETTERS[d]}׳"   # noqa: E731
+        if _is_run(ds):
+            return f"· ימי {L(ds[0])}–{L(ds[-1])}"
+        if len(ds) == 1:
+            return f"· ימי {L(ds[0])}"
+        return f"· ימי {' '.join(L(d) for d in ds[:-1])} ו-{L(ds[-1])}"
+    if _is_run(ds):
+        return f"· {_EN_ABBR[ds[0]]}–{_EN_ABBR[ds[-1]]}"
+    if len(ds) == 2:
+        return f"· {_EN_ABBR[ds[0]]} & {_EN_ABBR[ds[1]]}"
+    return "· " + "/".join(_EN_ABBR[d] for d in ds)
+
+
+def strip_days_phrase(text: str) -> str:
+    """Her line without a days phrase Meira appended (her own words are kept)."""
+    return _DAYS_PHRASE.sub("", str(text or "")).strip()
+
+
+def with_days(line: str, days) -> str:
+    """Her line with these days written into it, in the line's own script."""
+    base = strip_days_phrase(line)
+    phrase = days_phrase(days, "he" if re.search(r"[֐-׿]", base) else "en")
+    return f"{base} {phrase}" if phrase else base
 
 # Words that say when, never what or where.
 _WHEN_WORDS = {
@@ -66,19 +199,9 @@ _CITIES = [
 
 
 def _weekdays(text: str) -> list:
-    """Days of the week a line names; [] = it named none (every day it applies)."""
-    if _EVERY_DAY.search(text):
-        return list(range(7))
-    found = set()
-    for i, name in enumerate(_WEEKDAYS_HE):
-        # No \b: it is ASCII-only. A Hebrew weekday may carry a ו / ב / ה prefix.
-        if re.search(rf"(?:^|[^֐-׿])[ובה]?{name}(?:[^֐-׿]|$)", text):
-            found.add(i)
-    low = text.lower()
-    for i, names in enumerate(_WEEKDAYS_EN):
-        if any(re.search(rf"\b{n}\b", low) for n in names):
-            found.add(i)
-    return sorted(found)
+    """Days of the week a line names; [] = it named none (read as every day —
+    read_days says whether that was said or is a question)."""
+    return read_days(text)["days"]
 
 
 def _when(text: str) -> dict:
@@ -95,7 +218,12 @@ def _when(text: str) -> dict:
     m = _CLOCK.search(text)
     if m and int(m.group(1)) <= 23:
         return {"time": f"{int(m.group(1)):02d}:{m.group(2)}"}
-    return {}
+    # An hour said the way people say it ("ב 8 בערב", "11 עד 12 וחצי"): routine_text.
+    try:
+        import routine_text
+        return routine_text.read_hours(text)
+    except Exception:  # noqa: BLE001 — a reader that fails is the old behaviour, not an error
+        return {}
 
 
 def _word(token: str) -> str:
@@ -188,11 +316,16 @@ def parse(notes: Optional[str]) -> list:
     for text in lines:
         if len(text) < 3:
             continue
-        entry = {"text": text, "weekdays": _weekdays(text), **_when(text)}
-        addr = address_in(text)
+        read = read_days(text)
+        entry = {"text": text, "weekdays": read["days"], "days_from": read["from"], **_when(text)}
+        if read.get("per_week"):
+            entry["per_week"] = read["per_week"]
+        # The place and its name come from her words, not from "· ימי ג׳".
+        bare = strip_days_phrase(text)
+        addr = address_in(bare)
         if addr:
             entry["address"] = addr
-            name = name_before(text, addr)
+            name = name_before(bare, addr)
             if name:
                 entry["name"] = name
         out.append(entry)
@@ -319,5 +452,94 @@ def complete_address(address: str, home: Optional[str]) -> str:
     town Google likes best — there is a Yigal Alon street in a dozen of them."""
     if not address or "," in address:
         return address
+    # A street WITH a number only (13.10): a venue name is found by the geocoder
+    # near her; ", Tel Aviv" sent "רפאל מכון דוד" (Haifa) to the wrong city.
+    if not re.search(r"\d", address):
+        return address
     city = home_city(home)
     return f"{address}, {city}" if city else address
+
+
+# ── One routine, said many ways ──────────────────────────────────────────────
+# 11.10, Koral: one workout (Sun–Tue 20:00, Fri 11:00, Yigal Alon 94), told to
+# Meira by voice, chat and typing, was kept as twelve lines and drawn as five
+# cards. Mirrors utils/routines.ts sameRoutine — a new line that says the same
+# routine again REPLACES the old one instead of being added beside it.
+_FITNESS = re.compile(
+    r"gym|work ?out|training|\btrain\b|fitness|yoga|pilates|kickbox|boxing|crossfit|חדר כושר|כושר|אימו[נן]"
+    r"|להתאמן|מתאמ[נן]|יוגה|פילאטיס|קיקבוקס|קיק בוקס|איגרוף|אגרוף|קרוספיט", re.IGNORECASE)
+_NAMED_FITNESS = [("yoga", re.compile(r"yoga|יוגה", re.I)), ("pilates", re.compile(r"pilates|פילאטיס", re.I)),
+                  ("kickbox", re.compile(r"kickbox|קיקבוקס|קיק בוקס", re.I)),
+                  ("boxing", re.compile(r"boxing|איגרוף|אגרוף", re.I)),
+                  ("crossfit", re.compile(r"crossfit|קרוספיט", re.I))]
+
+
+def _concept(text: str) -> Optional[str]:
+    return "fitness" if _FITNESS.search(text or "") else known_places.concept_of(text or "")
+
+
+def _named(text: str) -> Optional[str]:
+    return next((k for k, rx in _NAMED_FITNESS if rx.search(text or "")), None)
+
+
+def same_routine(a: str, b: str) -> bool:
+    """Two routine lines that are ONE routine: the same kind of thing, on a
+    shared day (or one names none), at the same hour (or one has none). Two
+    named workouts must be the same kind; a named one and a plain "workout"
+    are one only on the same day at the same hour."""
+    ca, cb = _concept(a), _concept(b)
+    if not ca or ca != cb:
+        return False
+    na, nb = _named(a), _named(b)
+    if na and nb and na != nb:
+        return False
+    strict = bool(na) != bool(nb)
+    ta, tb = _when(a).get("time"), _when(b).get("time")
+    if strict and not (ta and ta == tb):
+        return False
+    if ta and tb and ta != tb:
+        return False
+    da = read_days(a)
+    db = read_days(b)
+    days_a = set(da["days"]) if da.get("from") == "said" else set()
+    days_b = set(db["days"]) if db.get("from") == "said" else set()
+    shared = bool(days_a & days_b)
+    if strict and not shared:
+        return False
+    if days_a and days_b and not shared:
+        return False
+    return True
+
+
+_TRAVEL_WORDS = re.compile(
+    r"\b(?:by\s+)?(?:bicycle|bike|car|bus|train|walk|on foot)\b|באופניים|ברגל|באוטובוס|ברכבת|באוטו|ברכב|מגיע(?:ה)?",
+    re.IGNORECASE)
+
+
+def _is_fragment(piece: str) -> bool:
+    """A comma piece that is only a place, a city or how she gets there —
+    part of the routine before it, never a routine of its own."""
+    rest = piece
+    addr = address_in(piece)
+    if addr:
+        rest = rest.replace(addr, " ")
+    for city in _CITIES:
+        rest = re.sub(re.escape(city), " ", rest, flags=re.IGNORECASE)
+    rest = _TRAVEL_WORDS.sub(" ", rest)
+    return not _significant(rest)
+
+
+def restate(line: str, item: str) -> Optional[str]:
+    """`line` without every piece that is `item`'s routine (and the place /
+    travel scraps glued after it); None when the line never mentioned it.
+    "" = the whole line was that routine."""
+    pieces = [e["text"] for e in parse(line)]
+    kept, hit = [], False
+    for piece in pieces:
+        if same_routine(piece, item):
+            hit = True
+            continue
+        kept.append(piece)
+    if not hit:
+        return None
+    return ", ".join(p for p in kept if not _is_fragment(p))

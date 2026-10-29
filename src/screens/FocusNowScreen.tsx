@@ -17,7 +17,8 @@
  * Follows the LeaveNowScreen pattern: fullScreenModal, 30 s tick, two or three
  * actions and no navigation chrome.
  *
- * Dependencies: TaskStorage, constants/theme, constants/categories.
+ * Dependencies: TaskStorage, constants/theme, constants/categories, FocusSessionPanel (learning
+ * mode: blocked apps while she works, 17.10).
  * Consumed by App (route "FocusNow"), opened from TodaySchedule + NextUpCard.
  */
 import React, { useEffect, useState } from 'react';
@@ -29,6 +30,8 @@ import { AppLanguage, Subtask, Task } from '../types';
 import {
   getSettings, markTaskComplete, updateTaskFields,
 } from '../services/TaskStorage';
+import FocusSessionPanel from '../components/FocusSessionPanel';
+import { WashedSky } from '../components/ui/SkyBackdrop';
 
 /** The "just start" timebox. Small enough that saying no feels silly. */
 const MICRO_MINUTES = 10;
@@ -105,6 +108,7 @@ export default function FocusNowScreen({ navigation, route }: Props) {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
+      <WashedSky />
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.topBar}>
           <TouchableOpacity
@@ -170,6 +174,10 @@ export default function FocusNowScreen({ navigation, route }: Props) {
           </View>
         )}
 
+        {/* Learning mode (17.10): block WhatsApp, Instagram… while she works on this. The panel
+            shows the running session, its time left, and "End early" after a visible 10 s. */}
+        <FocusSessionPanel lang={language} task={task} />
+
         {startedAt === null ? (
           <View style={styles.actions}>
             <TouchableOpacity style={styles.primary} onPress={() => begin(task.durationMinutes || null)} activeOpacity={0.85}>
@@ -217,7 +225,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 26, paddingVertical: 12, alignItems: 'center', ...SHADOWS.button,
   },
   timerOver: { backgroundColor: BRAND.honey },
-  timerLabel: { fontFamily: FONTS.bodyHeavy, fontSize: 11, letterSpacing: 1, color: '#7A5A18' },
+  timerLabel: { fontFamily: FONTS.bodyHeavy, fontSize: 11, letterSpacing: 1, color: BRAND.goldInk },
   timerValue: { fontFamily: FONTS.display, fontSize: 40, color: '#4A3512', lineHeight: 44 },
   timerUnit: { fontSize: 16 },
   overNote: {

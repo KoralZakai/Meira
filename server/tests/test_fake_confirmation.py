@@ -17,34 +17,22 @@ A confirmation for a save that did not happen is worse than an error: she
 stopped thinking about it, and nothing ever reminded her.
 """
 import json
-import re
+import os
+import sys
 import unittest
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# The guard's own logic, extracted verbatim in shape from lumi_agent so the
-# rules can be exercised without a model, a network or LangGraph.
-_CLAIM_RE = re.compile(
-    r"נשמר|נשמרה|נוצרה|נוצרו|תוזמנ|עודכן|עודכנה|עדכנתי|הוספתי|הוספת|נוסף|נוספה"
-    r"|reminder set|saved|scheduled|added|updated",
-    re.IGNORECASE)
+# The guard's own code, not a copy of it: this file used to mirror the regex and
+# `_succeeded` "in shape", so it could pass while lumi_agent did something else.
+from lumi_agent import _CLAIM_RE, tool_succeeded as succeeded  # noqa: E402
 
 
 class FakeToolMessage:
-    def __init__(self, name, content):
+    def __init__(self, name, content, status="success"):
         self.name = name
         self.content = content
-
-
-def succeeded(m) -> bool:
-    try:
-        d = json.loads(m.content) if isinstance(m.content, str) else m.content
-    except (json.JSONDecodeError, TypeError):
-        return True
-    if not isinstance(d, dict):
-        return True
-    if d.get("ok") is False:
-        return False
-    return not (d.get("error") and "ok" not in d)
+        self.status = status
 
 
 class ClaimPatternTests(unittest.TestCase):

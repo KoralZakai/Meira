@@ -52,7 +52,7 @@ def _digits(phone: str) -> str:
 def _same_number(a: str, b: str) -> bool:
     """Whether two phone strings are the same person.
 
-    The same number reaches us as 972500000009 from WhatsApp and 0500000009
+    The same number reaches us as 972542902729 from WhatsApp and 0542902729
     when typed locally, so exact digit equality silently hides a user's own
     bugs from them. Compare the last 9 digits, matching what
     supabase_tasks.user_id_for_phone already does for account lookup.

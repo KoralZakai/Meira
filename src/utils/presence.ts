@@ -195,3 +195,17 @@ export function describeDayPresence(v: DayPresenceVerdict, he: boolean): string 
       return he ? '📍 מיקום לא ידוע' : '📍 Location unknown';
   }
 }
+
+/**
+ * Can being here count as ARRIVING at this task? Only on the day it is on.
+ *
+ * 20.10, 21:02: she was at home, and tomorrow's "מפגש קמפ" at 21:00 (and two more
+ * tasks at her home address) were marked arrived — one of them done — because the
+ * check compared the CLOCK with the task's hour and never its DATE. A task on another
+ * day cannot be arrived at; being at its address tonight is not being at it tomorrow.
+ */
+export function canArriveToday(task: { date?: string }, now: Date): boolean {
+  if (!task.date) return true;               // undated: nothing to contradict
+  const key = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  return task.date === key;
+}

@@ -19,7 +19,7 @@
 // monorepo is scaffolded. The anon key is safe to ship in the client because
 // Row Level Security restricts every row to its owner (userId = auth.uid()).
 import 'react-native-url-polyfill/auto';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from './EncryptedStorage';  // AES-256-GCM at rest (7.10)
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;

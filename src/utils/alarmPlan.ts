@@ -51,7 +51,10 @@ export function plannedAlarmTime(task: Task, routineMinutes?: number): string | 
   if (typeof task.location === 'object' && task.location?.wakeUpBy) {
     return task.location.wakeUpBy;
   }
-  const start = task.fixedTime;
+  // Any hour on her timeline, not only a fixed one. 3.10: "I added a task for
+  // tomorrow at 8:40 — why no alarm?" She picked it from a free window, which
+  // saves `scheduledTime`; the card sat at 08:40 and the morning stayed silent.
+  const start = task.fixedTime || task.scheduledTime;
   if (!start) return undefined;
   if (Number.isFinite(routineMinutes as number) && (routineMinutes as number) > 0) {
     return subtractMinutes(start, routineMinutes as number);
@@ -102,7 +105,8 @@ export function alarmMomentOf(task: Task, now: number = Date.now(),
   if ([y, mo, d, h, m].some((n) => !Number.isFinite(n))) return null;
   // A wake time later on the clock than the task itself belongs to the night
   // before (a 00:40 flight woken at 22:55). Mirrors alertPlan's dayOffset rule.
-  const start = task.fixedTime ? task.fixedTime.split(':').map(Number) : null;
+  const own = task.fixedTime || task.scheduledTime;
+  const start = own ? own.split(':').map(Number) : null;
   const crossesMidnight = start ? h * 60 + m > start[0] * 60 + start[1] : false;
   const when = new Date(y, mo - 1, d - (crossesMidnight ? 1 : 0), h, m, 0, 0);
   return when.getTime() > now ? when : null;
@@ -278,4 +282,66 @@ export function getReadyTimeFor(
   if (wakeChipFor(task, inputs)) return undefined;
   const l = typeof task.location === 'object' ? task.location : undefined;
   return l?.wakeUpBy;
+}
+
+/**
+ * The morning alarms a write should arm: each day's wake owner (dayWakeOwner),
+ * today and tomorrow only (ACTION_SET_ALARM reaches 24 h), returned with
+ * alarmState 'planned'.
+ *
+ * A task with NO stored state is promoted — that is a task saved seconds ago,
+ * the one whose ⏰ chip was already on screen (wakeChipFor draws it unmuted)
+ * while nothing set the clock. 'not_needed' on an owner means she turned it
+ * off, and 'armed' is done; both are left alone.
+ */
+export function wakeAlarmsToArm(
+  tasks: Task[],
+  days: string[],
+  inputs: { usualWakeTime?: string; routineMinutes?: number } = {},
+): Task[] {
+  const out: Task[] = [];
+  for (const day of days) {
+    const owner = dayWakeOwner(tasks.filter((t) => t.date === day), inputs);
+    const task = owner && tasks.find((t) => t.id === owner.taskId);
+    if (!task) continue;
+    if (task.alarmState === 'planned' || task.alarmState === undefined || task.alarmState === null) {
+      out.push({ ...task, alarmState: 'planned' });
+    }
+  }
+  return out;
+}
+
+/**
+ * Why this alarm, in one line — said whenever Meira sets one on her own
+ * (silent-state rule 7: a background act must say so). 20.10, Koral: "must
+ * have reasoning of why it acts the way it acts".
+ */
+export function wakeAlarmWhy(task: Task, at: string, routineMinutes: number | undefined,
+                             lang: 'he' | 'en'): { title: string; body: string } {
+  const start = task.fixedTime || task.scheduledTime || '';
+  const what = task.text.slice(0, 40);
+  const fromRoute = !task.alarmAt && typeof task.location === 'object' && task.location?.wakeUpBy === at;
+  if (lang === 'he') {
+    const why = task.alarmAt ? 'כמו שביקשת'
+      : fromRoute ? 'לפי זמן הנסיעה'
+        : routineMinutes ? `${routineMinutes} דק׳ להתארגנות לפני` : 'לפני';
+    return { title: `⏰ כיוונתי שעון מעורר ל-${at}`, body: `${what} ב-${start} — הדבר הראשון בבוקר, ${why}.` };
+  }
+  const why = task.alarmAt ? 'as you asked'
+    : fromRoute ? 'from the travel time'
+      : routineMinutes ? `${routineMinutes} min to get ready before it` : 'before it';
+  return { title: `⏰ Alarm set for ${at}`, body: `${what} at ${start} — first thing in the morning, ${why}.` };
+}
+
+/** "YYYY-MM-DD|HH:MM" — one Clock alarm, whatever task owns it. */
+export function wakeAlarmKey(date: string, at: string): string {
+  return `${date}|${at}`;
+}
+
+/** The ones not yet in Clock: an alarm already set is never set or announced again. */
+export function alarmsNotYetSet(due: Task[], alreadySet: Set<string>, routineMinutes?: number): Task[] {
+  return due.filter((t) => {
+    const at = plannedAlarmTime(t, routineMinutes);
+    return Boolean(at) && !alreadySet.has(wakeAlarmKey(t.date, at!));
+  });
 }

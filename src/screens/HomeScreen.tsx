@@ -35,6 +35,7 @@ import { isExpoGo } from '../utils/isExpoGo';
 import { locationTextOf } from '../utils/dayPlanning';
 import { RootStackParamList } from '../types/navigation';
 import { Task } from '../types/models';
+import { getSettings } from '../services/TaskStorage';
 
 type DateTimePickerEvent = { type: 'set' | 'dismissed' | 'neutralButtonPressed' };
 type NativeDateTimePickerProps = {
@@ -264,7 +265,11 @@ export default function HomeScreen({ navigation }: Props) {
 
         // Presence FIRST: a task she is standing in has no journey left, and
         // stamping that is what stops the next leg being measured from home.
-        const { arrived } = await markArrivals(todayTasks).catch(() => ({ arrived: [] }));
+        const lang = await getSettings().then((x) => x.language).catch(() => undefined);
+        const { arrived } = await markArrivals(todayTasks, { language: lang }).catch((e) => {
+          console.warn('[Home] arrival sweep failed', e);
+          return { arrived: [] as Task[] };
+        });
         const reached = new Set(arrived.map((t) => t.id));
         const live = reached.size
           ? todayTasks.map((t) => (reached.has(t.id) ? { ...t, verifiedArrival: true } : t))
@@ -534,7 +539,8 @@ export default function HomeScreen({ navigation }: Props) {
             <Pressable style={styles.headerBtn} onPress={handleProfilePress}>
               <Text style={styles.headerBtnText}>👤</Text>
             </Pressable>
-            <Pressable style={styles.headerBtn} onPress={() => navigation.navigate('Settings')}>
+            {/* The Menu — the legacy Settings screen's controls now live behind its doors. */}
+            <Pressable style={styles.headerBtn} onPress={() => navigation.navigate('SettingsMenu')}>
               <Text style={styles.headerBtnText}>⚙️</Text>
             </Pressable>
           </View>

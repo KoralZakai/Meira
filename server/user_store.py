@@ -111,6 +111,16 @@ async def _supabase_user_id(phone: str) -> Optional[str]:
     return uid
 
 
+def _identity_changed() -> None:
+    """A number's id moved (created, or linked to an account): the brain-key map
+    in identity_keys must not answer from its cache for another minute."""
+    try:
+        import identity_keys
+        identity_keys.invalidate()
+    except Exception as exc:  # noqa: BLE001 — the map expires on its own in 60 s
+        logger.warning("identity map not invalidated: %s", exc)
+
+
 def _local_id(phone: str) -> str:
     """A stable id for a number with no linked account yet."""
     return str(uuid.uuid5(_ID_NAMESPACE, _normalize_phone(phone)))
@@ -158,6 +168,7 @@ class DatabaseService:
         user["updated_at"] = _now()
         data["users"][key] = user
         _save(data)
+        _identity_changed()
         logger.info("whatsapp %s now resolves to auth user %s", key[-4:], uid[:8])
         return user
 
@@ -265,6 +276,7 @@ class DatabaseService:
             }
         data["users"][key] = user
         _save(data)
+        _identity_changed()
         return user
 
     @staticmethod

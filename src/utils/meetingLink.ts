@@ -134,12 +134,45 @@ export function meetingProvider(url?: string | null): string | undefined {
 }
 
 /**
+ * "Microsoft Teams Meeting" is what Outlook writes into `location` for every
+ * Teams call. It is not a URL, so isMeetingLink passes it, and it would be
+ * geocoded, routed and given a wake alarm — the map-link bug in a new coat
+ * (CLAUDE.md rule 8). A location that only names a video service is not a place.
+ *
+ * Lives here, not in calendarEventTask (which re-exports it), because
+ * isRemoteTask below needs it and calendarEventTask already imports this file.
+ */
+const ONLINE_PLACE_RE =
+  // A preposition is part of how people write it: "בזום", "on Zoom", "via Teams".
+  /^\s*(?:(?:on|via|by|over)\s+|ב[-־]?|דרך\s+)?(microsoft\s+teams(\s+meeting)?|teams(\s+meeting)?|zoom(\s+meeting)?|google\s+meet|webex|skype(\s+meeting)?|online|virtual|remote|phone|video(\s+call)?|אונליין|זום|טימס|מקוון|טלפון|וידאו)\s*$/i;
+
+export function isOnlineOnlyPlace(location?: string | null): boolean {
+  if (!location) return false;
+  return ONLINE_PLACE_RE.test(location) || isMeetingLink(location);
+}
+
+/** A place she would have to travel to — not a link, not "Teams Meeting". */
+function hasPhysicalPlace(location: unknown): boolean {
+  const l: any = location;
+  const text = String((typeof l === 'string' ? l : (l?.address || l?.displayName)) ?? '').trim();
+  return Boolean(text) && !isOnlineOnlyPlace(text);
+}
+
+/**
  * Can this be done from anywhere? A task with a video link needs no travel,
  * which is what makes it the flexible half of a clash: the call can happen on
  * the way to the thing that does need a place.
+ *
+ * A 'call' or 'zoom' CATEGORY only counts when nothing says otherwise. The
+ * category is a guess; an address is a fact. On 30.9 "AI Performance
+ * Engineering meetup" was filed as a call with Sarona Market as its place, so
+ * the app treated an evening she had to cross town for as something she could
+ * do from anywhere — and a two-hour business plan laid over it was called
+ * "parallel" and never shown, while the server reported the same overlap.
  */
 export function isRemoteTask(task: { meetingUrl?: string; category?: string; location?: unknown }): boolean {
   if (task.meetingUrl) return true;
   if (typeof task.location === 'string' && isMeetingLink(task.location)) return true;
-  return task.category === 'zoom' || task.category === 'call';
+  if (task.category === 'zoom' || task.category === 'call') return !hasPhysicalPlace(task.location);
+  return false;
 }

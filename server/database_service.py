@@ -34,6 +34,8 @@ user_memory, user_profile, conversation and the backfill script.
 from __future__ import annotations
 
 import logging
+import uuid
+from datetime import datetime, timezone
 from typing import Any, Callable, Optional
 
 import httpx
@@ -110,29 +112,46 @@ async def _get(path: str, params: dict) -> Optional[list]:
             logger.warning("%s read failed (HTTP %s): %s", path, response.status_code,
                            response.text[:200])
             return None
-        return response.json()
+        import field_crypto   # personal columns are ciphertext in the table (7.10)
+        # The key is per person: a select that did not ask for userKey still
+        # filtered on it, and that is whose key opens these rows.
+        uk = str(params.get("userKey") or "")
+        uk = uk[3:] if uk.startswith("eq.") else ""
+        return [field_crypto.open_row(path, {"userKey": uk, **r} if uk and "userKey" not in r else r)
+                for r in response.json()]
     except Exception as exc:  # noqa: BLE001
         logger.warning("%s read failed: %s", path, exc)
         return None
 
 
-async def _upsert(path: str, rows: list, on_conflict: Optional[str] = None) -> bool:
-    if not enabled() or not rows:
-        return False
+async def _upsert_status(path: str, rows: list,
+                         on_conflict: Optional[str] = None) -> tuple[int, str]:
+    """The upsert, returning (HTTP status, body) so a caller can act on WHY it
+    failed. Status 0 = it never reached Supabase. Does not log."""
+    import field_crypto   # personal columns leave Fly as ciphertext (7.10)
+    rows = [field_crypto.seal_row(path, r) for r in rows]
     params = {"on_conflict": on_conflict} if on_conflict else {}
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
             response = await client.post(
                 _rest(path), headers=_headers("resolution=merge-duplicates,return=minimal"),
                 params=params, json=rows)
-        if response.status_code >= 300:
-            logger.warning("%s write failed (HTTP %s): %s", path, response.status_code,
-                           response.text[:200])
-            return False
-        return True
+        return response.status_code, response.text[:200]
     except Exception as exc:  # noqa: BLE001
-        logger.warning("%s write failed: %s", path, exc)
+        return 0, str(exc)[:200]
+
+
+async def _upsert(path: str, rows: list, on_conflict: Optional[str] = None) -> bool:
+    if not enabled() or not rows:
         return False
+    status, text = await _upsert_status(path, rows, on_conflict)
+    if status == 0:
+        logger.warning("%s write failed: %s", path, text)
+        return False
+    if status >= 300:
+        logger.warning("%s write failed (HTTP %s): %s", path, status, text)
+        return False
+    return True
 
 
 async def _delete(path: str, params: dict) -> bool:
@@ -196,6 +215,35 @@ async def add_memory(user_key: str, kind: str, content: str,
     return ok
 
 
+async def delete_memories(user_key: str, kind: str, prefix: str) -> bool:
+    """Forget the facts of this kind that start with `prefix` — an answer she
+    changed must not live on beside the new one (questions_store)."""
+    prefix = (prefix or "").strip()
+    if not enabled() or not prefix or kind not in MEMORY_KINDS:
+        return False
+    # Content is ciphertext (field_crypto), so the table cannot match a prefix:
+    # read her facts of this kind, open them here, delete the matches by id.
+    rows = await _get("lumi_memories", {"select": "id,content", "userKey": f"eq.{user_key}",
+                                        "kind": f"eq.{kind}", "limit": "1000"})
+    if rows is None:
+        return False
+    ids = [r["id"] for r in rows if str(r.get("content") or "").startswith(prefix)]
+    if not ids:
+        return True
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            response = await client.delete(
+                _rest("lumi_memories"), headers=_headers("return=minimal"),
+                params={"id": f"in.({','.join(ids)})"})
+        if response.status_code >= 300:
+            logger.warning("memory delete failed (HTTP %s): %s", response.status_code, response.text[:200])
+            return False
+        return True
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("memory delete failed: %s", exc)
+        return False
+
+
 async def get_memories(user_key: str, kind: Optional[str] = None,
                        limit: int = 200) -> Optional[list]:
     """Every remembered fact for this user. None means "ask the JSON mirror"."""
@@ -230,7 +278,9 @@ async def search_memories(user_key: str, embedding: list, limit: int = 8,
             logger.warning("memory search failed (HTTP %s): %s", response.status_code,
                            response.text[:200])
             return None
-        return response.json()
+        import field_crypto
+        return [field_crypto.open_row("lumi_memories", {**r, "userKey": str(user_key)})
+                for r in response.json()]
     except Exception as exc:  # noqa: BLE001
         logger.warning("memory search failed: %s", exc)
         return None
@@ -327,14 +377,85 @@ async def mark_reminder_sent(reminder_id: str) -> bool:
 
 # ─── places and travel ──────────────────────────────────────────────────────
 
+_PLACE_NS = uuid.UUID("5b0c7a8e-3f1d-4c52-9a6e-6b9d2f1e4a71")
+
+
+def place_id(user_key: str, name: str) -> str:
+    """The row id for one (person, place name) — the same every time.
+
+    lumi_known_places is unique on ("userKey", lower(name)), an EXPRESSION
+    index, and PostgREST's on_conflict can only name columns. With no id in the
+    row, merge-duplicates resolved on the primary key, found nothing, INSERTed,
+    and the unique index refused it: HTTP 409 / 23505 on every re-remember, so
+    the cloud kept her OLD work address (prod, 2026-10-09). A deterministic id
+    makes the primary key the conflict target and the second write an UPDATE.
+
+    Derived from the SEALED name, not the plaintext: a uuid5 of "<phone>@work"
+    could be brute-forced from a tiny vocabulary and would undo the seal.
+    """
+    import field_crypto
+    sealed = field_crypto.lookup_value("lumi_known_places", "name",
+                                       (name or "").lower(), str(user_key))
+    return str(uuid.uuid5(_PLACE_NS, f"{user_key}\x00{sealed}"))
+
+
 async def remember_place(user_key: str, name: str, address: Optional[str] = None,
                          lat: Optional[float] = None, lng: Optional[float] = None,
+                         uses: Optional[int] = None,
                          mirror: Optional[Callable[[], Any]] = None) -> bool:
-    row = {"userKey": str(user_key), "name": name, "address": address,
-           "lat": lat, "lng": lng}
-    ok = await _upsert("lumi_known_places", [row])
+    """Insert or UPDATE her place. A later address replaces the earlier one."""
+    if not enabled() or not name:
+        _run_mirror(mirror)
+        return False
+    row = {"id": place_id(user_key, name), "userKey": str(user_key), "name": name,
+           "address": address, "lat": lat, "lng": lng,
+           "lastUsed": datetime.now(timezone.utc).isoformat()}
+    if uses:
+        row["uses"] = int(uses)
+    status, text = await _upsert_status("lumi_known_places", [row], on_conflict="id")
+    ok = 0 < status < 300
+    if not ok and status == 409 and "23505" in text:
+        # A row written before ids were deterministic: same person and name,
+        # random id. Update it in place and move it onto the stable id, so the
+        # next write is a plain upsert.
+        ok = await _patch_place(user_key, name, row)
+    elif not ok:
+        logger.warning("lumi_known_places write failed (%s): %s",
+                       f"HTTP {status}" if status else "unreachable", text)
     _run_mirror(mirror)
     return ok
+
+
+async def _patch_place(user_key: str, name: str, row: dict) -> bool:
+    import field_crypto
+    sealed = field_crypto.seal_row("lumi_known_places", row)
+    params = {"userKey": f"eq.{user_key}",
+              "name": "eq." + field_crypto.lookup_value(
+                  "lumi_known_places", "name", (name or "").lower(), str(user_key))}
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            response = await client.patch(
+                _rest("lumi_known_places"), headers=_headers("return=representation"),
+                params=params, json=sealed)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("lumi_known_places update failed: %s", exc)
+        return False
+    if response.status_code >= 300:
+        logger.warning("lumi_known_places update failed (HTTP %s): %s",
+                       response.status_code, response.text[:200])
+        return False
+    try:
+        matched = len(response.json() or [])
+    except ValueError:
+        matched = 0
+    if not matched:
+        # The index said the row exists; the filter found none (a legacy name
+        # stored in another casing or unsealed). Never call that saved.
+        logger.warning("lumi_known_places: insert collided but no row matched "
+                       "(userKey=***%s) — the cloud copy was NOT updated",
+                       str(user_key)[-3:])
+        return False
+    return True
 
 
 async def get_places(user_key: str) -> Optional[list]:

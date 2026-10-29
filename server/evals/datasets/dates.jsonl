@@ -1,0 +1,64 @@
+{"id": "d01", "kind": "resolve", "input": "מחר", "expected": "2026-10-16", "lang": "he"}
+{"id": "d02", "kind": "resolve", "input": "tomorrow", "expected": "2026-10-16", "lang": "en"}
+{"id": "d03", "kind": "resolve", "input": "מחרתיים", "expected": "2026-10-17", "lang": "he"}
+{"id": "d04", "kind": "resolve", "input": "day after tomorrow", "expected": "2026-10-17", "lang": "en"}
+{"id": "d05", "kind": "resolve", "input": "היום", "expected": "2026-10-15", "lang": "he"}
+{"id": "d06", "kind": "resolve", "input": "today", "expected": "2026-10-15", "lang": "en"}
+{"id": "d07", "kind": "resolve", "input": "בעוד יומיים", "expected": "2026-10-17", "lang": "he"}
+{"id": "d08", "kind": "resolve", "input": "in 2 days", "expected": "2026-10-17", "lang": "en"}
+{"id": "d09", "kind": "resolve", "input": "in 3 days", "expected": "2026-10-18", "lang": "en"}
+{"id": "d10", "kind": "resolve", "input": "בעוד 5 ימים", "expected": "2026-10-20", "lang": "he"}
+{"id": "d11", "kind": "resolve", "input": "בעוד שבוע", "expected": "2026-10-22", "lang": "he"}
+{"id": "d12", "kind": "resolve", "input": "next week", "expected": "2026-10-22", "lang": "en"}
+{"id": "d13", "kind": "resolve", "input": "in a week", "expected": "2026-10-22", "lang": "en"}
+{"id": "d14", "kind": "resolve", "input": "ביום שני", "expected": "2026-10-19", "lang": "he"}
+{"id": "d15", "kind": "resolve", "input": "ביום שלישי", "expected": "2026-10-20", "lang": "he"}
+{"id": "d16", "kind": "resolve", "input": "ביום רביעי", "expected": "2026-10-21", "lang": "he"}
+{"id": "d17", "kind": "resolve", "input": "ביום חמישי", "expected": "2026-10-22", "lang": "he", "note": "today IS Thursday: a weekday name is never today"}
+{"id": "d18", "kind": "resolve", "input": "ביום שישי", "expected": "2026-10-16", "lang": "he"}
+{"id": "d19", "kind": "resolve", "input": "ביום שבת", "expected": "2026-10-17", "lang": "he"}
+{"id": "d20", "kind": "resolve", "input": "ביום ראשון", "expected": "2026-10-18", "lang": "he"}
+{"id": "d21", "kind": "resolve", "input": "on Monday", "expected": "2026-10-19", "lang": "en"}
+{"id": "d22", "kind": "resolve", "input": "Friday", "expected": "2026-10-16", "lang": "en"}
+{"id": "d23", "kind": "resolve", "input": "next Monday", "expected": "2026-10-19", "lang": "en"}
+{"id": "d24", "kind": "resolve", "input": "21.7", "expected": "2027-07-21", "lang": "he", "note": "past this year -> next occurrence"}
+{"id": "d25", "kind": "resolve", "input": "21/10", "expected": "2026-10-21", "lang": "he"}
+{"id": "d26", "kind": "resolve", "input": "8.10", "expected": "2027-10-08", "lang": "he", "note": "8 Oct has gone"}
+{"id": "d27", "kind": "resolve", "input": "15.10", "expected": "2026-10-15", "lang": "he", "note": "today itself"}
+{"id": "d28", "kind": "resolve", "input": "21.7.2026", "expected": "2026-07-21", "lang": "he", "note": "explicit year is honoured even in the past"}
+{"id": "d29", "kind": "resolve", "input": "21/10/26", "expected": "2026-10-21", "lang": "he"}
+{"id": "d30", "kind": "resolve", "input": "ב 8 באוקטובר", "expected": "2027-10-08", "lang": "he"}
+{"id": "d31", "kind": "resolve", "input": "25 בדצמבר", "expected": "2026-12-25", "lang": "he"}
+{"id": "d32", "kind": "resolve", "input": "October 25", "expected": "2026-10-25", "lang": "en"}
+{"id": "d33", "kind": "resolve", "input": "25th of December", "expected": "2026-12-25", "lang": "en"}
+{"id": "d34", "kind": "resolve", "input": "3 לנובמבר", "expected": "2026-11-03", "lang": "he"}
+{"id": "d35", "kind": "resolve", "input": "31.2", "expected": null, "lang": "he", "note": "no such date: None, never a guess"}
+{"id": "d36", "kind": "resolve", "input": "", "expected": null, "lang": "he"}
+{"id": "d37", "kind": "resolve", "input": "בקרוב", "expected": null, "lang": "he", "note": "no date to resolve"}
+{"id": "d38", "kind": "resolve", "input": "sometime", "expected": null, "lang": "en"}
+{"id": "d39", "kind": "resolve", "input": "ב-80 באוקטובר", "expected": "2027-10-08", "lang": "he", "note": "Whisper glued a 0 onto the 8"}
+{"id": "d40", "kind": "resolve", "input": "יש לי ראיון עבודה מחר ב-10 בבוקר בבנימינה", "expected": "2026-10-16", "lang": "he"}
+{"id": "d41", "kind": "resolve", "input": "פגישה ביום שני ב-14:00", "expected": "2026-10-19", "lang": "he"}
+{"id": "d42", "kind": "resolve", "input": "gym tomorrow at 6pm", "expected": "2026-10-16", "lang": "en"}
+{"id": "d43", "kind": "resolve", "input": "נתראה בעוד 3 ימים", "expected": "2026-10-18", "lang": "he"}
+{"id": "d44", "kind": "resolve", "input": "29.2", "expected": "2028-02-29", "lang": "he", "note": "edge: the next 29 Feb is a leap day two years out"}
+{"id": "o01", "kind": "override", "message": "ראיון מחר ב-10", "model_date": "2026-10-14", "expected": "2026-10-16", "lang": "he", "note": "the model invented a date in the past"}
+{"id": "o02", "kind": "override", "message": "ראיון מחר ב-10", "model_date": "2026-10-16", "expected": "2026-10-16", "lang": "he"}
+{"id": "o03", "kind": "override", "message": "יש מיטאפ ב 18:00 עד 20:00", "model_date": "2026-10-10", "expected": "2026-10-15", "lang": "he", "note": "13.10 bug: no date in the message and the model lifted a stale one -> today"}
+{"id": "o04", "kind": "override", "message": "פגישה ב-14", "model_date": "2026-10-18", "expected": "2026-10-18", "lang": "he", "note": "a future model date with no date in the message is left alone"}
+{"id": "o05", "kind": "override", "message": "פגישה ב-14", "model_date": "2026-10-15", "expected": "2026-10-15", "lang": "he"}
+{"id": "o06", "kind": "override", "message": "מחר ללכת לבנק וביום חמישי לרופא", "model_date": "2026-10-17", "expected": "2026-10-17", "lang": "he", "note": "two date expressions: the model's per-task dates stand"}
+{"id": "o07", "kind": "override", "message": "meeting in 2 days", "model_date": null, "expected": "2026-10-17", "lang": "en"}
+{"id": "o08", "kind": "override", "message": "פגישה 21.10 עם דני", "model_date": "2026-10-20", "expected": "2026-10-21", "lang": "he"}
+{"id": "o09", "kind": "override", "message": "call mom", "model_date": null, "expected": null, "lang": "en", "note": "no date anywhere: stays undated"}
+{"id": "o10", "kind": "override", "message": "dentist on Monday", "model_date": "2026-10-26", "expected": "2026-10-19", "lang": "en"}
+{"id": "n01", "kind": "night", "input": "מחר", "now": "00:51", "expected": "2026-10-15", "lang": "he", "note": "20.10 00:51: before 05:00 her day has not turned — tomorrow is the coming morning"}
+{"id": "n02", "kind": "night", "input": "tomorrow", "now": "01:30", "expected": "2026-10-15", "lang": "en"}
+{"id": "n03", "kind": "night", "input": "ביום חמישי", "now": "00:51", "expected": "2026-10-15", "lang": "he", "note": "the weekday that is coming in the morning, not next week"}
+{"id": "n04", "kind": "night", "input": "היום", "now": "00:51", "expected": "2026-10-15", "lang": "he", "note": "today stays the calendar day"}
+{"id": "n05", "kind": "night", "input": "21.10", "now": "00:51", "expected": "2026-10-21", "lang": "he", "note": "an explicit date is never shifted"}
+{"id": "n06", "kind": "night", "input": "מחרתיים", "now": "02:00", "expected": "2026-10-16", "lang": "he"}
+{"id": "n07", "kind": "night", "input": "מחר", "now": "09:00", "expected": "2026-10-16", "lang": "he", "note": "in the day the rule does not apply"}
+{"id": "n08", "kind": "night", "input": "ביום שישי", "now": "00:51", "expected": "2026-10-16", "lang": "he"}
+{"id": "n09", "kind": "night_task", "message": "להתקשר לדותן ב 9 וחצי בבוקר", "now": "00:51", "action": {"do": "add", "title": "שיחה עם דותן", "start": "09:30", "date_expression": "מחר"}, "expected": "2026-10-15", "lang": "he", "note": "Koral 20.10: saved for the day after; the model wrote מחר at night"}
+{"id": "n10", "kind": "night_task", "message": "call with Dotan at 9:30 in the morning", "now": "00:51", "action": {"do": "add", "title": "call with Dotan", "start": "09:30", "date_expression": "tomorrow"}, "expected": "2026-10-15", "lang": "en"}

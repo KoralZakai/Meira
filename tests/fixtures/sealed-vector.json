@@ -1,0 +1,6 @@
+{
+ "key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+ "aad": "tasks:t1",
+ "plain": "{\"text\": \"ראיון ב-Ceva 🚌\", \"location\": {\"lat\": 32.18}}",
+ "sealed": "enc1:AAECAwQFBgcICQoLPCCifr2R4CGtY0AjZnmv9FRDUKvQrM5RewKT5D2ZnyiNMoLcja19+xXQFoLmpRIYlXsM7C70mfoMpQQoIJ6I3BEDyLl+sWRpiUKcxWrorw=="
+}

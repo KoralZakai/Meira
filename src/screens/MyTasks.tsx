@@ -45,9 +45,12 @@ import TaskDetailBottomSheet, { formatDuration } from '../components/TaskDetailB
 import { formatShortDate, getTomorrowString, subtractMinutes } from '../utils/timeUtils';
 import { emitLumiMood } from '../services/LumiMood';
 import { searchTasks, TASK_TOPICS } from '../utils/searchTasks';
+import SkyBackdrop, { useSky } from '../components/ui/SkyBackdrop';
+import { useAppLanguage } from '../hooks/useAppLanguage';
 
 type Filter = 'All' | 'Today' | 'Upcoming' | 'Done';
 const FILTERS: Filter[] = ['Today', 'All', 'Upcoming', 'Done'];
+const FILTER_HE: Record<Filter, string> = { Today: 'היום', All: 'הכול', Upcoming: 'בהמשך', Done: 'בוצעו' };
 
 interface MyTasksProps { navigation: any }
 
@@ -170,6 +173,7 @@ function collapseRepeatedTasks(tasks: Task[]): Task[] {
 
 export default function MyTasks({ navigation }: MyTasksProps) {
   const insets = useSafeAreaInsets();
+  const sky = useSky();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Filter>('Today');
@@ -177,7 +181,10 @@ export default function MyTasks({ navigation }: MyTasksProps) {
   const [topicId, setTopicId] = useState<string | null>(null);
   // "Should this go under that project?" — offered, never applied silently.
   const [nesting, setNesting] = useState<{ child: Task; suggestion: ParentSuggestion } | null>(null);
-  const [language, setLanguage] = useState<AppLanguage>('en');
+  // Start in the app's language — the settings read below only confirms it
+  // (an English header flashed for a second on every visit).
+  const appLanguage = useAppLanguage().language;
+  const [language, setLanguage] = useState<AppLanguage>(appLanguage);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [building, setBuilding] = useState(false);
   // Multi-select + expired-cleanup
@@ -359,7 +366,10 @@ export default function MyTasks({ navigation }: MyTasksProps) {
           return slot && slot >= nowHHMM() ? { ...task, scheduledTime: slot } : task;
         });
       } else {
-        Alert.alert('Used quick schedule', 'Lumi was unreachable, so I built it on the phone.');
+        Alert.alert(
+          language === 'he' ? 'סידור מהיר' : 'Used quick schedule',
+          language === 'he' ? 'מאירה לא הייתה זמינה, אז סידרתי בטלפון.' : 'Meira was unreachable, so I built it on the phone.',
+        );
       }
       await persistSchedule(scheduled.filter((t) => t.scheduledTime));
       await load();
@@ -404,15 +414,20 @@ export default function MyTasks({ navigation }: MyTasksProps) {
 
   return (
     <View style={styles.root}>
+      <SkyBackdrop sky={sky} />
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 12 }]}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.header}>
+        <View style={[styles.header, language === 'he' && { flexDirection: 'row-reverse' }]}>
           <View>
-            <Text style={styles.greeting}>☑️ Task board</Text>
-            <Text style={styles.userName}>Your tasks</Text>
+            <Text style={[styles.userName, { color: sky.ink }, language === 'he' && styles.rtl]}>
+              {language === 'he' ? 'משימות' : 'Tasks'}
+            </Text>
+            <Text style={[styles.greeting, { color: sky.ink, opacity: 0.8 }, language === 'he' && styles.rtl]}>
+              {language === 'he' ? 'כל מה שפתוח, לפי נושא' : 'Everything open, by subject'}
+            </Text>
           </View>
           <TouchableOpacity style={styles.addBtn} onPress={() => navigation.navigate('AddTask')} activeOpacity={0.85}>
             <Text style={styles.addBtnText}>＋</Text>
@@ -426,7 +441,7 @@ export default function MyTasks({ navigation }: MyTasksProps) {
             style={styles.searchInput}
             value={query}
             onChangeText={setQuery}
-            placeholder="Search tasks, places, people…"
+            placeholder={language === 'he' ? 'חיפוש משימה, מקום, אדם…' : 'Search tasks, places, people…'}
             placeholderTextColor={BRAND.inkSoft}
             returnKeyType="search"
           />
@@ -445,7 +460,7 @@ export default function MyTasks({ navigation }: MyTasksProps) {
               onPress={() => setTopicId((v) => (v === tp.id ? null : tp.id))}
             >
               <Text style={[styles.chipText, topicId === tp.id && styles.chipTextActive]}>
-                {tp.icon} {tp.labelEn}
+                {tp.icon} {language === 'he' ? tp.labelHe : tp.labelEn}
               </Text>
             </TouchableOpacity>
           ))}
@@ -454,12 +469,12 @@ export default function MyTasks({ navigation }: MyTasksProps) {
         {(query.length > 0 || topicId) && (
           <View style={styles.searchSummary}>
             <Text style={styles.searchSummaryText}>
-              {filtered.length} result{filtered.length === 1 ? '' : 's'}
-              {topicId ? ` · ${TASK_TOPICS.find((x) => x.id === topicId)?.labelEn}` : ''}
+              {language === 'he' ? `${filtered.length} תוצאות` : `${filtered.length} result${filtered.length === 1 ? '' : 's'}`}
+              {topicId ? ` · ${(language === 'he' ? TASK_TOPICS.find((x) => x.id === topicId)?.labelHe : TASK_TOPICS.find((x) => x.id === topicId)?.labelEn) ?? ''}` : ''}
               {query ? ` · "${query}"` : ''}
             </Text>
             <TouchableOpacity onPress={() => { setQuery(''); setTopicId(null); }}>
-              <Text style={styles.searchSummaryClear}>Clear all</Text>
+              <Text style={styles.searchSummaryClear}>{language === 'he' ? 'לנקות' : 'Clear all'}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -467,7 +482,7 @@ export default function MyTasks({ navigation }: MyTasksProps) {
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersBar} contentContainerStyle={styles.filtersContent}>
           {FILTERS.map((item) => (
             <TouchableOpacity key={item} style={[styles.chip, filter === item && styles.chipActive]} onPress={() => setFilter(item)}>
-              <Text style={[styles.chipText, filter === item && styles.chipTextActive]}>{item}</Text>
+              <Text style={[styles.chipText, filter === item && styles.chipTextActive]}>{language === 'he' ? FILTER_HE[item] : item}</Text>
             </TouchableOpacity>
           ))}
         </ScrollView>
@@ -475,7 +490,7 @@ export default function MyTasks({ navigation }: MyTasksProps) {
         {(filter === 'Today' || filter === 'All') && todayPending.length > 0 && (
           <View style={styles.actionBar}>
             <TouchableOpacity style={styles.buildBtn} onPress={buildSchedule} disabled={building} activeOpacity={0.85}>
-              {building ? <ActivityIndicator color={BRAND.white} /> : <Text style={styles.buildBtnText}>Build schedule for today</Text>}
+              {building ? <ActivityIndicator color={BRAND.white} /> : <Text style={styles.buildBtnText}>{language === 'he' ? 'לסדר לי את היום' : 'Build schedule for today'}</Text>}
             </TouchableOpacity>
             <TouchableOpacity style={styles.aiBtn} onPress={refineOnServer} disabled={building} activeOpacity={0.85}>
               <Text style={styles.aiBtnText}>✨ AI</Text>
@@ -526,7 +541,7 @@ export default function MyTasks({ navigation }: MyTasksProps) {
         ) : subjectGroups.length === 0 ? (
           <View style={styles.empty}>
             <Text style={styles.emptyIcon}>☑️</Text>
-            <Text style={styles.emptyText}>All clear here. Nice work.</Text>
+            <Text style={styles.emptyText}>{language === 'he' ? 'הכול נקי כאן. כל הכבוד.' : 'All clear here. Nice work.'}</Text>
           </View>
         ) : (
           <View style={styles.groupsWrap}>
@@ -544,7 +559,7 @@ export default function MyTasks({ navigation }: MyTasksProps) {
                   <View style={[styles.noteTape, { backgroundColor: note.tape, transform: [{ rotate: note.tapeRotate }] }]} />
                   <View style={styles.noteHeader}>
                     <Text style={styles.noteIcon}>{group.meta.icon}</Text>
-                    <Text style={styles.noteName}>{group.title ?? group.meta.labelEn}</Text>
+                    <Text style={styles.noteName}>{group.title ?? (language === 'he' ? group.meta.labelHe : group.meta.labelEn)}</Text>
                     <Text style={styles.noteCount}>{doneCount > 0 ? `${doneCount}/${group.tasks.length}` : `${group.tasks.length}`}</Text>
                   </View>
                   <View style={styles.noteBody}>
@@ -651,9 +666,10 @@ function TaskRow({ task, onPress, onToggle, onLongPress, selectMode = false, sel
   selectMode?: boolean; selected?: boolean;
 }) {
   const isDone = task.status === 'complete';
+  const { he } = useAppLanguage();
   const hour = task.scheduledTime || task.fixedTime || '';
-  // Date + hour on every row ("Tomorrow · 10:00").
-  const time = [formatShortDate(task.date), hour].filter(Boolean).join(' · ');
+  // Date + hour on every row ("Tomorrow · 10:00" / "מחר · 10:00").
+  const time = [formatShortDate(task.date, he ? 'he' : 'en'), hour].filter(Boolean).join(' · ');
   const scale = useRef(new Animated.Value(1)).current;
   const pop = useRef(new Animated.Value(0)).current;
   const [bursting, setBursting] = useState(false);
@@ -707,7 +723,11 @@ function TaskRow({ task, onPress, onToggle, onLongPress, selectMode = false, sel
         <Text style={[rowStyles.title, isDone && rowStyles.titleDone]} numberOfLines={2}>
           {task.text}
         </Text>
-        {task.durationMinutes > 0 && <Text style={rowStyles.sub}>{formatDuration(task.durationMinutes)}</Text>}
+        {task.durationMinutes > 0 && (
+          <Text style={[rowStyles.sub, he && { textAlign: 'right' }]}>
+            {he ? `~${task.durationMinutes} דק׳` : formatDuration(task.durationMinutes)}
+          </Text>
+        )}
       </View>
 
       {time ? (
@@ -746,6 +766,7 @@ const styles = StyleSheet.create({
   selectDeleteOff: { opacity: 0.4 },
   selectDeleteText: { fontSize: 15, fontFamily: FONTS.bodyBold, color: BRAND.white },
 
+  rtl: { textAlign: 'right', writingDirection: 'rtl' },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -805,9 +826,9 @@ const styles = StyleSheet.create({
   searchClear: { fontSize: 15, color: BRAND.inkSoft, paddingHorizontal: 2 },
   searchSummary: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    marginBottom: 8, paddingHorizontal: 2,
+    marginBottom: 8, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.8)',
   },
-  searchSummaryText: { fontSize: 12.5, fontFamily: FONTS.bodySemi, color: BRAND.inkSoft },
+  searchSummaryText: { fontSize: 12.5, fontFamily: FONTS.bodySemi, color: BRAND.warmInk },
   searchSummaryClear: { fontSize: 12.5, fontFamily: FONTS.bodyBold, color: BRAND.sunGold },
   filtersContent: { gap: 8 },
   chip: {
@@ -877,7 +898,7 @@ const styles = StyleSheet.create({
   },
   noteBody: { gap: 8, marginTop: 11 },
 
-  empty: { alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 28 },
+  empty: { alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 28, borderRadius: 24, backgroundColor: 'rgba(255,255,255,0.82)' },
   emptyIcon: { fontSize: 40 },
   emptyText: { fontSize: 14, fontFamily: FONTS.bodySemi, color: BRAND.inkSoft },
 });

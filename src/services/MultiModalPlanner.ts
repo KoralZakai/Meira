@@ -36,7 +36,7 @@
  * Consumed by screens/TripsScreen. Tested by tests/run-multimodal.ts.
  */
 import { TransitLeg, TransitPlan, TransportType, UserProfile } from '../types/index';
-import { getTransitAlternatives, getPlanForMode } from './RoutePlanner';
+import { getTransitAlternatives, getPlanForMode, placeTextSearch } from './RoutePlanner';
 import { hhmmMinus, hhmmPlus } from '../utils/transitParse';
 import { timeToMinutes } from '../utils/timeUtils';
 
@@ -85,25 +85,16 @@ const LEG_TYPE: Record<LastLegMode, TransitLeg['type']> = {
 export async function findInterchanges(
   destination: string,
   named?: string,
-  apiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '',
 ): Promise<Interchange[]> {
-  if (!apiKey) return [];
   const query = named
     ? `${named} train station`
     : `train station near ${destination}`;
   try {
-    const url = 'https://maps.googleapis.com/maps/api/place/textsearch/json'
-      + `?query=${encodeURIComponent(query)}&type=train_station`
-      + `&radius=${STATION_SEARCH_RADIUS_M}&region=il&language=he&key=${apiKey}`;
-    const res = await fetch(url);
-    const data = await res.json();
-    return (data.results || []).slice(0, named ? 1 : 3).map((r: any) => ({
-      name: r.name,
-      address: r.formatted_address || r.name,
-      lat: r.geometry?.location?.lat,
-      lng: r.geometry?.location?.lng,
-    })).filter((s: Interchange) => s.name && s.address);
-  } catch {
+    // Through the server (RoutePlanner.placeTextSearch): the APK key cannot ask.
+    const hits = await placeTextSearch(query, { type: 'train_station', radius: STATION_SEARCH_RADIUS_M });
+    return hits.slice(0, named ? 1 : 3).filter((s: Interchange) => s.name && s.address);
+  } catch (e) {
+    console.warn('[MultiModal] station search failed:', String((e as Error)?.message ?? e));
     return [];
   }
 }

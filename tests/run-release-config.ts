@@ -56,13 +56,24 @@ function main() {
   const bare = (p: string) => p.replace('android.permission.', '');
 
   // The most scrutinised permission on Play — a declaration form and a demo
-  // video — and the feature behind it does not exist: the background task is
-  // never registered with TaskManager and the function that would start it has
-  // no callers.
-  check('background location is NOT requested',
-    !perms.some((p) => bare(p) === 'ACCESS_BACKGROUND_LOCATION'));
-  check('...and is explicitly blocked, so a library cannot re-add it',
-    blocked.some((p) => bare(p) === 'ACCESS_BACKGROUND_LOCATION'));
+  // video. Koral chose it on 28.10 (option B: geofences for nearby errands), so
+  // it is allowed ONLY while the feature that needs it exists: a geofence task
+  // defined at module scope and registered from the sync paths.
+  const geo = fs.existsSync(path.join(root, 'src/services/GeofenceService.ts'))
+    ? fs.readFileSync(path.join(root, 'src/services/GeofenceService.ts'), 'utf8') : '';
+  const sync = fs.readFileSync(path.join(root, 'src/services/CalendarAutoSync.ts'), 'utf8');
+  const wantsBg = perms.some((p) => bare(p) === 'ACCESS_BACKGROUND_LOCATION');
+  check('background location only with a real geofence feature behind it',
+    !wantsBg || (/TaskManager\.defineTask\(GEOFENCE_TASK/.test(geo) && /syncGeofences\(\)/.test(sync)));
+  check('...and is not blocked while requested (a blocked permission is stripped — a silent no-op)',
+    !wantsBg || !blocked.some((p) => bare(p) === 'ACCESS_BACKGROUND_LOCATION'));
+  // Geofences need no foreground service; the plugin adds FOREGROUND_SERVICE_LOCATION unless told not to,
+  // and that is a second Play declaration for a feature that does not exist.
+  const locPlugin: any = (app.plugins ?? []).find((p: any) => Array.isArray(p) && p[0] === 'expo-location');
+  check('no location foreground service (geofencing does not need one)',
+    !wantsBg || locPlugin?.[1]?.isAndroidForegroundServiceEnabled === false);
+  check('...and never requested from the background: only a tap asks',
+    !/requestBackgroundPermissionsAsync/.test(sync) && (geo.match(/requestBackgroundPermissionsAsync/g) || []).length <= 1);
 
   // Contacts are read (ContactService), never written.
   check('WRITE_CONTACTS is not requested',
@@ -71,10 +82,29 @@ function main() {
 
   // Pulled in by libraries, used by nothing here. Each one is a question on a
   // Play review that has no good answer.
-  for (const p of ['SYSTEM_ALERT_WINDOW', 'USE_BIOMETRIC', 'USE_FINGERPRINT',
+  for (const p of ['USE_BIOMETRIC', 'USE_FINGERPRINT',
     'READ_EXTERNAL_STORAGE', 'WRITE_EXTERNAL_STORAGE']) {
     check(`${p} is blocked`, blocked.some((b) => bare(b) === p));
   }
+
+  // SYSTEM_ALERT_WINDOW was blocked here until 17.10. The learning-session blocker (modules/focus-guard)
+  // puts its "you're learning" screen over a blocked app from the background, and Android allows that
+  // only with "Display over other apps". A blocked permission is removed from the merged manifest, so
+  // it would have made the whole feature a silent no-op: the permission is declared by the module,
+  // and must NOT be blocked here.
+  check('SYSTEM_ALERT_WINDOW is not blocked (the learning-session blocker needs it)',
+    !blocked.some((b) => bare(b) === 'SYSTEM_ALERT_WINDOW'));
+  check('...and the focus-guard module declares it',
+    read('modules/focus-guard/android/src/main/AndroidManifest.xml').includes('android.permission.SYSTEM_ALERT_WINDOW'));
+
+  // USE_EXACT_ALARM is granted only to apps whose core function is an alarm clock or a calendar,
+  // and Play reviews it as such — a near-certain rejection for Meira. Nothing here needs it: the
+  // wake alarm is set in the CLOCK app (ACTION_SET_ALARM, which rings exactly on its own), and
+  // FocusScheduler / expo-notifications fall back to an inexact alarm when exact ones are not
+  // allowed. SCHEDULE_EXACT_ALARM (user-grantable) stays. Blocked so a library cannot re-add it.
+  check('USE_EXACT_ALARM is NOT requested (Play: alarm-clock apps only)',
+    !perms.some((p) => bare(p) === 'USE_EXACT_ALARM'));
+  check('...and is blocked', blocked.some((b) => bare(b) === 'USE_EXACT_ALARM'));
 
   // The ones the app genuinely needs must survive this tidying.
   for (const p of ['RECORD_AUDIO', 'ACCESS_FINE_LOCATION', 'READ_CONTACTS',

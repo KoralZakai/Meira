@@ -25,6 +25,9 @@ The exclusions are deliberate:
                         to reach Meira over MCP. Losing them costs one reconnect;
                         a database copy of credential material is one more place
                         for it to leak. Deleted with the account.
+  chat_feedback.json    👍/👎 on chat replies, for the owner to turn into golden
+                        cases. Encrypted, capped (500 rows / 90 days), deleted
+                        with the account; a review queue, not a record.
   feedback.json         👍/👎 ranking signals. The durable half of every verdict
                         is the sentence written to user_memory (which IS
                         shadowed); losing this file costs the ranking boost only.
@@ -54,12 +57,17 @@ SHADOWED = {
 }
 
 EXCLUDED = {
+    "user_quota": "llm_usage_people.json",     # spend counters; losing them only resets allowances
     "supabase_tasks": "pending_mirror.json",   # the retry queue for a down DB
     "session": "active_session.json",          # 45-minute focus, rewritten per turn
     "meeting_brief": "meeting_briefs.json",    # rebuildable cache of public pages
     "task_prep": "task_prep.json",             # same: cited prep from public pages
     "mcp_server": "mcp_tokens.json",           # credential hashes: see the docstring
     "feedback_store": "feedback.json",         # ranking signals; the words are in user_memory
+    "chat_feedback": "chat_feedback.json",     # 👍/👎 review queue; capped, see the docstring
+    "questions_store": "questions.json",       # her answers; the words are in user_memory
+    "user_rules": "user_rules.json",           # rules she confirmed; small, read every turn
+    "phone_links": "phone_links.json",         # identity proofs; must never leave the server
 }
 
 
@@ -87,7 +95,9 @@ def test_no_json_store_is_unaccounted_for():
     """
     known = set(SHADOWED.values()) | set(EXCLUDED.values())
     # Files that are inputs or artefacts rather than stores of user state.
-    known |= {"cv_master.sample.json", "personality_parity_fixture.json", "dana.json"}
+    known |= {"cv_master.sample.json", "personality_parity_fixture.json", "dana.json",
+              # judge_service: ONE shared, scrubbed text rebuilt every 10 judgements
+              "lumi_guidelines.json"}
 
     found = {}
     for name in sorted(os.listdir(SERVER)):

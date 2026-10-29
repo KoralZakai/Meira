@@ -1,0 +1,54 @@
+{"id": "c01", "text": "ראיון עבודה במר גרופ", "category": "interview", "priority": "must"}
+{"id": "c02", "text": "ראיון טכני ב-Checkpoint", "category": "interview", "priority": "must"}
+{"id": "c03", "text": "תור לרופא שיניים", "category": "doctor", "priority": "must"}
+{"id": "c04", "text": "בדיקת דם במרפאה", "category": "doctor"}
+{"id": "c05", "text": "אימון בחדר כושר", "category": "gym"}
+{"id": "c06", "text": "אימון קיקבוקס", "category": "gym"}
+{"id": "c07", "text": "יוגה בערב", "category": "gym"}
+{"id": "c08", "text": "ריצה בפארק", "category": "gym"}
+{"id": "c09", "text": "פגישה עם דני", "category": "meeting"}
+{"id": "c10", "text": "פגישת צוות", "category": "meeting"}
+{"id": "c11", "text": "שיחה עם אמא", "category": "call"}
+{"id": "c12", "text": "להתקשר לרואה חשבון", "category": "call"}
+{"id": "c13", "text": "זום עם הלקוח", "category": "zoom"}
+{"id": "c14", "text": "מיטס עם הצוות", "category": "zoom"}
+{"id": "c15", "text": "כנס AI בתל אביב", "category": "conference"}
+{"id": "c16", "text": "קורס פייתון", "category": "course"}
+{"id": "c17", "text": "ללמוד למבחן באלגברה", "category": "course"}
+{"id": "c18", "text": "שיעור פרטי במתמטיקה", "category": "class"}
+{"id": "c19", "text": "חוג ציור", "category": "hobby_class"}
+{"id": "c20", "text": "עבודה על הפרויקט", "category": "work"}
+{"id": "c21", "text": "לשלוח קורות חיים ל-Checkpoint", "category": "work"}
+{"id": "c22", "text": "ביקור באתר הלקוח", "category": "work"}
+{"id": "c23", "text": "מילואים", "category": "work"}
+{"id": "c24", "text": "סרט בקולנוע", "category": "leisure"}
+{"id": "c25", "text": "מסיבה אצל נועה", "category": "leisure"}
+{"id": "c26", "text": "לקנות חלב", "category": "general"}
+{"id": "c27", "text": "לשלם חשבון חשמל", "category": "general"}
+{"id": "c28", "text": "לסדר את הארון", "category": "general"}
+{"id": "c29", "text": "דחוף לשלוח מייל לבוס", "category": "general", "priority": "must"}
+{"id": "c30", "text": "אולי לצאת לסרט", "category": "leisure", "priority": "nice_to_do"}
+{"id": "c31", "text": "work out at the gym", "category": "gym"}
+{"id": "c32", "text": "gym at 18:00", "category": "gym"}
+{"id": "c33", "text": "job interview tomorrow", "category": "interview", "priority": "must"}
+{"id": "c34", "text": "meeting with Dana", "category": "meeting"}
+{"id": "c35", "text": "call mom", "category": "call"}
+{"id": "c36", "text": "dentist appointment", "category": "doctor", "priority": "must"}
+{"id": "c37", "text": "zoom call with the team", "category": "zoom"}
+{"id": "c38", "text": "yoga class", "category": "gym"}
+{"id": "c39", "text": "study for the exam", "category": "course"}
+{"id": "c40", "text": "watch a movie", "category": "leisure"}
+{"id": "c41", "text": "buy groceries", "category": "general"}
+{"id": "c42", "text": "pay the rent", "category": "general"}
+{"id": "c43", "text": "prepare for the interview", "category": "course"}
+{"id": "c44", "text": "team standup", "category": "meeting"}
+{"id": "c45", "text": "review the project plan", "category": "work"}
+{"id": "c46", "text": "relax at the beach", "category": "leisure"}
+{"id": "c47", "text": "ללמוד לראיון עבודה", "category": "course"}
+{"id": "c48", "text": "submit the assignment", "category": "course"}
+{"id": "c49", "text": "ארוחת ערב עם חברים", "category": "leisure"}
+{"id": "c50", "text": "brunch with Dana on Friday", "category": "leisure"}
+{"id": "c51", "text": "לצאת לים עם הילדים", "category": "leisure"}
+{"id": "c52", "text": "לראות סדרה", "category": "leisure"}
+{"id": "c53", "text": "walk the dog", "category": "general"}
+{"id": "c54", "text": "ASAP call the bank", "category": "call", "priority": "must"}

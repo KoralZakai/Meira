@@ -14,6 +14,11 @@
  *      was answered with silence — correct for a route-derived time, wrong for
  *      one she typed herself.
  *
+ * Since then the route-derived half changed too: DEFAULT_WAKE_ALARM_POLICY is
+ * 'every-morning', so a morning wake time rings whether or not it beats her
+ * usual hour. `alarmAt` still short-circuits ahead of it, which is what (2)
+ * above is about, and that distinction is still the point of this file.
+ *
  * Run: npx tsx tests/run-wake-request.ts
  */
 import assert from 'node:assert';
@@ -81,11 +86,30 @@ check('…and even when she is normally up before it (the silent morning)', () =
   assert.equal(decideAlarmState(t, '06:45'), 'planned',
     'an hour she asked for is not weighed against her usual wake time');
 });
-check('a route-derived wake time still defers to her usual hour', () => {
+// This check used to assert the opposite — that a 09:04 route wake with a
+// 07:00 usual hour was 'not_needed', because she would be up anyway. That was
+// the 'earlier-than-usual' policy, and it was deliberately retired: under
+// DEFAULT_WAKE_ALARM_POLICY = 'every-morning' a morning commitment rings every
+// morning, per her rule (alertPlan.needsWakeAlarm short-circuits before the
+// usual-hour comparison). The old expectation outlived the change by a week
+// because test:all never ran this file — see the note on the orphaned suites
+// in package.json.
+check('a morning route wake rings even when she is normally up earlier', () => {
   const t = task({
     location: { address: 'x', lat: 1, lng: 1, confirmed: true, wakeUpBy: '09:04' } as any,
   });
-  assert.equal(decideAlarmState(t, '07:00'), 'not_needed', 'she is already up at 09:04');
+  assert.equal(decideAlarmState(t, '07:00'), 'planned',
+    'every-morning: a 09:04 start is still a morning she is woken for');
+});
+// The "she is already up" path did NOT disappear with the policy — it moved to
+// the clock. Past LATEST_WAKE_HOUR nobody is being woken up, whatever her
+// usual hour is, and that is the half worth guarding.
+check('an afternoon wake time is still nobody being woken', () => {
+  const t = task({
+    fixedTime: '19:00',
+    location: { address: 'x', lat: 1, lng: 1, confirmed: true, wakeUpBy: '16:40' } as any,
+  });
+  assert.equal(decideAlarmState(t, '07:00'), 'not_needed', 'a 16:40 gym is not a wake-up');
 });
 check('no wake time at all needs no alarm', () => {
   assert.equal(decideAlarmState(task({ fixedTime: undefined })), 'not_needed');

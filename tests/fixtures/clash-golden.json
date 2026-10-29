@@ -5,6 +5,7 @@
       {
         "a": "zoom",
         "b": "after",
+        "kind": "parallel",
         "overlapMinutes": 30,
         "travelShortfall": null,
         "questionEn": "\"פגישת זום\" & \"אפטר אופיס\" overlap by 30 min.",
@@ -36,6 +37,7 @@
       {
         "a": "after",
         "b": "yoga",
+        "kind": "overlap",
         "overlapMinutes": 60,
         "travelShortfall": null,
         "questionEn": "\"אפטר אופיס\" & \"יוגה\" overlap by 60 min.",
@@ -65,6 +67,7 @@
       {
         "a": "conf",
         "b": "pilates",
+        "kind": "spatial",
         "overlapMinutes": 60,
         "travelShortfall": 270,
         "questionEn": "\"conference\" & \"pilates\" overlap by 60 min.",
@@ -94,10 +97,11 @@
       {
         "a": "gym",
         "b": "beach",
+        "kind": "travel",
         "overlapMinutes": 0,
         "travelShortfall": 25,
-        "questionEn": "\"gym\" ends when \"beach\" starts, but they are 25 min apart. Which gives?",
-        "questionHe": "\"gym\" נגמרת כש\"beach\" מתחילה, אבל יש ביניהן 25 דק' נסיעה. מה מוותר?",
+        "questionEn": "\"gym\" ends at 20:00 and \"beach\" starts at 20:00 — 25 min apart. Which gives?",
+        "questionHe": "\"gym\" נגמרת ב-20:00 ו\"beach\" מתחילה ב-20:00, 25 דק' נסיעה משם. מה מוותר?",
         "options": [
           {
             "kind": "move",
@@ -130,6 +134,7 @@
       {
         "a": "interview",
         "b": "doctor",
+        "kind": "spatial",
         "overlapMinutes": 60,
         "travelShortfall": 75,
         "questionEn": "\"job interview\" & \"dentist\" overlap by 60 min and neither can move. Which matters more today?",
@@ -160,5 +165,212 @@
   {
     "name": "a long evening plan with nowhere left to go",
     "clashes": []
+  },
+  {
+    "name": "meira-sim edge user 1 2026-10-05 — cross-country, infeasible by bus",
+    "clashes": [
+      {
+        "a": "gcal-edge-1",
+        "b": "gcal-edge-2",
+        "kind": "travel",
+        "overlapMinutes": 0,
+        "travelShortfall": 121,
+        "questionEn": "\"Interview — Google (onsite)\" ends at 11:00 and \"Interview — Intel Haifa (onsite)\" starts at 11:30 — 151 min apart. Which gives?",
+        "questionHe": "\"Interview — Google (onsite)\" נגמרת ב-11:00 ו\"Interview — Intel Haifa (onsite)\" מתחילה ב-11:30, 151 דק' נסיעה משם. מה מוותר?",
+        "options": [
+          {
+            "kind": "choose",
+            "taskId": "gcal-edge-1",
+            "newTime": null,
+            "labelEn": "Keep \"Interview — Google (onsite)\" · let go of \"Interview — Intel Haifa (onsite)\"",
+            "labelHe": "להשאיר את \"Interview — Google (onsite)\" · לוותר על \"Interview — Intel Haifa (onsite)\""
+          },
+          {
+            "kind": "choose",
+            "taskId": "gcal-edge-2",
+            "newTime": null,
+            "labelEn": "Keep \"Interview — Intel Haifa (onsite)\" · let go of \"Interview — Google (onsite)\"",
+            "labelHe": "להשאיר את \"Interview — Intel Haifa (onsite)\" · לוותר על \"Interview — Google (onsite)\""
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "meira-sim edge user 1 2026-10-06 — mode-dependent",
+    "clashes": [
+      {
+        "a": "gcal-edge-3",
+        "b": "gcal-edge-4",
+        "kind": "travel",
+        "overlapMinutes": 0,
+        "travelShortfall": 2,
+        "questionEn": "\"Interview — Wix\" ends at 13:00 and \"Interview — monday.com\" starts at 13:50 — 52 min apart. Which gives?",
+        "questionHe": "\"Interview — Wix\" נגמרת ב-13:00 ו\"Interview — monday.com\" מתחילה ב-13:50, 52 דק' נסיעה משם. מה מוותר?",
+        "options": [
+          {
+            "kind": "choose",
+            "taskId": "gcal-edge-3",
+            "newTime": null,
+            "labelEn": "Keep \"Interview — Wix\" · let go of \"Interview — monday.com\"",
+            "labelHe": "להשאיר את \"Interview — Wix\" · לוותר על \"Interview — monday.com\""
+          },
+          {
+            "kind": "choose",
+            "taskId": "gcal-edge-4",
+            "newTime": null,
+            "labelEn": "Keep \"Interview — monday.com\" · let go of \"Interview — Wix\"",
+            "labelHe": "להשאיר את \"Interview — monday.com\" · לוותר על \"Interview — Wix\""
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "meira-sim edge user 1 2026-10-07 — tight by margin",
+    "clashes": []
+  },
+  {
+    "name": "meira-sim edge user 1 2026-10-08 — online meeting between two physical ones",
+    "clashes": []
+  },
+  {
+    "name": "meira-sim edge user 1 2026-10-11 — wake conflict",
+    "clashes": []
+  },
+  {
+    "name": "meira-sim edge user 1 2026-10-12 — overlap",
+    "clashes": [
+      {
+        "a": "gcal-edge-11",
+        "b": "gcal-edge-12",
+        "kind": "spatial",
+        "overlapMinutes": 30,
+        "travelShortfall": 47,
+        "questionEn": "\"Doctor — Ichilov\" & \"Gym — Holmes Place\" overlap by 30 min and neither can move. Which matters more today?",
+        "questionHe": "\"Doctor — Ichilov\" & \"Gym — Holmes Place\" חופפות ב-30 דק' ואי אפשר להזיז אף אחת. מה יותר חשוב לך היום?",
+        "options": [
+          {
+            "kind": "choose",
+            "taskId": "gcal-edge-11",
+            "newTime": null,
+            "labelEn": "Keep \"Doctor — Ichilov\" · let go of \"Gym — Holmes Place\"",
+            "labelHe": "להשאיר את \"Doctor — Ichilov\" · לוותר על \"Gym — Holmes Place\""
+          },
+          {
+            "kind": "choose",
+            "taskId": "gcal-edge-12",
+            "newTime": null,
+            "labelEn": "Keep \"Gym — Holmes Place\" · let go of \"Doctor — Ichilov\"",
+            "labelHe": "להשאיר את \"Gym — Holmes Place\" · לוותר על \"Doctor — Ichilov\""
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "meira-sim edge user 1 2026-10-26 — day after DST ends",
+    "clashes": []
+  },
+  {
+    "name": "meira-sim sim user 102 2026-10-13 — Sarona → TAU infeasible this week",
+    "clashes": [
+      {
+        "a": "gcal-sim-78",
+        "b": "gcal-sim-79",
+        "kind": "travel",
+        "overlapMinutes": 0,
+        "travelShortfall": 30,
+        "questionEn": "\"Office — morning block, WeWork Sarona\" ends at 12:00 and \"Portfolio review — Wix\" starts at 12:45 — 75 min apart. Which gives?",
+        "questionHe": "\"Office — morning block, WeWork Sarona\" נגמרת ב-12:00 ו\"Portfolio review — Wix\" מתחילה ב-12:45, 75 דק' נסיעה משם. מה מוותר?",
+        "options": [
+          {
+            "kind": "end-earlier",
+            "taskId": "gcal-sim-78",
+            "newTime": "11:30",
+            "labelEn": "Keep both — leave \"Office — morning block, WeWork Sarona\" at 11:30 — 75 min to \"Portfolio review — Wix\"",
+            "labelHe": "להספיק את שתיהן — לצאת מ\"Office — morning block, WeWork Sarona\" ב-11:30 — 75 דק' ל\"Portfolio review — Wix\""
+          }
+        ]
+      },
+      {
+        "a": "gcal-sim-80",
+        "b": "gcal-sim-81",
+        "kind": "travel",
+        "overlapMinutes": 0,
+        "travelShortfall": 3,
+        "questionEn": "\"Office — afternoon block, WeWork Sarona\" ends at 17:30 and \"Course — Interaction Design, TAU\" starts at 18:30 — 63 min apart. Which gives?",
+        "questionHe": "\"Office — afternoon block, WeWork Sarona\" נגמרת ב-17:30 ו\"Course — Interaction Design, TAU\" מתחילה ב-18:30, 63 דק' נסיעה משם. מה מוותר?",
+        "options": [
+          {
+            "kind": "end-earlier",
+            "taskId": "gcal-sim-80",
+            "newTime": "17:27",
+            "labelEn": "Keep both — leave \"Office — afternoon block, WeWork Sarona\" at 17:27 — 63 min to \"Course — Interaction Design, TAU\"",
+            "labelHe": "להספיק את שתיהן — לצאת מ\"Office — afternoon block, WeWork Sarona\" ב-17:27 — 63 דק' ל\"Course — Interaction Design, TAU\""
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "meira-sim sim user 102 2026-10-20 — same commitment, tight next week",
+    "clashes": []
+  },
+  {
+    "name": "meira-sim sim user 101 2026-10-06 — the 04:50 wake",
+    "clashes": []
+  },
+  {
+    "name": "meira-sim sim user 103 2026-10-12 — the control: nothing to report",
+    "clashes": []
+  },
+  {
+    "name": "30.9 — Azrieli until 12:00, Herzliya at 12:15, and a business plan laid over a meetup filed as a 'call'",
+    "clashes": [
+      {
+        "a": "nebius",
+        "b": "dana",
+        "kind": "travel",
+        "overlapMinutes": 0,
+        "travelShortfall": 39,
+        "questionEn": "\"Meeting — Nebius team\" ends at 12:00 and \"Coffee with Dana\" starts at 12:15 — 54 min apart. Which gives?",
+        "questionHe": "\"Meeting — Nebius team\" נגמרת ב-12:00 ו\"Coffee with Dana\" מתחילה ב-12:15, 54 דק' נסיעה משם. מה מוותר?",
+        "options": [
+          {
+            "kind": "choose",
+            "taskId": "nebius",
+            "newTime": null,
+            "labelEn": "Keep \"Meeting — Nebius team\" · let go of \"Coffee with Dana\"",
+            "labelHe": "להשאיר את \"Meeting — Nebius team\" · לוותר על \"Coffee with Dana\""
+          },
+          {
+            "kind": "choose",
+            "taskId": "dana",
+            "newTime": null,
+            "labelEn": "Keep \"Coffee with Dana\" · let go of \"Meeting — Nebius team\"",
+            "labelHe": "להשאיר את \"Coffee with Dana\" · לוותר על \"Meeting — Nebius team\""
+          }
+        ]
+      },
+      {
+        "a": "meetup",
+        "b": "plan",
+        "kind": "overlap",
+        "overlapMinutes": 90,
+        "travelShortfall": null,
+        "questionEn": "\"AI Performance Engineering meetup\" & \"לעשות תכנית עסקית\" overlap by 90 min.",
+        "questionHe": "\"AI Performance Engineering meetup\" & \"לעשות תכנית עסקית\" חופפות ב-90 דק'.",
+        "options": [
+          {
+            "kind": "delay-next",
+            "taskId": "plan",
+            "newTime": "20:00",
+            "labelEn": "Start \"לעשות תכנית עסקית\" at 20:00 instead — after \"AI Performance Engineering meetup\"",
+            "labelHe": "להתחיל את \"לעשות תכנית עסקית\" ב-20:00 — אחרי \"AI Performance Engineering meetup\""
+          }
+        ]
+      }
+    ]
   }
 ]

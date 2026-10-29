@@ -222,7 +222,7 @@ export default function SettingsScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   toggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   toggleText: { flex: 1, gap: 4 },
-  toggleHint: { fontFamily: FONTS.body, fontSize: 12, color: '#8A8A9A', lineHeight: 16 },
+  toggleHint: { fontFamily: FONTS.body, fontSize: 12, color: BRAND.inkFaint, lineHeight: 16 },
   safeArea: {
     flex: 1,
     backgroundColor: BRAND.cream,

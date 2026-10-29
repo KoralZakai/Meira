@@ -14,6 +14,7 @@ from pathlib import Path
 
 from openai import AsyncOpenAI
 
+import ai_gate
 import config
 import secure_store
 import model_router
@@ -24,7 +25,9 @@ logger = logging.getLogger(__name__)
 _client: AsyncOpenAI | None = None
 
 LOG = Path(config.DATA_DIR) / "judge_log.json"
-GUIDELINES = Path(config.DATA_DIR) / "lumi_guidelines.txt"
+# Encrypted (secure_store) — the notes it holds go into EVERY user's prompt.
+GUIDELINES = Path(config.DATA_DIR) / "lumi_guidelines.json"
+_LEGACY_GUIDELINES = Path(config.DATA_DIR) / "lumi_guidelines.txt"
 
 JUDGE_PROMPT = """\
 You are a strict quality judge for Lumi, a WhatsApp scheduling assistant.
@@ -39,7 +42,8 @@ Evaluate on:
 - Right language? (Hebrew if user wrote Hebrew)
 - Did Lumi miss anything important?
 
-Score 1-5. Give ONE concrete improvement note, max 15 words.
+Score 1-5. Give ONE concrete improvement note, max 15 words. The note is shared
+with every user, so keep it GENERIC: no names, places, dates, times or numbers.
 Reply with JSON only: {{"score": <int>, "note": "<string>"}}"""
 
 
@@ -47,7 +51,7 @@ def _client_instance() -> AsyncOpenAI:
     """Lazy singleton OpenAI-compatible client (Nebius endpoint)."""
     global _client
     if _client is None:
-        _client = AsyncOpenAI(api_key=config.LLM_API_KEY, base_url=config.LLM_ENDPOINT)
+        _client = ai_gate.client()
     return _client
 
 
@@ -65,8 +69,14 @@ async def evaluate(user_msg: str, lumi_response: str, task: dict) -> None:
             max_tokens=80,
             temperature=0.2,
         )
+        if getattr(r, "usage", None):
+            import llm_usage   # counted, so the balance stop sees it
+            llm_usage.record("judge", r.usage.prompt_tokens or 0, r.usage.completion_tokens or 0, r.model)
         raw = r.choices[0].message.content or "{}"
         entry = json.loads(raw)
+        # A note naming her people or places would reach every user's prompt.
+        import privacy
+        entry["note"] = privacy.scrub_note(str(entry.get("note") or ""), user_msg, task)
         if "score" in entry:
             _append(entry)
             _maybe_synthesize()
@@ -105,10 +115,16 @@ def _maybe_synthesize() -> None:
         f"JUDGE FEEDBACK (last {len(recent)} evals, avg score {avg:.1f}/5):",
         "Apply these improvements to your responses:",
     ] + [f"- {n}" for n in notes]
-    GUIDELINES.write_text("\n".join(lines), encoding="utf-8")
+    secure_store.write_json(str(GUIDELINES), {"text": "\n".join(lines)})
+    if _LEGACY_GUIDELINES.exists():
+        _LEGACY_GUIDELINES.unlink()
     logger.info("judge: synthesized guidelines (avg %.1f)", avg)
 
 
 def get_guidelines() -> str:
     """Returns the latest judge guidelines to prepend to the system prompt."""
-    return GUIDELINES.read_text(encoding="utf-8") if GUIDELINES.exists() else ""
+    if _LEGACY_GUIDELINES.exists():
+        # Plaintext, and written before notes were scrubbed: dropped, not trusted.
+        _LEGACY_GUIDELINES.unlink()
+    data = secure_store.read_json(str(GUIDELINES), {})
+    return str(data.get("text") or "") if isinstance(data, dict) else ""

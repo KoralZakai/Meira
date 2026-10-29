@@ -73,14 +73,14 @@ def test_non_string_values_are_untouched():
 def test_an_already_poisoned_profile_reads_as_missing(store):
     """The repair path for data written before this fix — no shell access needed."""
     store.write_text(json.dumps({
-        "972500000009": {"name": "save_profile", "homeAddress": "", "transportType": "car"},
+        "972542902729": {"name": "save_profile", "homeAddress": "", "transportType": "car"},
     }), encoding="utf-8")
 
-    missing = user_profile.missing_fields("972500000009")
+    missing = user_profile.missing_fields("972542902729")
     assert "your name" in missing, "Lumi must ask for the name again"
     assert "your home address" in missing
 
     # And saying it once is enough to fix the stored record.
-    user_profile.update_profile("972500000009", name="Koral")
-    assert user_profile.get_profile("972500000009")["name"] == "Koral"
-    assert "your name" not in user_profile.missing_fields("972500000009")
+    user_profile.update_profile("972542902729", name="Koral")
+    assert user_profile.get_profile("972542902729")["name"] == "Koral"
+    assert "your name" not in user_profile.missing_fields("972542902729")

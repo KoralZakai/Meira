@@ -216,10 +216,11 @@ export function parseTransitRoute(
  * Ranking, in order:
  *   1. arrives by the deadline (a route that gets you there late is not an
  *      option, however elegant);
- *   2. FEWEST RIDES. A transfer is not merely time — it is a second thing that
- *      can be missed, in a place you do not know, and that cost does not show
- *      up in the duration Google prints. One bus beats two at equal time;
- *   3. shortest door to door;
+ *   2. LOWEST transitScore: door to door PLUS what the changes cost — a change is a second thing
+ *      that can be missed (CHANGE_COST_MIN), every minute standing at a change past OK_WAIT_MIN
+ *      counts, and a connection with no time to make it is not a plan. One bus still beats two
+ *      at equal time, but a tidy 35-minute train-and-bus beats a 60-minute direct;
+ *   3. fewest rides;
  *   4. latest departure (less standing at a stop).
  *
  * `deadline` may be '' for depart-now queries, where every route is on time by
@@ -238,16 +239,56 @@ export function parseTransitAlternatives(
     const plan = parseTransitRoute(data, fallbackArrival, destination, originLabel, i);
     if (plan) plans.push(plan);
   }
-  const rides = (p: TransitPlan) => p.legs.filter((l) => l.type !== 'walk').length;
   const onTime = (p: TransitPlan) => (deadline ? p.arriveAt <= deadline : true);
   return plans.sort((a, b) => {
     if (onTime(a) !== onTime(b)) return onTime(a) ? -1 : 1;
-    if (rides(a) !== rides(b)) return rides(a) - rides(b);
-    if (a.totalDurationMinutes !== b.totalDurationMinutes) {
-      return a.totalDurationMinutes - b.totalDurationMinutes;
-    }
+    const sa = transitScore(a); const sb = transitScore(b);
+    if (sa !== sb) return sa - sb;
+    if (rideCount(a) !== rideCount(b)) return rideCount(a) - rideCount(b);
     return a.leaveHomeAt < b.leaveHomeAt ? 1 : -1;
   });
+}
+
+const legMin = (s: string): number => {
+  const [h, m] = (s || '').split(':').map(Number);
+  return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : NaN;
+};
+
+/**
+ * Minutes spent STANDING between two vehicles, one number per change: next vehicle's departure,
+ * minus the last one's arrival, minus the walking in between. A negative number is a connection
+ * that cannot be made (21.10, Koral: "the changes between train and bus are very slow — or do
+ * not happen at all"). Walking legs are not changes.
+ */
+export function transferWaits(plan: TransitPlan): number[] {
+  const waits: number[] = [];
+  let lastArrive = NaN;
+  let walked = 0;
+  for (const leg of plan.legs) {
+    if (leg.type === 'walk') { walked += leg.durationMinutes || 0; continue; }
+    const dep = legMin(leg.departureTime);
+    if (Number.isFinite(lastArrive) && Number.isFinite(dep)) waits.push(dep - lastArrive - walked);
+    lastArrive = legMin(leg.arrivalTime);
+    walked = 0;
+  }
+  return waits;
+}
+
+/** How long a wait at a change is acceptable before it starts to cost (minutes). */
+const OK_WAIT_MIN = 6;
+/** A change is a second thing that can be missed: it costs this much even when the wait is short. */
+const CHANGE_COST_MIN = 4;
+
+/**
+ * Door-to-door minutes PLUS what the changes really cost. Ranking used to be "fewest rides, then
+ * fastest", so a 60-minute direct bus beat a 35-minute train-and-bus with a tidy change. Now a
+ * change costs CHANGE_COST_MIN, every minute standing beyond OK_WAIT_MIN costs a minute, and a
+ * connection with no time to make it costs a wall (+60): it is not a plan.
+ */
+export function transitScore(plan: TransitPlan): number {
+  const waits = transferWaits(plan);
+  const wait = waits.reduce((sum, w) => sum + (w < 1 ? 60 : Math.max(0, w - OK_WAIT_MIN)), 0);
+  return plan.totalDurationMinutes + CHANGE_COST_MIN * waits.length + wait;
 }
 
 /** How many vehicles this plan puts you on (walking legs are not rides). */
@@ -299,7 +340,27 @@ export function soonestArrival(plans: TransitPlan[], nowHHMM: string): TransitPl
     if (!Number.isFinite(t) || !Number.isFinite(now)) return Infinity;
     return (t - now + 1440) % 1440;
   };
+  // A departure that has already GONE is not an option, however early it arrives: 21.10, 09:38,
+  // a cached "now" answer from 09:32 (arrive 10:06) beat the real next bus (arrive 10:29) and she
+  // was told to leave on one that had left. Leave times within the last 12 h count as passed.
+  const gone = (p: TransitPlan) => {
+    const leave = toMin(p.leaveHomeAt);
+    if (!Number.isFinite(leave) || !Number.isFinite(now)) return false;
+    const pastBy = (now - leave + 1440) % 1440;
+    return pastBy >= 2 && pastBy <= 720;
+  };
+  const live = plans.filter((p) => !gone(p));
+  if (plans.length && !live.length) return null;   // every answer is stale: say so (the caller warns), never pick one
+  plans = live;
   const usable = plans.filter((p) => Number.isFinite(ahead(p.arriveAt)));
   if (!usable.length) return plans[0] ?? null;
   return [...usable].sort((a, b) => ahead(a.arriveAt) - ahead(b.arriveAt) || rideCount(a) - rideCount(b))[0];
+}
+
+/** Israel Railways' "headsign" is the train's NUMBER (256), not where it goes —
+ *  "towards 256" read as nonsense. The number is what the station boards show. */
+export function headsignText(headsign: string | undefined, he: boolean): string {
+  if (!headsign) return '';
+  if (/^\d+$/.test(headsign.trim())) return he ? `רכבת מס׳ ${headsign.trim()}` : `train no. ${headsign.trim()}`;
+  return he ? `לכיוון ${headsign}` : `towards ${headsign}`;
 }

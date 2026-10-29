@@ -253,3 +253,32 @@ class HebrewRetryTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheFirstMeetingSaysWhyItStopped(unittest.TestCase):
+    """8.10: the day's AI requests were used up and the first meeting said
+    "I can't reach my server". Different cause, different fix (rule 3)."""
+
+    def test_the_allowance_is_named_not_the_network(self):
+        import profile_extract
+        import user_quota
+
+        async def refused(*a, **kw):
+            raise RuntimeError("Error code: 402 - {'error': {'type': 'meira_ai_limit', 'code': 'requests'}}")
+
+        with _signed_in(), patch.object(profile_extract, "extract", refused), \
+             patch.object(user_quota, "blocked_reply", return_value="הגעת ל-15 הפניות היומיות למאירה 🙏"):
+            r = client.post("/app/profile/extract", headers=AUTH,
+                            json={"text": "קמה בשבע", "profile": {}, "lang": "he"})
+        self.assertEqual(r.status_code, 429)
+        self.assertEqual(r.json(), {"error": "ai_limit", "detail": "הגעת ל-15 הפניות היומיות למאירה 🙏"})
+
+    def test_anything_else_is_still_unavailable(self):
+        import profile_extract
+
+        async def broken(*a, **kw):
+            raise RuntimeError("Connection error.")
+
+        with _signed_in(), patch.object(profile_extract, "extract", broken):
+            r = client.post("/app/profile/extract", headers=AUTH, json={"text": "x", "profile": {}})
+        self.assertEqual(r.status_code, 502)

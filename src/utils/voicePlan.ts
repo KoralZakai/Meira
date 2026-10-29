@@ -259,7 +259,11 @@ export function describePlan(r: VoicePlanReport, he: boolean, reply = '', today 
   } else if (asks.length) {
     headline = he ? 'צריכה עוד פרט אחד 👇' : 'One more detail 👇';
   } else {
-    headline = (reply || '').trim().split('\n')[0]
+    // Nothing saved and nothing asked: she asked a QUESTION and this is the
+    // answer ("🏖️ Hilton beach ~23 min … next: Gordon ~24"). All of it, up to
+    // three lines — cutting it to the first line dropped the runner-up.
+    headline = (reply || '').trim().split('\n').map((l) => l.trim()).filter(Boolean)
+      .slice(0, 3).join('\n')
       || (he ? 'לא הבנתי מה להוסיף — נסי לומר שוב' : "I didn't catch what to add — try saying it again");
   }
   return { headline, problems };

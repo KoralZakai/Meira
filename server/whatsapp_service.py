@@ -37,7 +37,7 @@ class WhatsAppService:
     async def send_message(to_phone: str, text: str) -> bool:
         """Send a text (truncated to WhatsApp's 4096-char cap). False on any failure."""
         if not config.WHATSAPP_API_TOKEN or not config.WHATSAPP_BUSINESS_PHONE_ID:
-            logger.warning("WhatsApp not configured; would send to %s: %s", to_phone, text)
+            logger.warning("WhatsApp not configured; a message was not sent (%d chars)", len(text or ""))
             return False
         payload = {
             "messaging_product": "whatsapp",

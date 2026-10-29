@@ -82,6 +82,27 @@ def add_insight(phone: str, kind: str, value: str) -> None:
     database_service.shadow_write(database_service.add_memory(phone, kind, value))
 
 
+def remove_insight(phone: str, kind: str, prefix: str) -> int:
+    """Forget insights of this kind that start with `prefix` (an answer she
+    changed, a rule she removed). -> how many were dropped from the file."""
+    key = kind + "s"
+    prefix = (prefix or "").strip()
+    if key not in _DEFAULTS or not prefix:
+        return 0
+    data = _load()
+    mem = data.get(phone)
+    if not isinstance(mem, dict):
+        return 0
+    before = list(mem.get(key) or [])
+    kept = [v for v in before if not (isinstance(v, str) and v.startswith(prefix))]
+    if len(kept) != len(before):
+        mem[key] = kept
+        data[phone] = mem
+        _save(data)
+    database_service.shadow_write(database_service.delete_memories(phone, kind, prefix))
+    return len(before) - len(kept)
+
+
 def _legacy_task_id(text: str, date: str) -> str:
     """OLD deterministic id scheme ("wa_" + sha1). Kept ONLY to match rows created
     before the UUID migration — never used to mint new ids (a text or date edit
@@ -156,14 +177,21 @@ def add_task(phone: str, task: dict, trust_status: bool = False) -> dict:
     # must not wipe details a fuller earlier mention (or the app) already set.
     # More-detailed text wins; defaults defer to previously stored values.
     prev = prev or {}
-    if prev.get("text") and len(prev["text"]) > len(text):
+    # "More-detailed text wins" is for a CHAT re-mention. The app's push is the user's own
+    # last decision (trust_status): 21.10, she renamed tomorrow's appointment to "תור
+    # לרופא" many times — shorter than the old title — and this line put the old one back,
+    # in the mirror AND in Supabase, every time. An edit may shorten.
+    if not trust_status and prev.get("text") and len(prev["text"]) > len(text):
         text = prev["text"]
+    # Defaults defer to the stored value for a chat re-mention only; from the app a 30-minute
+    # duration, a 'general' category or a 'need_to' priority is what she set.
+    keep_defaults = not trust_status
     entry = {
         "id": tid,
         "text": text,
-        "category": task.get("category") if task.get("category") not in (None, "general") else prev.get("category", "general"),
-        "priority": task.get("priority") if task.get("priority") not in (None, "need_to") else prev.get("priority", "need_to"),
-        "duration_minutes": task.get("duration_minutes") if task.get("duration_minutes") not in (None, 30) else prev.get("duration_minutes", 30),
+        "category": task.get("category") if (not keep_defaults and task.get("category")) or task.get("category") not in (None, "general") else prev.get("category", "general"),
+        "priority": task.get("priority") if (not keep_defaults and task.get("priority")) or task.get("priority") not in (None, "need_to") else prev.get("priority", "need_to"),
+        "duration_minutes": task.get("duration_minutes") if (not keep_defaults and task.get("duration_minutes")) or task.get("duration_minutes") not in (None, 30) else prev.get("duration_minutes", 30),
         "fixed_time": task.get("fixed_time") or prev.get("fixed_time"),
         "date": date,
         "status": status,

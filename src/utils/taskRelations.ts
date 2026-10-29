@@ -64,7 +64,8 @@ function keywords(text: string): Set<string> {
  * than either answer, so the rule gets one name.
  */
 export function isLiveTask(t: Task): boolean {
-  return t.status !== 'complete' && t.status !== 'moved';
+  // A "Set a new time: X" note waits on the 🔔, not in the task lists (28.10).
+  return t.status !== 'complete' && t.status !== 'moved' && !/^(?:לקבוע מועד חדש|Set a new time):/.test(String(t.text || '').trim());
 }
 
 /** A task that can hold children: not itself a child, not finished. */

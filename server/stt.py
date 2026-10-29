@@ -238,7 +238,21 @@ async def transcribe_detailed(
     # Whisper bills by audio duration, not tokens; record the call so GET
     # /usage still shows that speech is costing something.
     llm_usage.record("stt_groq", 0, 0)
-    return SttResult(text)
+    return SttResult(fix_places(text))
+
+
+# How Whisper hears Israeli street names, mapped back (9–11.10: "יגאל אלון"
+# came back as עיגל / עיגול / עיגאל אלון — three "places", none her gym).
+# A glued preposition (ב/ל/מ/ה/ו) is kept. Mirrors utils/fuzzyMatch.ts.
+_PLACE_FIXES = [
+    (re.compile(r"(?<![א-ת])([בלמהו]-?)?(?:עיגל|עיגול|עיגאל|איגל|איגאל)\s+אלון(?![א-ת])"), "יגאל אלון"),
+]
+
+
+def fix_places(text: str) -> str:
+    for rx, good in _PLACE_FIXES:
+        text = rx.sub(lambda m, good=good: (m.group(1) or "") + good, text)
+    return text
 
 
 async def transcribe(audio: bytes, mime: str = "audio/ogg") -> str | None:

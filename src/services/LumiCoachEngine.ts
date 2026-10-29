@@ -34,6 +34,7 @@ import {
 import { describeLead } from '../utils/leadTime';
 import { preferredPlaceMode, rememberPlaceMode } from '../utils/placeMode';
 import { addrOf, timeOf } from '../utils/dayPlanning';
+import { HOME_HERE_CHIP } from '../utils/homeFromHere';
 import { getTodayString, getTomorrowString, sortTasksByPriorityAndTime, timeToMinutes } from '../utils/timeUtils';
 import { Task, TaskCategory, TransitPlan } from '../types';
 
@@ -171,7 +172,7 @@ async function extractTasks(
       console.warn('[LumiCoachEngine] server unreachable and nothing parsed locally');
       return [];
     }
-    console.warn('[LumiCoachEngine] server unreachable — parsed locally:', local.text);
+    console.warn('[LumiCoachEngine] server unreachable — parsed locally');
     return [{
       text: local.text,
       category: local.category,
@@ -290,8 +291,8 @@ async function planAndNotify(
   if (!startAddress) {
     return {
       reply: language === 'he'
-        ? 'כדי לחשב מתי לצאת אני צריך את כתובת הבית שלך — לחצ/י על 📍 או כתוב/י כתובת 🏠'
-        : "To plan when to leave I need your home — tap 📍 or type your address 🏠",
+        ? `כדי לחשב מתי לצאת אני צריך את כתובת הבית שלך — לחצ/י על „${HOME_HERE_CHIP.he}” או כתוב/י כתובת 🏠`
+        : `To plan when to leave I need your home — tap "${HOME_HERE_CHIP.en}" or type your address 🏠`,
     };
   }
   // GoogleService routes FROM gProfile.homeAddress, so the confirmed origin goes there.
@@ -527,8 +528,8 @@ const askTransport = (dest: string, language: Lang) =>
 
 const askHome = (language: Lang) =>
   language === 'he'
-    ? 'מעולה! מה כתובת הבית שלך? לחצ/י על 📍 לשיתוף המיקום הנוכחי 🏠'
-    : "Great! What's your home address? Tap 📍 to share your current location 🏠";
+    ? `מעולה! מה כתובת הבית שלך? כתוב/י אותה, או לחצ/י על „${HOME_HERE_CHIP.he}” 🏠`
+    : `Great! What's your home address? Type it, or tap "${HOME_HERE_CHIP.en}" 🏠`;
 
 const askOrigin = (language: Lang) =>
   language === 'he'

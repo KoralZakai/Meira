@@ -14,7 +14,7 @@
  * Never throws. A preference that cannot be read is a preference we do not
  * have, and the profile's mode covers that case by design.
  */
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from './EncryptedStorage';  // AES-256-GCM at rest (7.10)
 import { TaskCategory, TransportType } from '../types/index';
 import {
   TravelPreferences, EMPTY_PREFERENCES, rememberMode, preferredMode, ModeChoice,

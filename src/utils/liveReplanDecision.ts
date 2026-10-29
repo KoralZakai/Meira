@@ -49,6 +49,7 @@ export type ReplanReason =
   | 'moved-off-origin'
   | 'departure-missed'
   | 'arriving-late'
+  | 'refresh-times'
   | 'already-there'
   | 'cooling-down'
   | 'no-fix'
@@ -75,7 +76,17 @@ export interface LiveTripFacts {
   arriveAt?: string;
   /** HH:MM the thing actually starts. */
   appointment?: string;
+  /** When Google gave these times (epoch ms). Its transit times are predictions that move. */
+  fetchedAt?: number;
+  /** The plan has a bus / train / subway — the only times that drift by the minute. */
+  timetabled?: boolean;
 }
+
+/** How old train/bus times may be: 15 min while departure is far, 5 in the last half hour (28.10: 15:06 shown, 15:04 real). */
+export const TIMES_FRESH_MS = 15 * 60 * 1000;
+export const TIMES_FRESH_NEAR_MS = 5 * 60 * 1000;
+/** "Near" = leaving within this many minutes. */
+export const REFRESH_WINDOW_MIN = 90;
 
 /** Don't spend a routing call more often than this on the same trip. */
 export const REPLAN_COOLDOWN_MS = 5 * 60 * 1000;
@@ -129,6 +140,15 @@ export function decideLiveReplan(input: {
     reason = 'departure-missed';
   } else if (trip.arriveAt && trip.appointment && trip.arriveAt > trip.appointment) {
     reason = 'arriving-late';
+  } else if (trip.timetabled && trip.fetchedAt && trip.leaveHomeBy) {
+    // Same plan, same deadline — but Google's train times are live predictions
+    // (15:03 → 15:06 → 15:04 in one afternoon). Near departure, ask again.
+    const [h, m] = trip.leaveHomeBy.split(':').map(Number);
+    const untilLeave = h * 60 + m - (now.getHours() * 60 + now.getMinutes());
+    const maxAge = untilLeave <= 30 ? TIMES_FRESH_NEAR_MS : TIMES_FRESH_MS;
+    if (untilLeave >= -2 && untilLeave <= REFRESH_WINDOW_MIN && now.getTime() - trip.fetchedAt > maxAge) {
+      reason = 'refresh-times';
+    }
   }
 
   if (!reason) return { replan: false, reason: 'on-plan', metres };
@@ -156,8 +176,13 @@ export function describeReplanReason(reason: ReplanReason, he: boolean): string 
       return he ? 'זזת ממקום המוצא — חישבתי מסלול מחדש' : "You've moved — re-routed from here";
     case 'departure-missed':
       return he ? 'זמן היציאה עבר — הנה האפשרות הבאה' : 'Departure time passed — next option';
+    case 'refresh-times':
+      return he ? 'בדקתי שוב מול Google' : 'Checked again with Google';
     case 'arriving-late':
-      return he ? 'ההגעה אחרי השעה — מחפשת מסלול מהיר יותר' : 'Arriving late — looking for a faster route';
+      // Past tense: this line is printed BESIDE the answer ("… arrive 16:21 ✓"),
+      // and "looking for a faster route" next to a found one read as a
+      // contradiction on her phone (13.10).
+      return he ? 'המסלול הקודם הגיע מאוחר — חישבתי מחדש' : 'The old route arrived late — re-planned';
     default:
       return '';
   }

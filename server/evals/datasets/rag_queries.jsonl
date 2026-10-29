@@ -1,0 +1,22 @@
+{"id": "r01", "query": "when do I pick up the kids from school", "relevant": ["m02"], "hard": false}
+{"id": "r02", "query": "מתי יש לי קיקבוקס", "relevant": ["m03"], "hard": false}
+{"id": "r03", "query": "do I have yoga on Thursday", "relevant": ["m06"], "hard": false}
+{"id": "r04", "query": "should I take the train or the bus", "relevant": ["m13", "m18"], "hard": false}
+{"id": "r05", "query": "can you put a meeting at 08:00", "relevant": ["m15"], "hard": false}
+{"id": "r06", "query": "how long does my morning routine take", "relevant": ["m30"], "hard": false}
+{"id": "r07", "query": "מתי כדאי לי ללמוד", "relevant": ["m27", "m08"], "hard": true}
+{"id": "r08", "query": "I need to schedule the dentist", "relevant": ["m26"], "hard": false}
+{"id": "r09", "query": "what do I do on Sundays", "relevant": ["m04", "m10", "m25"], "hard": true}
+{"id": "r10", "query": "אני צריכה לצאת לפגישה ברמת גן", "relevant": ["m04"], "hard": true}
+{"id": "r11", "query": "is Friday afternoon free", "relevant": ["m21"], "hard": false}
+{"id": "r12", "query": "will I make it home by 7 pm", "relevant": ["m05"], "hard": true}
+{"id": "r13", "query": "how many minutes late do I usually leave", "relevant": ["m23"], "hard": false}
+{"id": "r14", "query": "באיזו שעה אני הולכת לישון", "relevant": ["m09"], "hard": false}
+{"id": "r15", "query": "how do I like to be reminded", "relevant": ["m17"], "hard": true}
+{"id": "r16", "query": "הסופר בבוקר", "relevant": ["m10"], "hard": true}
+{"id": "r17", "query": "do I go to the gym in the rain", "relevant": ["m24"], "hard": false}
+{"id": "r18", "query": "piano lesson time", "relevant": ["m12"], "hard": false}
+{"id": "r19", "query": "ריצה בשבת", "relevant": ["m11"], "hard": false}
+{"id": "r20", "query": "keep answers short please", "relevant": ["m20"], "hard": false}
+{"id": "n01", "query": "what is the capital of France", "relevant": [], "hard": false}
+{"id": "n02", "query": "מה מזג האוויר בפריז", "relevant": [], "hard": false}

@@ -23,8 +23,12 @@
  * Dependencies: SupabaseAuthService (session), EXPO_PUBLIC_SERVER_URL,
  * TaskStorage.mergeExternalTasks. Consumed by CoachChatScreen.
  */
+import type { ProfileChange } from './LumiServer';
+import { LookupAnswer, asLookupAnswer } from '../utils/answerCard';
+import { ChainAnswer, asChainAnswer } from '../utils/chainAnswer';
 import { getSession } from './SupabaseAuthService';
-import { mergeExternalTasks } from './TaskStorage';
+import { mergeExternalTasks, updateTaskFields } from './TaskStorage';
+import { armDueAlarms } from './AlarmPlanner';
 import { loadProfile } from './UserProfileStorage';
 import { planArrivedTasks } from './ArrivedTaskPlanner';
 import { Task, TaskCategory, TaskPriority } from '../types/index';
@@ -43,7 +47,7 @@ const SERVER_MODE: Record<string, string> = {
  * invisible to Meira — whose transport default was "car", and who therefore
  * asked "how are you getting there?" and "where is the gym?". Sent with every
  * turn: the conversation itself is the trigger, so the brain always has the
- * profile she is looking at. The server takes only these four fields.
+ * profile she is looking at. The server takes only these five fields.
  */
 async function profileForBrain(): Promise<Record<string, string> | undefined> {
   try {
@@ -55,6 +59,8 @@ async function profileForBrain(): Promise<Record<string, string> | undefined> {
     for (const k of ['homeAddress', 'routinesNotes', 'hobbies'] as const) {
       if (typeof p[k] === 'string' && p[k].trim()) out[k] = p[k].trim();
     }
+    // Only a level she chose — the server's default is the same "gentle".
+    if (typeof p.nudgeLevel === 'string' && p.nudgeLevel) out.nudgeLevel = p.nudgeLevel;
     return Object.keys(out).length ? out : undefined;
   } catch (e) {
     console.warn('[LumiBrain] could not read the profile to send', e);
@@ -79,6 +85,16 @@ export interface BrainReply {
   /** Tasks the turn created, already merged into local storage. */
   tasks: Task[];
   departures: any[];
+  /** What the turn saved about her — shown as cards with Undo (components/LearnedCard). */
+  profileChanges?: ProfileChange[];
+  /** "answer": she asked and Meira answered — nothing was planned (agent_turn). */
+  type?: string;
+  /** A place/route answer the chat draws as a card (components/AnswerCard). */
+  answer?: LookupAnswer;
+  /** A bike/car-elsewhere plan the chat draws as a map (components/ChainCard). */
+  chain?: ChainAnswer;
+  /** Short answers to the question in the reply, drawn as buttons (server fit_check: "keep it" / "book 15:30"). */
+  replies?: string[];
 }
 
 /** Map a server task (snake_case) into the app's Task shape. */
@@ -116,6 +132,9 @@ function mapTask(r: any): Task | null {
     durationMinutes: r.duration_minutes ?? 30,
     // Same batch label as the WhatsApp pull — one message's tasks stay one group.
     subgroup: r.subgroup ?? undefined,
+    // "ושימי לי שעון מעורר" in the chat: the REAL phone alarm is armed off
+    // alarmAt (utils/alarmPlan) — the reply carried it and this dropped it.
+    ...(r.alarmAt ? { alarmAt: String(r.alarmAt).slice(0, 5), alarmState: 'planned' as const } : {}),
     date: String(r.date || '').slice(0, 10) || new Date().toISOString().slice(0, 10),
     status: 'pending',
     source: 'whatsapp',   // same origin story: created by the shared brain
@@ -155,7 +174,9 @@ export async function brainTurn(
   // costs no location read.
   // `mode: 'voice_plan'` — the app's mic. The server tells the model not to
   // pin clock times, because the planner places them right after this turn.
-  opts: { here?: { lat: number; lng: number; label?: string }; mode?: 'voice_plan' } = {},
+  // `replyTo`: the Meira message she is answering (long-press / ↩). Sent
+  // apart from `message`, so its dates are never read as hers (27.10).
+  opts: { here?: { lat: number; lng: number; label?: string }; mode?: 'voice_plan'; replyTo?: string } = {},
 ): Promise<BrainReply | null> {
   // Every one of these used to be a SILENT `return null`, and the caller turns
   // null into a locally-composed reply that looks exactly like a real answer.
@@ -198,6 +219,7 @@ export async function brainTurn(
         message,
         ...(opts.here ? { here: opts.here } : {}),
         ...(opts.mode ? { mode: opts.mode } : {}),
+        ...(opts.replyTo ? { reply_to: opts.replyTo.slice(0, 1200) } : {}),
         ...(profile ? { profile } : {}),
       }),
       signal: controller.signal,
@@ -216,11 +238,66 @@ export async function brainTurn(
     // shared id, so a later pull cannot duplicate them.
     if (tasks.length) {
       await mergeExternalTasks(tasks).catch(() => {});
+      // An alarm on a task she ALREADY has ("another alarm at 9" for the 09:30
+      // call, 20.10): the merge skips ids it knows, so the alarm is set here.
+      // The cloud row has no alarm column — this is the only road it takes.
+      for (const t of tasks) {
+        if (t.alarmAt) {
+          await updateTaskFields(t.id, { alarmAt: t.alarmAt, alarmState: 'planned' }, { awaitCloud: false })
+            .catch((e) => console.warn('[LumiBrain] alarm not set on', t.id, e));
+          // A REAL Clock alarm now — not at the next sync (Koral, 20.10: "the
+          // alarm is written but nothing is set on the phone").
+          const res = await armDueAlarms([{ ...t, alarmState: 'planned' }])
+            .catch((e) => { console.warn('[LumiBrain] alarm not armed', t.id, e); return null; });
+          console.warn('[LumiBrain] alarm', t.alarmAt, 'for', t.id,
+            res?.armed.length ? 'armed in Clock' : 'waiting (out of reach or Clock refused)');
+        }
+      }
       // Route them NOW — the reply is not held for Google, but the route no
       // longer waits for some other screen's sweep. See ArrivedTaskPlanner.
       planArrivedTasks(tasks).catch((e) => console.warn('[LumiBrain] routing new tasks failed', e));
     }
-    return { text: String(body.text ?? ''), tasks, departures: body.departures ?? [] };
+    // A task she already has, moved by the server ("doesn't fit → book 15:30"): the merge
+    // above skips known ids, so the new hour is written here — or the day shows the old one.
+    for (const m of Array.isArray(body.moved) ? body.moved : []) {
+      const at = typeof m?.fixed_time === 'string' && /^\d{1,2}:\d{2}$/.test(m.fixed_time) ? m.fixed_time : null;
+      if (m?.id && at) {
+        await updateTaskFields(String(m.id), { fixedTime: at, scheduledTime: at }, { awaitCloud: false })
+          .catch((e) => console.warn('[LumiBrain] moved task not updated', e));
+      }
+    }
+    // "When I get to work, remind me…" (server place_reminder): kept and watched on THIS phone.
+    // When Android cannot watch places yet, the reply says so instead of a promise (rule 3).
+    let placeNote = '';
+    if (Array.isArray(body.place_reminders) && body.place_reminders.length) {
+      const he = /[\u0590-\u05FF]/.test(String(body.text ?? ''));
+      try {
+        const { addPlaceReminders } = await import('./GeofenceService');
+        const st = await addPlaceReminders(body.place_reminders);
+        if (!st.ok) {
+          placeNote = he
+            ? '\n⚠️ כדי שזה יעבוד צריך להפעיל "התראות לפי מיקום" (☰ › התראות) ולאשר מיקום "כל הזמן".'
+            : '\n⚠️ For this to work, turn on "Nearby errands" (☰ › Alerts) and allow location "all the time".';
+        }
+      } catch (e) {
+        console.warn('[LumiBrain] place reminder not kept', e);
+        placeNote = he ? '\n⚠️ לא הצלחתי לשמור את התזכורת בטלפון — נסי שוב.' : "\n⚠️ Couldn't keep the reminder on this phone — try again.";
+      }
+    }
+    const profileChanges: ProfileChange[] = Array.isArray(body.profile_changes) ? body.profile_changes : [];
+    const answer = asLookupAnswer(body.answer);
+    const chain = asChainAnswer(body.chain);
+    const replies = Array.isArray(body.replies)
+      ? body.replies.filter((r: unknown) => typeof r === 'string' && r.trim()).slice(0, 3).map((r: string) => r.slice(0, 40))
+      : [];
+    return {
+      text: String(body.text ?? '') + placeNote, tasks, departures: body.departures ?? [],
+      ...(profileChanges.length ? { profileChanges } : {}),
+      ...(typeof body.type === 'string' ? { type: body.type } : {}),
+      ...(answer ? { answer } : {}),
+      ...(chain ? { chain } : {}),
+      ...(replies.length ? { replies } : {}),
+    };
   } catch (e) {
     // Rule 1: our own timeout and a dead network are different fixes.
     console.warn('[LumiBrain] turn failed',
@@ -228,5 +305,37 @@ export async function brainTurn(
     return null;
   } finally {
     clearTimeout(timer);
+  }
+}
+
+export type Reaction = 'up' | 'down' | 'none';
+
+/**
+ * 👍 / 👎 on one Meira reply (27.10). -> true once the server kept it. False is
+ * said on screen by the caller — a reaction that silently went nowhere is the
+ * silent-state bug (rule 3).
+ */
+export async function sendReaction(
+  reaction: Reaction, reply: string, question: string, messageId: string,
+): Promise<boolean> {
+  if (!SERVER_URL) return false;
+  let token: string | undefined;
+  try {
+    token = (await getSession())?.access_token;
+  } catch (e) {
+    console.warn('[LumiBrain] reaction: no session', e);
+  }
+  if (!token) return false;
+  try {
+    const res = await fetch(`${SERVER_URL}/agent/feedback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ reaction, reply: reply.slice(0, 1200), question: question.slice(0, 1200), message_id: messageId }),
+    });
+    if (!res.ok) console.warn('[LumiBrain] reaction not kept:', res.status);
+    return res.ok;
+  } catch (e) {
+    console.warn('[LumiBrain] reaction failed', e);
+    return false;
   }
 }

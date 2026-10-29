@@ -40,8 +40,8 @@ class SessionStoreTests(unittest.TestCase):
         self.assertIsNone(session.get_active_task_id("972"))
 
     def test_phone_format_tolerant(self):
-        session.set_active_task("+972-50-000-0009", "task-Z")
-        self.assertEqual(session.get_active_task_id("972500000009"), "task-Z")
+        session.set_active_task("+972-54-290-2729", "task-Z")
+        self.assertEqual(session.get_active_task_id("972542902729"), "task-Z")
 
 
 if __name__ == "__main__":

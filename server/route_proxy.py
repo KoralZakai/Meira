@@ -2,7 +2,7 @@
 
 WHY THIS EXISTS
 
-The APK's Maps key is restricted to `com.lumi.app` + a SHA-1 fingerprint. That
+The APK's Maps key is restricted to `meira.secretary` + a SHA-1 fingerprint. That
 restriction is correct and must not be loosened. It is also unusable for web
 service APIs: Google enforces an Android-app restriction through the
 `X-Android-Package` and `X-Android-Cert` headers, and ONLY the Maps SDK sends
@@ -249,9 +249,7 @@ async def _one(client: httpx.AsyncClient, params: dict, ttl: float) -> dict:
     if status != "OK":
         # Logged at WARNING with the reason, because this is the exact class of
         # event that was invisible for 107 calls.
-        logger.warning("directions %s -> %s [%s] %s",
-                       params.get("origin"), params.get("destination"),
-                       status, data.get("error_message") or "")
+        logger.warning("directions [%s] %s", status, data.get("error_message") or "")
     # ZERO_RESULTS is a real, stable answer — there is no bus — and caching it
     # stops us re-asking a question the timetable already refused. A refusal
     # (REQUEST_DENIED, OVER_QUERY_LIMIT) is about US and may be fixed at any

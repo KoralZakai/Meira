@@ -90,6 +90,18 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
             await agent_runner.run_due(now=_il(2026, 7, 22, 7, 1))
         send.assert_not_awaited()  # nothing sent, but next_run advanced (no retry storm)
 
+    async def test_run_reports_why_nothing_arrived(self):
+        # "Try now" in the app shows this reason — never a silent nothing.
+        a = _make_due("972w", name="Custom")
+        with patch.object(agent_runner.WhatsAppService, "send_message", AsyncMock(return_value=True)), \
+             patch.object(agent_runner, "_compose", AsyncMock(return_value="hi")):
+            self.assertIsNone(await agent_runner._run_agent(a))
+        with patch.object(agent_runner.WhatsAppService, "send_message", AsyncMock(return_value=False)), \
+             patch.object(agent_runner, "_compose", AsyncMock(return_value="hi")):
+            self.assertEqual(await agent_runner._run_agent(a), "whatsapp_failed")
+        with patch.object(agent_runner, "_compose", AsyncMock(return_value=None)):
+            self.assertEqual(await agent_runner._run_agent(a), "empty")
+
     async def test_smart_alarm_schedules_wake_reminder(self):
         a = _make_due("972a", template="smart_alarm", when=_il(2026, 7, 22, 21, 30))
         send = AsyncMock()
@@ -117,3 +129,36 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TransitNewsInTheBrief(unittest.TestCase):
+    """The brief says one of three things about the roads, never a blank
+    that could mean either 'clear' or 'didn't look'."""
+    PLAN = {"legs": [{"type": "bus", "line": "251", "from": "Arlozorov", "to": "Herzl"}]}
+
+    def _block(self, result):
+        import asyncio
+        with patch.object(agent_runner.transit_alerts, "disruptions_for",
+                          AsyncMock(return_value=result)) as m:
+            out = asyncio.run(agent_runner._transit_news_block(
+                [(self.PLAN, "Herzl 3, Haifa, Israel")], "Dizengoff 50, Tel Aviv-Yafo, Israel"))
+        return out, m
+
+    def test_alerts_go_in_with_their_link(self):
+        out, m = self._block({"ok": True, "checked": True, "alerts": [
+            {"title": "קו 251 יוסט", "link": "https://news.example/1"}]})
+        self.assertIn("https://news.example/1", out)
+        self.assertIn("251", m.await_args.kwargs["lines"])
+        self.assertIn("Haifa", m.await_args.kwargs["places"])
+
+    def test_nothing_reported_and_could_not_check_differ(self):
+        clear, _ = self._block({"ok": True, "checked": True, "alerts": []})
+        blind, _ = self._block({"ok": False, "checked": False, "reason": "timeout"})
+        self.assertIn("nothing reported", clear)
+        self.assertIn("couldn't check", blind)
+
+    def test_no_trips_means_no_search(self):
+        import asyncio
+        with patch.object(agent_runner.transit_alerts, "disruptions_for", AsyncMock()) as m:
+            self.assertEqual(asyncio.run(agent_runner._transit_news_block([], "home")), "")
+        m.assert_not_called()

@@ -39,7 +39,7 @@ Consumed by main.py's DELETE /account.
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import Iterable, Optional
 
 import httpx
 
@@ -69,6 +69,11 @@ _STORE_MODULES = (
     "task_prep",        # what Meira prepared for their tasks
     "mcp_server",       # AI-assistant tokens: deleting the account revokes them
     "feedback_store",   # their 👍/👎 on suggestions
+    "chat_feedback",    # their 👍/👎 on chat replies, with both texts
+    "questions_store",  # what Meira asked them and what they answered
+    "user_rules",       # rules they taught Meira by answering
+    "user_quota",       # their AI spend counters (per-person allowance)
+    "phone_links",      # the proved WhatsApp ↔ account link
 )
 
 # Supabase tables owned directly by an auth user id.
@@ -83,28 +88,91 @@ _TABLES_BY_USER_ID = (
 _TABLES_BY_USER_KEY = (
     "lumi_memories", "lumi_profiles", "lumi_conversations", "lumi_reminders",
     "lumi_agents", "lumi_known_places", "lumi_travel_prefs", "lumi_sessions",
-    "lumi_user_records", "lumi_bug_reports",
+    "lumi_user_records", "lumi_bug_reports", "lumi_history", "lumi_groups",
 )
 
 
-def purge_local_stores(key: str) -> dict:
-    """Drop this user's entry from every JSON store. -> {store: 'deleted'|'absent'|error}
+def _keys(key: str, more: Iterable[str]) -> list:
+    return [k for k in dict.fromkeys([key, *more]) if k]
+
+
+def _combined(statuses: list) -> str:
+    """One status for a store or table purged under several keys: a failure
+    wins (it must be reported), then "deleted", then whatever the first said."""
+    for st in statuses:
+        if isinstance(st, str) and st.startswith(("failed", "http")):
+            return st
+    return "deleted" if "deleted" in statuses else (statuses[0] if statuses else "absent")
+
+
+_OWNER_FIELDS = ("phone", "owner", "owner_phone", "userKey", "userId")
+
+
+def _owned_row(row: object, keys) -> bool:
+    if not isinstance(row, dict):
+        return False
+    wanted = {str(k) for k in keys}
+    phones = {d for d in ("".join(c for c in k if c.isdigit()) for k in wanted) if len(d) >= 9}
+    for f in _OWNER_FIELDS:
+        v = row.get(f)
+        if v is None:
+            continue
+        v = str(v)
+        if v in wanted or "".join(c for c in v if c.isdigit()) in phones:
+            return True
+    return False
+
+
+def _purge_pending_mirror(keys) -> str:
+    """supabase_tasks' retry queue: task text keyed by phone, its own load/save."""
+    items = supabase_tasks._load_pending()   # noqa: SLF001
+    kept = [it for it in items if not _owned_row(it, keys)]
+    if len(kept) == len(items):
+        return "absent"
+    supabase_tasks._save_pending(kept)       # noqa: SLF001
+    return "deleted"
+
+
+def purge_local_stores(key: str, *more_keys: str) -> dict:
+    """Drop this user's entries from every JSON store. -> {store: 'deleted'|'absent'|error}
+
+    `more_keys`: every other key the same person's data may sit under
+    (identity_keys.all_keys) — the account id the agent writes, the phone the
+    app routes wrote, the id the number had before it was linked. Deleting one
+    of three is hiding the account, not deleting it.
 
     Imported lazily and one at a time: a store module that fails to import (or
     a file that will not decrypt) must not stop the other nine from being
     cleared.
     """
+    keys = _keys(key, more_keys)
     result: dict[str, str] = {}
     for name in _STORE_MODULES:
         try:
             import importlib
             mod = importlib.import_module(name)
             data = mod._load()          # noqa: SLF001 — deletion is a store-level op
-            if not isinstance(data, dict):
-                result[name] = "unexpected shape, skipped"
+            if isinstance(data, list):
+                # reminders, agents: rows that NAME their owner. Skipping them as
+                # "unexpected shape" while reporting ok left her reminders (text,
+                # times, the people she messages) on the server after deletion.
+                kept = [row for row in data if not _owned_row(row, keys)]
+                if len(kept) != len(data):
+                    mod._save(kept)     # noqa: SLF001
+                    result[name] = "deleted"
+                else:
+                    result[name] = "absent"
                 continue
-            if key in data:
-                del data[key]
+            if not isinstance(data, dict):
+                result[name] = "failed: unexpected shape"
+                continue
+            # session keys its entries by the key's digits (session._digits):
+            # look under that form too, or her entry outlives the deletion.
+            forms = [*keys, *("".join(c for c in str(k) if c.isdigit()) for k in keys)]
+            hit = [k for k in dict.fromkeys(forms) if k and k in data]
+            if hit:
+                for k in hit:
+                    del data[k]
                 mod._save(data)         # noqa: SLF001
                 result[name] = "deleted"
             else:
@@ -112,14 +180,20 @@ def purge_local_stores(key: str) -> dict:
         except Exception as exc:        # noqa: BLE001 — one store must not stop the rest
             logger.warning("account deletion: store %s failed: %s", name, exc)
             result[name] = f"failed: {type(exc).__name__}"
+    try:
+        result["pending_mirror"] = _purge_pending_mirror(keys)
+    except Exception as exc:            # noqa: BLE001
+        logger.warning("account deletion: pending mirror failed: %s", exc)
+        result["pending_mirror"] = f"failed: {type(exc).__name__}"
     return result
 
 
-async def purge_supabase(user_id: Optional[str], key: str) -> dict:
+async def purge_supabase(user_id: Optional[str], key: str, *more_keys: str) -> dict:
     """Delete every Supabase row belonging to this person. -> {table: status}"""
     result: dict[str, str] = {}
     if not supabase_tasks._enabled():   # noqa: SLF001 — same package, one config
         return {"supabase": "not configured"}
+    keys = _keys(key, more_keys)
 
     async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
         if user_id:
@@ -127,15 +201,20 @@ async def purge_supabase(user_id: Optional[str], key: str) -> dict:
                 result[table] = await _delete_where(
                     client, table, {"userId": f"eq.{user_id}"})
 
-        # The lumi_* tables key on userKey, which is the phone when one is
-        # linked and the auth id otherwise — the same key the brain uses.
+        # The lumi_* tables key on userKey, and a person's rows sit under every
+        # key the stores were written with — see identity_keys.
         for table in _TABLES_BY_USER_KEY:
-            result[table] = await _delete_where(
-                client, table, {"userKey": f"eq.{key}"})
+            result[table] = _combined([
+                await _delete_where(client, table, {"userKey": f"eq.{k}"}) for k in keys])
 
-        # The join row last, so the lookups above still resolve while they run.
-        result["lumi_identities"] = await _delete_where(
-            client, "lumi_identities", {"userKey": f"eq.{key}"})
+        # Groups she was INVITED to (her own groups went with lumi_groups above):
+        # her membership row and its answers (cascade) go too.
+        result["lumi_group_members"] = _combined([
+            await _delete_where(client, "lumi_group_members", {"memberKey": f"eq.{k}"}) for k in keys])
+
+        # The join rows last, so the lookups above still resolve while they run.
+        result["lumi_identities"] = _combined([
+            await _delete_where(client, "lumi_identities", {"userKey": f"eq.{k}"}) for k in keys])
 
     return result
 
@@ -183,16 +262,21 @@ async def delete_auth_user(user_id: str) -> str:
         return f"failed: {type(exc).__name__}"
 
 
-async def erase_account(key: str, user_id: Optional[str]) -> dict:
+async def erase_account(key: str, user_id: Optional[str], extra_keys: Iterable[str] = ()) -> dict:
     """Erase one person everywhere. -> {'ok', 'stores', 'supabase', 'auth'}
+
+    `extra_keys`: the other keys the same person's data sits under
+    (identity_keys.all_keys(caller)). Without them a linked user's agent
+    memory, history and profile — kept under the account id — survived.
 
     `ok` is True only when nothing reported a failure. It is deliberately
     strict: a caller that tells a user "your account is deleted" while a store
     errored has told them something untrue, and there is no way for them to
     find out otherwise.
     """
-    stores = purge_local_stores(key)
-    supabase = await purge_supabase(user_id, key)
+    more = [k for k in extra_keys if k and k != key]
+    stores = purge_local_stores(key, *more)
+    supabase = await purge_supabase(user_id, key, *more)
     auth = await delete_auth_user(user_id) if user_id else "no auth user"
 
     failed = [

@@ -5,67 +5,106 @@
  */
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
-  View, ScrollView, StyleSheet, Text, TouchableOpacity, ActivityIndicator, Alert,
+  View, ScrollView, StyleSheet, Text, TouchableOpacity, ActivityIndicator, Alert, Linking,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from '../services/EncryptedStorage';  // AES-256-GCM at rest (7.10)
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useRoute } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BRAND, FONTS, RADIUS, SHADOWS } from '../constants/theme';
+import { BRAND, FONTS, MIN_TOUCH, RADIUS, SHADOWS } from '../constants/theme';
 import { getTodayString, getTomorrowString, sortTasksByPriorityAndTime } from '../utils/timeUtils';
+import { endedBy } from '../utils/taskEnd';
 import {
   getTasksForDate, loadSchedule, getSettings,
   markTaskComplete, updateTaskFields, deleteTask,
   loadGoals, addTask,
   getOverdueTasks, moveTasksToDate, letGoTasks,
-  getAllTasks,
+  getAllTasks, getAllTasksChecked, getLocalTasks, getLocalSettings,
 } from '../services/TaskStorage';
 import { addMinutes, timeToMinutes } from '../utils/timeUtils';
-import { hydrateCustomCategories } from '../constants/categories';
-import { resolveClashes, Clash, ClashOption } from '../utils/resolveClashes';
-import { classifyOverlap, tightTransfers } from '../utils/overlapKind';
+import { FALLBACK_PLACE, INK as SKY_INK, skyFor, sunTimes } from '../utils/skyGradient';
+import { lateNotice } from '../utils/lateNotice';
+import InterviewPrepHeader from '../components/today/InterviewPrepHeader';
+import { hydrateCustomCategories, getCategoryMeta } from '../constants/categories';
 import { findSameThingGroups, mergedInto, SameThingGroup } from '../utils/likelySameTask';
-import ClashCard from '../components/ClashCard';
 import SameThingCard from '../components/SameThingCard';
 import { Task, DailySchedule, AppLanguage } from '../types';
 import TaskDetailBottomSheet from '../components/TaskDetailBottomSheet';
 import { emitLumiMood } from '../services/LumiMood';
 import { speakMorningBriefingNow } from '../services/MorningBriefingService';
-import { stopSpeaking } from '../services/SpeechService';
+import { speak, stopSpeaking } from '../services/SpeechService';
 import { scheduleFocusCheckIns, armMissingTaskAlerts } from '../services/NotificationService';
 import { armDueAlarms } from '../services/AlarmPlanner';
-import { plannedAlarmTime, wakeInputs, earliestWakeOf, wakeChipFor } from '../utils/alarmPlan';
+import { plannedAlarmTime, wakeInputs, earliestWakeOf, wakeChipFor, getReadyTimeFor } from '../utils/alarmPlan';
 import {
   getGmailEventSuggestions, acceptGmailSuggestion, dismissGmailSuggestion,
-  ensureTravelChain, getNextUpcomingTask, lastCalendarFailure,
+  ensureTravelChain, getNextUpcomingTask, lastCalendarFailure, sweepStalePrep,
 } from '../services/GoogleSync';
 import { syncCalendarDate, syncCalendarNow, onCalendarSync } from '../services/CalendarAutoSync';
 import { onDayChanged, onDayPlanned } from '../services/DayEvents';
-import NextImportantStrip from '../components/NextImportantStrip';
 import TaskPrepCard from '../components/TaskPrepCard';
 import { prepForTask } from '../services/TaskPrepService';
 import { TaskPrepResult } from '../services/LumiServer';
+import LineIcon from '../components/ui/LineIcon';
 import MeiraCoin from '../components/MeiraCoin';
 import BottomSheet from '../components/ui/BottomSheet';
 import MeetingBriefCard from '../components/MeetingBriefCard';
 import YesterdayCard from '../components/YesterdayCard';
 import { GapSuggestionCard } from '../components/GapSuggestionCard';
 import TravelChainCard from '../components/TravelChainCard';
-import DayTimeline from '../components/DayTimeline';
+import { normalizeProfile } from '../utils/profileShape';
 import { ModeQuote } from '../components/TimelineTravelLeg';
 import TransitOptionsList from '../components/TransitOptionsList';
-import { splitDayTasks, isStandingTask } from '../utils/taskShape';
+import { splitDayTasks, isStandingTask, sortFlexible, isFlexibleTask } from '../utils/taskShape';
+import AlertsSheet from '../components/today/AlertsSheet';
+import { waitingList, WaitingItem } from '../utils/waitingList';
 import { asLocation, toChainProfile } from '../utils/buildTravelChain';
 import {
   replanFromNextDeparture, describeNextDeparture, nextDepartureOptions, applyDepartureOption,
-  markArrivals, replanFromOrigin, keepNextTripLive,
+  markArrivals, replanFromOrigin, keepNextTripLive, confirmDeparture,
 } from '../services/LiveRoute';
-import { missedPlannedDeparture, stillWorthGoingUntil } from '../utils/liveRoutePlan';
+import DayCard from '../components/today/DayCard';
+import MorningAlarmPill, { useMorningAlarm } from '../components/today/MorningAlarmPill';
+import DayGoalCard from '../components/today/DayGoalCard';
+import { loadDayGoal } from '../services/DayGoalService';
+import NowLine from '../components/today/NowLine';
+import NowAddRow from '../components/today/NowAddRow';
+import SuggestPanel from '../components/today/SuggestPanel';
+import OverlapPick from '../components/today/OverlapPick';
+import PairCard from '../components/today/PairCard';
+import DayRing from '../components/today/DayRing';
+import CompactRow from '../components/today/CompactRow';
+import TrayDock, { DragGhost, GhostHandle } from '../components/today/TrayDock';
+import { DropZone, timeInWindow, zoneAt } from '../utils/dropSlot';
+import { applyScheduleAction } from '../services/AddSuggestionSources';
+import { diffDay, knockOnIds, snapshotDay } from '../utils/dayDiff';
+import PairAdviceModal from '../components/today/PairAdviceModal';
+import { adviseOverlap } from '../utils/pairAdvice';
+import ClashQuestion from '../components/today/ClashQuestion';
+import EarlierRow from '../components/today/EarlierRow';
+import { dayProblems, moveSlotFor, TravelProblem } from '../utils/dayProblems';
+import { travelRowState } from '../utils/travelRowState';
+import { ridesOf } from '../utils/rideLine';
+import { isRemoteTask } from '../utils/meetingLink';
+import { collapseSameMeetings } from '../utils/calendarEventTask';
+import { classifyCalendarError, calendarErrorLine } from '../utils/calendarErrorKind';
+import { lateBy as minutesLate, missedPlannedDeparture, stillWorthGoingUntil } from '../utils/liveRoutePlan';
+import { answerRunningLate, onLateAnswered, setNewDate } from '../services/RunningLate';
+import { markSeen, onChangesChanged, openChanges } from '../services/ChangeRecordStore';
+import { setBellCount } from '../services/BellCount';
+import { answerFeasibility, checkBeforeSave } from '../services/ScheduleQueryService';
+import { HourRuler, RulerHandle } from '../components/today/HourRuler';
+import { HourRow, hourRows } from '../utils/hourRows';
+import { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
+import { ChangeRecord, headline } from '../utils/changeRecord';
+import { followUpOriginal, isFromCalendar } from '../utils/liveRoutePlan';
+import { isHighStakes } from '../utils/travelLadder';
 import { DepartureOption, departureUncatchable, minutesToDecide } from '../utils/departureOptions';
 import {
   dayPresence, describeDayPresence, DayPresenceVerdict,
 } from '../utils/presence';
+import { freedTimeLine, leftEarly, leftEarlyLine, LeftEarlyVerdict } from '../utils/leftEarly';
 import { GoogleService } from '../services/GoogleService';
 import { loadProfile } from '../services/UserProfileStorage';
 import { rememberTravelChoice } from '../services/TravelPreferenceStore';
@@ -74,19 +113,45 @@ import { isSupabaseConfigured } from '../services/supabaseClient';
 import { UserProfile, TransportType, TransitPlan } from '../types';
 import { GapSuggestion } from '../types/index';
 import GapSlotRow from '../components/GapSlotRow';
-import { DayGap, findDayGaps } from '../utils/findGaps';
-import { visibleDayIds } from '../utils/dayWindow';
-import { GapIdea, applyGapIdea, loadRoutines, suggestForGap } from '../services/GapFillService';
+import { DayGap, findDayGaps, plusSlot, PLUS_MIN_MINUTES } from '../utils/findGaps';
+import { GapIdea, applyGapIdea, loadRoutines, onRoutinesChanged, suggestForGap } from '../services/GapFillService';
+import * as Questions from '../services/QuestionService';
 import { suggestReschedule } from '../utils/overlapKind';
 import { Routine, constrainGaps } from '../utils/routines';
+import { RoutineRow as RoutineRowData, routineRowsFor } from '../utils/routineRows';
+import RoutineRow from '../components/today/RoutineRow';
 import { getCurrentLocation, describeHere } from '../services/LocationService';
-import { nextMeetingBrief } from '../services/MeetingBriefService';
+import { nextMeetingBrief, upcomingInterviewBriefs, interviewBrief, InterviewBrief } from '../services/MeetingBriefService';
+import { interviewChipLabel, prepBlockChipLabel, briefReasonLine } from '../utils/interviewBrief';
 import { MeetingBriefResult } from '../services/LumiServer';
+import { perfFirstPaint, perfMark } from '../utils/perf';
 
 // Once-per-day flag for the "want to hear your day?" offer banner.
 const BRIEFING_OFFERED_KEY = 'lumi.briefingOffered.v1';
 // Groups the user has said are genuinely different things — never asked again.
 const SAME_THING_DISMISSED_KEY = 'lumi.sameThingDismissed.v1';
+// Her answer to a day problem (2D "which one?", 3C "can't make it"), per date —
+// an answered question is not asked again that day.
+const PROBLEM_ANSWERS_KEY = 'lumi.problemAnswers.v1';
+// Pairs whose advice popup was already shown — once each, then only the row.
+const PAIR_ADVICE_SHOWN_KEY = 'meira.pairAdviceShown.v1';
+/** Routines she waved off, by date: { 'YYYY-MM-DD': ['קיקבוקס|20:30'] }. */
+const ROUTINE_SKIPS_KEY = 'lumi.routineSkips.v1';
+
+/** "2026-09-30" → "2026-10-01", on the phone's own calendar. */
+function dayAfter(key: string): string {
+  const [y, m, d] = key.split('-').map(Number);
+  const next = new Date(y, (m || 1) - 1, (d || 1) + 1);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${next.getFullYear()}-${pad(next.getMonth() + 1)}-${pad(next.getDate())}`;
+}
+
+/** Who to ask when a meeting has to move: the saved contact, else "with Dana" / "עם דנה". */
+function askNameOf(task: Task): string | undefined {
+  const saved = (task as any).contact?.name;
+  if (saved) return String(saved).split(' ')[0];
+  return /(?:with|עם)\s+([^\s,.·—-]+)/i.exec(task.text)?.[1];
+}
 // Once-per-day flag hiding the free-time goal suggestion after a reject.
 const GAP_DISMISSED_KEY = 'lumi.gapDismissed.v1';
 // Whether the suggestions drawer is expanded. Collapsed is the default: they
@@ -125,11 +190,13 @@ function formatDayLabel(dateKey: string, language: AppLanguage): string {
   );
 }
 
-function getGreeting(): string {
+/** In her language, and honest about the hour — 03:28 is not "Good morning" (seen 28.10). */
+function getGreeting(he: boolean): string {
   const h = new Date().getHours();
-  if (h < 12) return 'Good morning';
-  if (h < 17) return 'Good afternoon';
-  return 'Good evening';
+  if (h < 5 || h >= 22) return he ? 'לילה טוב' : 'Good night';
+  if (h < 12) return he ? 'בוקר טוב' : 'Good morning';
+  if (h < 17) return he ? 'צהריים טובים' : 'Good afternoon';
+  return he ? 'ערב טוב' : 'Good evening';
 }
 
 // Today's FOCUS = the most important pending task, not just the first one:
@@ -198,6 +265,38 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
   const [meetingBrief, setMeetingBrief] = useState<MeetingBriefResult | null>(null);
   const [briefTaskId, setBriefTaskId] = useState<string | null>(null);
   const [briefRefreshing, setBriefRefreshing] = useState(false);
+  // The interviews coming up (today's still ahead, tomorrow's, the day after's)
+  // and what the server made of each — INCLUDING "could not": an interview whose
+  // brief failed keeps its chip, and the sheet says why. Tomorrow's 13:30 is
+  // not "next up" while today still has things in it, so before this it was
+  // never researched and had no chip at all (Koral, 17.10).
+  const [ivBriefs, setIvBriefs] = useState<InterviewBrief[]>([]);
+  // Which task's brief the sheet shows — a study block opens its INTERVIEW's.
+  const [briefSheetId, setBriefSheetId] = useState<string | null>(null);
+  const [ivRefreshing, setIvRefreshing] = useState(false);
+  const [ivNote, setIvNote] = useState('');
+  const ivSeq = useRef(0);
+  /**
+   * Research the interviews ahead. TRIGGERS (rule 7): this screen coming into
+   * focus, picking another day, the focus load and its calendar sync
+   * (refreshNextUp), and a calendar sync landing something while she is here
+   * (onCalendarSync below). A cached answer is one AsyncStorage read and a
+   * refusal is remembered for six hours, so asking this often costs nothing.
+   * NOT covered: the app closed or in another screen — see CalendarAutoSync.
+   */
+  const refreshInterviewBriefs = useCallback(async () => {
+    const seq = ++ivSeq.current;
+    const { briefs, error } = await upcomingInterviewBriefs(false, (soFar) => {
+      // The first chip need not wait for the second; what is already drawn for
+      // the others stays until the whole pass lands, so nothing flickers off.
+      if (seq === ivSeq.current) {
+        setIvBriefs((prev) => [...prev.filter((p) => !soFar.some((s) => s.task.id === p.task.id)), ...soFar]);
+      }
+    });
+    if (seq !== ivSeq.current) return;      // a newer ask is already in flight
+    if (error) return;                       // unreadable ≠ none: keep what is drawn
+    setIvBriefs(briefs);
+  }, []);
 
   // Research whatever is next, once per task. Cached answers cost one
   // AsyncStorage read, and a refusal ("gym" — nothing to look up) is cached
@@ -235,20 +334,28 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
   // Pending tasks stranded on earlier dates. They used to be invisible here —
   // this screen only ever queried today — so an unfinished task was simply lost.
   const [overdue, setOverdue] = useState<Task[]>([]);
-  // Overlap detection has existed in utils/dayPlanning since before this
-  // screen did, and only ever surfaced in PlanTomorrow — so a day holding a
-  // Zoom call, a yoga class and a party all at once said nothing at all.
-  const [clashes, setClashes] = useState<Clash[]>([]);
   // Rows that look like one appointment worded three ways. Asked about, never
   // merged behind her back.
   const [sameThing, setSameThing] = useState<SameThingGroup[]>([]);
   // Her standing week: the Monday gym to offer, and the 16:00 school run that
   // means those two hours were never free in the first place.
   const [routines, setRoutines] = useState<Routine[]>([]);
+  // An answer, an edit or a fact saved in the chat changed her routines: redraw
+  // the rows now, not after the 10-minute cache.
+  useEffect(() => onRoutinesChanged(() => {
+    loadRoutines()
+      .then((rs) => { setRoutines(rs); Questions.refresh(rs).catch(() => {}); })
+      .catch((e) => console.warn('[Today] routines reload failed', e));
+  }), []);
+  const [routineSkips, setRoutineSkips] = useState<Record<string, string[]>>({});
+  useEffect(() => {
+    AsyncStorage.getItem(ROUTINE_SKIPS_KEY)
+      .then((raw) => setRoutineSkips(raw ? JSON.parse(raw) : {}))
+      .catch((e) => console.warn('[Today] routine skips unreadable', e));
+  }, []);
   // The task whose alarm hour is being changed (the ⏰ chip → "change time").
   const [alarmEditing, setAlarmEditing] = useState<{ task: Task; at: string } | null>(null);
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
-  const [showAllTasks, setShowAllTasks] = useState(false);
   // Local-only mode was completely invisible: "continue offline" on the sign-in
   // screen left the app writing to AsyncStorage and nothing else, with no
   // indicator anywhere. Weeks of tasks lived only on the device while the
@@ -264,10 +371,69 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
    * failure she will not find. (THE SILENT-STATE RULE, 3 and 5.)
    */
   const [calendarError, setCalendarError] = useState<string | null>(null);
+  // The task refresh could not reach the cloud: what is drawn is this phone's
+  // copy, and she is told so (rule 1) — never a silent "this is everything".
+  const [tasksCloudError, setTasksCloudError] = useState<string | null>(null);
+  // Today's cards: one open at a time (the tapped-open card, pick "1").
+  const [openCardId, setOpenCardId] = useState<string | null>(null);
+  const [earlierOpen, setEarlierOpen] = useState(false);
+  // "+ Add something" opens Meira's suggestions in place (Koral, 17.10).
+  const [suggestOpen, setSuggestOpen] = useState(false);
+  // What she chose for each day problem, on the day on screen.
+  const [answered, setAnswered] = useState<Record<string, string>>({});
+  const [pairShown, setPairShown] = useState<Record<string, boolean>>({});
+  // A popup she opened by tapping the row, after it had already been shown once.
+  const [pairOpenKey, setPairOpenKey] = useState<string | null>(null);
+  useEffect(() => {
+    AsyncStorage.getItem(PAIR_ADVICE_SHOWN_KEY)
+      .then((raw) => setPairShown(raw ? JSON.parse(raw) : {}))
+      .catch((e) => console.warn('[Today] pair advice state unreadable', e));
+  }, []);
+  const markPairShown = useCallback((key: string) => {
+    setPairOpenKey(null);
+    setPairShown((prev) => {
+      // Newest 100 only: the map is ids, but it should not grow for ever.
+      const next = Object.fromEntries(Object.entries({ ...prev, [key]: true }).slice(-100));
+      AsyncStorage.setItem(PAIR_ADVICE_SHOWN_KEY, JSON.stringify(next))
+        .catch((e) => console.warn('[Today] pair advice state not saved', e));
+      return next;
+    });
+  }, []);
+  // The car option for each travel problem: absent = still asking, null = none.
+  const [faster, setFaster] = useState<Record<string, { minutes: number; lateBy: number } | null>>({});
   // Where she actually is — at home / in transit / standing in one of today's
   // places. Every route in this app assumed "at home, always"; this is the
   // input that makes the return leg of a round trip start from the right town.
   const [presence, setPresence] = useState<DayPresenceVerdict>({ state: 'unknown' });
+  // She left a task's place before it ended (8.10): what was done, or asked.
+  // Then the conclusion — her standing rule: location + calendar → what it
+  // MEANS, said aloud and in a popup: "wow, you're back early — a good time
+  // to study". The freed window runs from now to where the task used to end.
+  const offerFreedTime = async (v: LeftEarlyVerdict, was: number, point: { lat: number; lng: number } | null) => {
+    const he = language === 'he';
+    const start = addMinutes(v.endAt, -v.durationMinutes);
+    const until = addMinutes(start, was);
+    const now = new Date().toTimeString().slice(0, 5);
+    const minutes = timeToMinutes(until) - timeToMinutes(now);
+    const gap: DayGap = { start: now, end: until, minutes } as DayGap;
+    const ideas = minutes >= 20
+      ? await suggestForGap(gap, { currentPoint: point, routines, language }).catch((e) => {
+        console.warn('[Today] ideas for the freed time failed', e);
+        return [] as GapIdea[];
+      })
+      : [];
+    const idea = ideas[0];
+    const line = freedTimeLine(until, idea ? (he ? idea.titleHe : idea.title) : undefined, v.atHome, he);
+    speak(line, language).catch((e) => console.warn('[Today] speaking the freed time failed', e));
+    Alert.alert(he ? 'מאירה' : 'Meira', line, idea ? [
+      { text: he ? 'לא עכשיו' : 'Not now', style: 'cancel' },
+      { text: he ? 'להוסיף להיום' : 'Add to today', onPress: () => {
+        applyGapIdea(idea, gap).then(() => load(false))
+          .catch((e) => Alert.alert(he ? 'מאירה' : 'Meira', he ? `לא הוספתי: ${String(e)}` : `Not added: ${String(e)}`));
+      } },
+    ] : [{ text: he ? 'סגירה' : 'OK' }]);
+  };
+  const [leftNote, setLeftNote] = useState<{ v: LeftEarlyVerdict; title: string; was: number } | null>(null);
   // The street she is standing in, in words. "In transit" between two unnamed
   // points is the least useful thing to be told, and she asked to always SEE
   // where she is — a fix nobody turns into a name is not that.
@@ -332,9 +498,74 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
    */
   const [dateKey, setDateKey] = useState<string>(getTodayString());
   const [showDayPicker, setShowDayPicker] = useState(false);
+  // v3 (Koral, 27.10): Focus = the ring + the next three things; All day = the whole day.
+  const [view, setView] = useState<'focus' | 'all'>('focus');
+  // All day: one line per task (compact) or the full cards (expanded) — canvas v4.
+  const [dense, setDense] = useState(true);
+  // After a trip edit: what ELSE moved, drawn gold, with one Undo (utils/dayDiff).
+  const [moved, setMoved] = useState<{ ids: string[]; line: string; undo?: () => void } | null>(null);
+  const movedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (movedTimer.current) clearTimeout(movedTimer.current); }, []);
+  // The tray → a free window (Koral, 27.10): the lifted task, the windows as
+  // drop targets (measured when the drag starts), the one under the finger.
+  const ghostRef = useRef<GhostHandle>(null);
+  const zoneViews = useRef(new Map<string, { view: View | null; start: string; end: string }>());
+  const zonesRef = useRef<DropZone[]>([]);
+  const dragging = useRef<Task | null>(null);
+  // While a task is lifted: the hour ruler she drops it on (28.10).
+  const rulerRef = useRef<RulerHandle>(null);
+  const [rulerRows, setRulerRows] = useState<HourRow[] | null>(null);
+  const dropBusy = useRef(false);
+  const [alertsOpen, setAlertsOpen] = useState(false);
+  // 🔔: what the calendar changed (ChangeRecordStore) and the "set a new time" follow-ups from any day.
+  const [changes, setChanges] = useState<ChangeRecord[]>([]);
+  const [changesError, setChangesError] = useState<string | null>(null);
+  const [followUps, setFollowUps] = useState<Task[]>([]);
+  const loadBell = useCallback(async () => {
+    const res = await openChanges(getTodayString()).catch((e) => ({ records: [] as ChangeRecord[], error: String(e) }));
+    setChanges(res.records);
+    setChangesError(res.error ?? null);
+    const all = await getAllTasks().catch(() => [] as Task[]);
+    setFollowUps(all.filter((t) => t.status === 'pending' && followUpOriginal(t.text)));
+  }, []);
+  useEffect(() => {
+    loadBell().catch((e) => console.warn('[Today] bell load failed', e));
+    const off1 = onChangesChanged(() => { loadBell().catch(() => {}); });
+    const off2 = onLateAnswered(() => { loadBell().catch(() => {}); });
+    return () => { off1(); off2(); };
+  }, [loadBell]);
+  // Seen = the sheet showed them; the closed-app nudge about them is no longer needed.
+  useEffect(() => {
+    if (alertsOpen && changes.length) markSeen(changes.map((c) => c.key)).catch(() => {});
+  }, [alertsOpen, changes]);
+  const [hoverZone, setHoverZone] = useState<string | null>(null);
+  const say = (line: string, ids: string[] = [], undo?: () => void) => {
+    if (movedTimer.current) clearTimeout(movedTimer.current);
+    setMoved({ ids, line, undo });
+    movedTimer.current = setTimeout(() => setMoved(null), 8000);
+  };
   const scrollRef = useRef<ScrollView>(null);
   const [timelineY, setTimelineY] = useState(0);
   const [eventsOpen, setEventsOpen] = useState(false);
+  // The menu's "📅 Update calendars" lands here with the email events open.
+  const routeParams = (useRoute() as any).params;
+  const openEventsAt = routeParams?.openEvents as number | undefined;
+  // From the chat home's tiles: my day (Focus), tomorrow, or another day (the picker).
+  useEffect(() => {
+    const day = routeParams?.day as 'today' | 'tomorrow' | 'pick' | undefined;
+    if (!day) return;
+    if (day === 'today') { setDateKey(getTodayString()); setView('focus'); }
+    else if (day === 'tomorrow') setDateKey(getTomorrowString());
+    else setShowDayPicker(true);
+  }, [routeParams?.day, routeParams?.nonce]);
+  useEffect(() => { if (openEventsAt) setEventsOpen(true); }, [openEventsAt]);
+  // The task page's ✏️ lands here with that task's card open, to edit.
+  useEffect(() => {
+    if (routeParams?.editTask) openTaskCard(String(routeParams.editTask)).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeParams?.editTask, routeParams?.nonce]);
+  // The home screen's 🔔 lands here with the sheet open.
+  useEffect(() => { if (routeParams?.openBell) setAlertsOpen(true); }, [routeParams?.openBell]);
   const [eventsReview, setEventsReview] = useState(false);
   const [briefOpen, setBriefOpen] = useState(false);
   // What Meira prepared for the pill's task (songs for karaoke, what to bring
@@ -349,15 +580,56 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
   const [carried, setCarried] = useState<Task[]>([]);
   /** Tasks for a date that is NOT today. Read-only browse; no side effects. */
   const [otherDayTasks, setOtherDayTasks] = useState<Task[]>([]);
+  // Which day `otherDayTasks` belongs to — until it is THIS day, the list is
+  // loading, never the previous day's cards under a new header (1.10: Sunday's
+  // interview drawn under "Tomorrow").
+  const [otherDayKey, setOtherDayKey] = useState('');
   const showingToday = dateKey === getTodayString();
+  // The sky outside, from the real sunrise / sunset at home (Tel Aviv when no
+  // home is saved — a background, not a fact, so a fallback is harmless).
+  const sky = React.useMemo(() => {
+    const place = profile?.homeLat && profile?.homeLng
+      ? { lat: profile.homeLat, lng: profile.homeLng } : FALLBACK_PLACE;
+    return skyFor(timeToMinutes(clock), sunTimes(new Date(), place.lat, place.lng));
+  }, [clock, profile?.homeLat, profile?.homeLng]);
+  const headInk = sky.dark ? SKY_INK.light : SKY_INK.dark;
+  const sun = React.useMemo(() => {
+    const place = profile?.homeLat && profile?.homeLng
+      ? { lat: profile.homeLat, lng: profile.homeLng } : FALLBACK_PLACE;
+    return sunTimes(new Date(), place.lat, place.lng);
+  }, [dateKey, profile?.homeLat, profile?.homeLng]);
+  const focusing = showingToday && view === 'focus';
+  // The list under the ＋ belongs to the day it was opened on.
+  useEffect(() => { setSuggestOpen(false); }, [dateKey]);
   const showingTomorrow = dateKey === getTomorrowString();
+  // The morning ⏰ (Koral, 20.10, option C): one answer for the pill and for
+  // the card it belongs to — it never disappears, it moves to the next morning.
+  const morningAlarm = useMorningAlarm(language === 'he', dateKey);
 
-  useFocusEffect(useCallback(() => { load(); }, []));
+  // The day on screen, for callbacks that outlive the render that made them.
+  const shownRef = useRef({ showingToday, dateKey });
+  shownRef.current = { showingToday, dateKey };
+  useFocusEffect(useCallback(() => {
+    load();
+    // Back from "Add task" on Tomorrow: reload THAT day too (5.10 — "the add
+    // button doesn't work": the task was saved and the screen redrew today).
+    if (!shownRef.current.showingToday) {
+      loadOtherDay(shownRef.current.dateKey).catch((e) => console.warn('[Today] day reload on focus failed', e));
+    }
+  }, []));
+  // After any change: the day ON SCREEN, not only today. Every handler below
+  // used to call load(false), which on Tomorrow saved the change and redrew
+  // today — an Add, an alarm, a move that all looked like they did nothing.
+  const reloadShown = async () => {
+    await load(false);
+    if (!shownRef.current.showingToday) await loadOtherDay(shownRef.current.dateKey);
+  };
 
   // The quiet path. No sync, no alarms, no arrivals — just the day, drawn.
   const loadOtherDay = useCallback(async (key: string) => {
     const rows = await getTasksForDate(key).catch(() => [] as Task[]);
     setOtherDayTasks(sortTasksByPriorityAndTime(rows));
+    setOtherDayKey(key);
   }, []);
 
   useEffect(() => {
@@ -365,8 +637,8 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
     let alive = true;
     // Local first, so the day draws instantly...
     getTasksForDate(dateKey)
-      .then((rows) => { if (alive) setOtherDayTasks(sortTasksByPriorityAndTime(rows)); })
-      .catch(() => { if (alive) setOtherDayTasks([]); });
+      .then((rows) => { if (alive) { setOtherDayTasks(sortTasksByPriorityAndTime(rows)); setOtherDayKey(dateKey); } })
+      .catch((e) => { console.warn('[Today] day not read', dateKey, e); if (alive) { setOtherDayTasks([]); setOtherDayKey(dateKey); } });
     // ...then ASK GOOGLE about this specific day, and draw it again.
     //
     // This used to be "the quiet path. No sync, no alarms" — read-only browse,
@@ -395,6 +667,28 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
     else await loadOtherDay(dateKey);
   }, [showingToday, dateKey, loadOtherDay]);
 
+  // Her answers to the day's problems, for the day on screen.
+  useEffect(() => {
+    AsyncStorage.getItem(PROBLEM_ANSWERS_KEY)
+      .then((raw) => setAnswered((raw ? JSON.parse(raw) : {})[dateKey] || {}))
+      .catch((e) => { console.warn('[Today] problem answers unreadable', e); setAnswered({}); });
+  }, [dateKey]);
+
+  /** Remember what she chose, so the same question is not asked again today. */
+  const answerProblem = useCallback(async (key: string, choice: string) => {
+    setAnswered((prev) => ({ ...prev, [key]: choice }));
+    try {
+      const raw = await AsyncStorage.getItem(PROBLEM_ANSWERS_KEY);
+      const all: Record<string, Record<string, string>> = raw ? JSON.parse(raw) : {};
+      const today = getTodayString();
+      const kept = Object.fromEntries(Object.entries(all).filter(([day]) => day >= today));
+      kept[dateKey] = { ...(kept[dateKey] || {}), [key]: choice };
+      await AsyncStorage.setItem(PROBLEM_ANSWERS_KEY, JSON.stringify(kept));
+    } catch (e) {
+      console.warn('[Today] problem answer not saved', key, e);
+    }
+  }, [dateKey]);
+
   /**
    * Redraw when the automatic sync lands something.
    *
@@ -405,8 +699,18 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
    */
   useEffect(() => onCalendarSync((r) => {
     setCalendarError(r.error);
-    if (r.added > 0 || r.newTasks.length) refreshDay().catch(() => {});
-  }), [refreshDay]);
+    if (r.added > 0 || r.newTasks.length) {
+      refreshDay().catch(() => {});
+      // An interview that just arrived is researched now, not at the next focus.
+      refreshInterviewBriefs().catch((e) => console.warn('[Today] interview briefs failed', e));
+    }
+  }), [refreshDay, refreshInterviewBriefs]);
+
+  // Another day picked: its interview (if it is within three days) is drawn
+  // with its chip too — the day-picker is "she went looking" (rule 7).
+  useEffect(() => {
+    refreshInterviewBriefs().catch((e) => console.warn('[Today] interview briefs failed', e));
+  }, [dateKey, refreshInterviewBriefs]);
 
   /**
    * A voice plan landed (the mic lives in the tab bar, above this screen).
@@ -462,7 +766,8 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
 
       // 1. Arrivals — one-way, and it cancels the alerts for trips already made.
       if (point) {
-        await markArrivals(dayTasks, { current: point }).catch(() => {});
+        await markArrivals(dayTasks, { current: point, language })
+          .catch((e) => console.warn('[Today] arrival sweep failed', e));
       }
 
       // 2. Presence.
@@ -489,6 +794,33 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
         nowHHMM,
       );
       setPresence(verdict);
+
+      // 2a. The reverse of an arrival (8.10, Koral: home from מילואים in Ramla
+      //     at 17:30 and the day still showed her there until 18:00). Mid-task
+      //     and kilometres from its place: seen there → shorten it and say so;
+      //     never seen there → ask. Read again: markArrivals may just have
+      //     set verifiedArrival.
+      if (point) {
+        const fresh = await getTasksForDate(today).catch(() => dayTasks);
+        if (!alive) return;
+        for (const v of leftEarly(fresh as any, point, home, nowHHMM)) {
+          const t = fresh.find((x) => x.id === v.taskId);
+          if (!t) continue;
+          if (v.wasThere) {
+            await updateTaskFields(t.id, {
+              durationMinutes: v.durationMinutes, leftEarlyHandled: true,
+            } as any).catch((e) => console.warn('[Today] shortening a task she left failed', e));
+            load(false);
+            offerFreedTime(v, t.durationMinutes, point);
+          } else {
+            // Asked ONCE: the question stays on screen until answered, but the
+            // next sweep does not raise it again (13.10: "you asked many times").
+            await updateTaskFields(t.id, { leftEarlyHandled: true } as any)
+              .catch((e) => console.warn('[Today] could not mark the no-show question asked', e));
+          }
+          setLeftNote({ v, title: t.text, was: t.durationMinutes });
+        }
+      }
 
       // 2b. And WHERE, in words. Cached in LocationService, so this is free
       //     until she has actually moved 150 m.
@@ -569,11 +901,6 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
   }, [missedTrip?.task.id, missedTrip?.fetchedAt, clock]);
 
   /**
-   * The timeline asking for departures. Same computation as the prompt above —
-   * it just hands the options back instead of putting them on the screen
-   * itself, because the leg renders them inline where the journey is drawn.
-   */
-  /**
    * "By car, by bus, by train, on foot" — all four at once, from where she is.
    *
    * She asked for this in as many words and the app has never shown it: the
@@ -606,14 +933,6 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
     }));
   };
 
-  const handleTimelineOptions = async (task: Task): Promise<DepartureOption[]> => {
-    const storedProfile = await loadProfile().catch(() => null);
-    if (!storedProfile) return [];
-    const { options } = await nextDepartureOptions(task, storedProfile, { count: 3 })
-      .catch(() => ({ options: [] as DepartureOption[] }));
-    return options;
-  };
-
   /**
    * "Route it from where I actually am." The chain's guess — home, or the
    * previous stop — is right most mornings and wrong exactly when the day
@@ -626,7 +945,7 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
     const { task: updated, originLabel, reason } = await replanFromOrigin(
       task, storedProfile, origin, { language },
     ).catch(() => ({ task: undefined, originLabel: '', reason: 'failed' } as any));
-    await load(false);
+    await reloadShown();
     setReplanNotes((prev) => ({
       ...prev,
       [task.id]: updated
@@ -649,7 +968,7 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
         ? `✓ נעול על ${plan.leaveHomeAt} · הגעה ${plan.arriveAt}`
         : `✓ Locked in ${plan.leaveHomeAt} · arrive ${plan.arriveAt}`,
     }));
-    await load(false);
+    await reloadShown();
   };
 
   // The gold pill's task. A failed read must not look like "nothing next".
@@ -660,29 +979,55 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
         if (!t) console.warn('[Today] next important: nothing timed in the next 7 days');
       })
       .catch((e) => console.warn('[Today] next important unreadable', e));
+    // The interviews ahead ride on the same moments: this runs on every focus
+    // load and again after its calendar sync, which is when a new one appears.
+    refreshInterviewBriefs().catch((e) => console.warn('[Today] interview briefs failed', e));
   };
 
+  // An answer to "you're late" changed a task from a system dialog: redraw now (services/RunningLate.onLateAnswered).
+  const loadRef = useRef<((spin?: boolean) => Promise<void>) | null>(null);
+  useEffect(() => { loadRef.current = load; });
+  useEffect(() => onLateAnswered(() => { loadRef.current?.(false)?.catch(() => {}); }), []);
+
   const load = async (showSpinner = true) => {
+    const loadT0 = Date.now();
+    const today = getTodayString();
+    const onToday = (all: Task[]) => all.filter((t) => t.date === today && t.status !== 'moved');
     try {
       // A refresh after an action must not blank the screen — only the first
       // load has nothing to show yet.
       if (showSpinner) setLoading(true);
-      const today = getTodayString();
-      const [tasksData, settings] = await Promise.all([
-        getTasksForDate(today),
+      // 1. Draw the phone's own copy at once (19.10). The screen used to sit
+      //    on a spinner until every task row had downloaded from Supabase —
+      //    seconds on a train, for a list the phone already held. An empty
+      //    phone copy (fresh install) keeps the spinner: an empty day drawn
+      //    for a second would read as "nothing today".
+      try {
+        const [local, localSettings] = await Promise.all([getLocalTasks(), getLocalSettings()]);
+        if (local.length) {
+          setLanguage(localSettings.language);
+          const day = onToday(local);
+          setTasks(sortTasksByPriorityAndTime(day));
+          setLoading(false);
+          perfMark(`Today load → local rows (${day.length})`, loadT0);
+          perfFirstPaint('today, local');
+        }
+      } catch (e) {
+        console.warn('[Today] the phone copy is unreadable — waiting for the cloud', e);
+      }
+      // 2. …then the cloud, which has the last word. One download: the reads
+      //    below (overdue, carried, the week's alerts) share it.
+      const [read, settings] = await Promise.all([
+        getAllTasksChecked(),
         getSettings(),
         hydrateCustomCategories(),
       ]);
+      const tasksData = onToday(read.tasks);
+      setTasksCloudError(read.cloudError);
       setLanguage(settings.language);
       setTasks(sortTasksByPriorityAndTime(tasksData));
-      // Only a real SPATIAL clash earns a warning card. resolveClashes flags
-      // any overlap, so a phone call during a meeting — which is a normal
-      // Tuesday, not a problem — raised the same red card as being due in two
-      // towns at once. Crying wolf costs the card its meaning.
-      setClashes(resolveClashes(tasksData).filter((c) => {
-        const verdict = classifyOverlap(c.a, c.b);
-        return !verdict || verdict.kind === 'spatial';
-      }));
+      perfMark(`Today load → cloud rows (${tasksData.length})${read.cloudError ? ' FAILED, phone copy' : ''}`, loadT0);
+      perfFirstPaint('today, cloud');
       AsyncStorage.getItem(SAME_THING_DISMISSED_KEY)
         .then((raw) => {
           const dismissed: string[] = raw ? JSON.parse(raw) : [];
@@ -695,10 +1040,9 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
       // Include today's tasks whose time has already gone by — they need the
       // same Done / Move / Delete choice as yesterday's leftovers.
       const nowHHMM = new Date().toTimeString().slice(0, 5);
-      getOverdueTasks(today, nowHHMM).then(setOverdue).catch(() => {});
-      getAllTasks()
-        .then((all) => setCarried(all.filter((t) => t.date < today && isStandingTask(t))))
-        .catch((e) => console.warn('[Today] carried tasks unreadable', e));
+      // A 'waiting for a new date' note is not a task to close — it lives on the 🔔 only (28.10).
+      getOverdueTasks(today, nowHHMM).then((rows) => setOverdue(rows.filter((t) => !followUpOriginal(t.text)))).catch(() => {});
+      setCarried(read.tasks.filter((t) => t.date < today && isStandingTask(t)));
       // An unconfigured build is the WORST case, not an exempt one: it means
       // the APK shipped without EXPO_PUBLIC_SUPABASE_*, so nothing can ever
       // sync. Skipping the check here left signedIn stuck at its optimistic
@@ -709,7 +1053,14 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
         setSignedIn(false);
       }
       loadProfile().then((p) => setProfile(toChainProfile(p))).catch(() => {});
-      loadRoutines().then(setRoutines).catch(() => {});
+      // Her routines, then — if this is a good moment — one of Meira's
+      // questions about them (QuestionService, trigger 1: screen visible).
+      loadRoutines()
+        .then((rs) => {
+          setRoutines(rs);
+          Questions.maybeAsk({ routines: rs }).catch((e) => console.warn('[Today] question check failed', e));
+        })
+        .catch((e) => console.warn('[Today] routines not loaded', e));
       // First open of the day → offer to read the day out loud.
       AsyncStorage.getItem(BRIEFING_OFFERED_KEY)
         .then((v) => { if (v !== today) setShowBriefingOffer(true); })
@@ -736,8 +1087,12 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
         } catch (e) {
           console.warn('[Today] sync chain failed', e);
         }
-        const refreshed = await getTasksForDate(today).catch(() => null);
-        if (refreshed) setTasks(sortTasksByPriorityAndTime(refreshed));
+        const refreshed = await getAllTasksChecked().catch(() => null);
+        if (refreshed) {
+          setTasks(sortTasksByPriorityAndTime(onToday(refreshed.tasks)));
+          setTasksCloudError(refreshed.cloudError);
+        }
+        perfMark('Today load → calendar synced + redrawn', loadT0);
         refreshNextUp();
 
         // Anything that arrived from WhatsApp or Google in the sync above has
@@ -789,7 +1144,11 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
       buildGoalSuggestion(tasksData, settings.language).then(setGoalSuggestion).catch(() => {});
       // Lumi stays engaged with today's most important task: schedule the
       // daytime "how's it going?" check-ins (once per day, taps open the task).
-      const focus = pickFocusTask(tasksData.filter((t) => t.status !== 'complete'));
+      // Her own "most important today" wins over the guess (DayGoalCard).
+      const goal = (await loadDayGoal()).goal;
+      const focus = (goal?.taskId && goal.date === getTodayString()
+        ? tasksData.find((t) => t.id === goal.taskId && t.status !== 'complete') : undefined)
+        ?? pickFocusTask(tasksData.filter((t) => t.status !== 'complete'));
       if (focus) {
         const busy = tasksData.map((t) => t.fixedTime).filter((t): t is string => Boolean(t));
         scheduleFocusCheckIns(focus, settings.language, busy).catch(() => {});
@@ -862,7 +1221,7 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
       await updateTaskFields(chosen.id, patch as any).catch(() => {});
     }
     await letGoTasks(others.map((t) => t.id)).catch(() => {});
-    await load(false);
+    await reloadShown();
   };
 
   /** They really are different — remember that, and stop asking. */
@@ -892,31 +1251,39 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
     if (!at) return;
     const off = task.alarmState === 'not_needed';
     const he = language === 'he';
+    const setAlarmOn = async (on: boolean) => {
+      await updateTaskFields(task.id, {
+        // Turning it back on re-plans it; AlarmPlanner arms it once the
+        // hour is inside Android's 24 h reach.
+        alarmState: on ? 'planned' : 'not_needed',
+        ...(on ? { alarmAt: at } : {}),
+      } as any);
+      if (on) {
+        await armDueAlarms([{ ...task, alarmAt: at, alarmState: 'planned' } as Task])
+          .catch((e) => console.warn('[Today] alarm not armed', task.id, e));
+      }
+      await reloadShown();
+    };
+    // Which morning — an alarm for tomorrow must say tomorrow (rule 4).
+    const day = task.date === getTodayString() ? ''
+      : task.date === getTomorrowString() ? (he ? ' · מחר' : ' · tomorrow')
+        : ` · ${task.date.slice(8, 10)}.${task.date.slice(5, 7)}`;
+    // Keep · Change · Cancel (Koral, 1.10). It used to be Turn off · Change ·
+    // Cancel — two ways to say "stop", and none to say "yes, that's right".
+    // Android orders three buttons neutral · negative · positive, so the safe
+    // answer sits where the thumb lands and the destructive one stands apart.
     Alert.alert(
-      `${off ? '🔕' : '⏰'} ${at}`,
-      he ? 'מה לעשות עם השעון המעורר?' : 'What should the alarm do?',
-      [
-        {
-          text: off ? (he ? 'הפעל' : 'Turn on') : (he ? 'כבה' : 'Turn off'),
-          onPress: async () => {
-            await updateTaskFields(task.id, {
-              // Turning it back on re-plans it; AlarmPlanner arms it once the
-              // hour is inside Android's 24 h reach.
-              alarmState: off ? 'planned' : 'not_needed',
-              ...(off ? { alarmAt: at } : {}),
-            } as any);
-            if (off) {
-              await armDueAlarms([{ ...task, alarmAt: at, alarmState: 'planned' } as Task])
-                .catch(() => {});
-            }
-            await load(false);
-          },
-        },
-        {
-          text: he ? 'שנה שעה' : 'Change time',
-          onPress: () => setAlarmEditing({ task, at }),
-        },
-        { text: he ? 'ביטול' : 'Cancel', style: 'cancel' },
+      `${off ? '🔕' : '⏰'} ${at}${day}`,
+      off ? (he ? 'השעון המעורר כבוי.' : 'The alarm is off.')
+        : (he ? `השעון המעורר יצלצל ב-${at}.` : `The alarm will ring at ${at}.`),
+      off ? [
+        { text: he ? 'שנה שעה' : 'Change time', onPress: () => setAlarmEditing({ task, at }) },
+        { text: he ? 'השאר כבוי' : 'Keep it off', style: 'cancel' },
+        { text: he ? 'הפעל' : 'Turn on', onPress: () => { setAlarmOn(true); } },
+      ] : [
+        { text: he ? 'בטל שעון' : 'Cancel alarm', style: 'destructive', onPress: () => { setAlarmOn(false); } },
+        { text: he ? 'שנה שעה' : 'Change time', onPress: () => setAlarmEditing({ task, at }) },
+        { text: he ? '✓ שמור' : '✓ Keep', style: 'cancel' },
       ],
     );
   };
@@ -926,7 +1293,7 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
     setAlarmEditing(null);
     await updateTaskFields(task.id, { alarmAt: at, alarmState: 'planned' } as any);
     await armDueAlarms([{ ...task, alarmAt: at, alarmState: 'planned' } as Task]).catch(() => {});
-    await load(false);
+    await reloadShown();
   };
 
   /**
@@ -960,7 +1327,29 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
 
   const handlePickGapIdea = async (idea: GapIdea, gap: DayGap) => {
     await applyGapIdea(idea, gap, dateKey);
-    await load(false);
+    await reloadShown();
+  };
+
+  /**
+   * Redraw ONE day from the phone's own copy, on whichever list is on screen.
+   *
+   * Tomorrow is drawn from `otherDayTasks`, not `tasks`. The mode switch used to
+   * `setTasks` (today's list) and read the day back from the CLOUD — so on
+   * Tomorrow the new route was saved correctly and the card stayed on the old
+   * one (27.10: car tapped, 15:12→16:00 saved, train 14:21 still drawn), and
+   * each tap cost a 296-row download. The write that just landed is local, so
+   * the local copy is the truth.
+   */
+  const redrawDay = async (date: string): Promise<Task[]> => {
+    const rows = sortTasksByPriorityAndTime(
+      (await getLocalTasks()).filter((x) => x.date === date && x.status !== 'moved'),
+    );
+    if (date === getTodayString()) setTasks(rows);
+    if (!shownRef.current.showingToday && shownRef.current.dateKey === date) {
+      setOtherDayTasks(rows);
+      setOtherDayKey(date);
+    }
+    return rows;
   };
 
   /**
@@ -975,9 +1364,11 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
    * is not "when should I have left" but "what is the NEXT one", so it asks
    * that instead (same recompute as the "haven't left" button).
    */
-  const handleTransportChange = async (task: Task, mode: TransportType) => {
+  const handleTransportChange = async (task: Task, mode: TransportType, isUndo = false) => {
     const loc = asLocation(task);
     if (!loc) return;
+    const before = snapshotDay(dayTasks);
+    const prevMode = loc.transportType as TransportType | undefined;
     const today = getTodayString();
     setReplanNotes((prev) => ({ ...prev, [task.id]: language === 'he' ? '🧭 בודקת…' : '🧭 checking…' }));
     // Record the choice, and KEEP the route that is on screen.
@@ -988,9 +1379,13 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
     // the seconds the Google call took — the reported "switching modes hides
     // the timestamps". ensureTravelChain now takes forceTaskId instead, so the
     // old times stay put until the new ones arrive and replace them.
+    // On the phone first, the cloud behind it: the route call must not wait for a
+    // round trip to Supabase (18.10: "everything is slow").
     await updateTaskFields(task.id, {
-      location: { ...loc, transportType: mode },
-    } as any);
+      location: { ...loc, transportType: mode, transportTypeBy: 'her' },
+    } as any, { awaitCloud: false });
+    // The chip moves NOW; the new times follow when the route arrives.
+    await redrawDay(task.date || today);
 
     // She CHOSE this. That is the only kind of evidence worth learning from —
     // the mode a route happened to be planned with is just what the app
@@ -1028,11 +1423,22 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
           ?? (language === 'he' ? 'לא מצאתי נסיעה הבאה 🙁' : "Couldn't find the next departure 🙁");
       }
     } else {
-      await ensureTravelChain(today, language, { forceTaskId: task.id });
+      await ensureTravelChain(task.date || today, language, { forceTaskId: task.id });
     }
 
-    const fresh = await getTasksForDate(today);
-    setTasks(sortTasksByPriorityAndTime(fresh));
+    const fresh = await redrawDay(task.date || today);
+
+    // Say what else the switch moved, and offer it back (Koral, 27.10).
+    const knock = knockOnIds(diffDay(before, fresh), task.id);
+    if (movedTimer.current) clearTimeout(movedTimer.current);
+    setMoved({
+      ids: [task.id, ...knock],
+      line: language === 'he'
+        ? (knock.length ? `עודכן · ${knock.length} שינויים בהמשך היום` : 'הנסיעה עודכנה')
+        : (knock.length ? `Updated · ${knock.length} change${knock.length === 1 ? '' : 's'} later today` : 'Trip updated'),
+      undo: !isUndo && prevMode && prevMode !== mode ? () => { void handleTransportChange(task, prevMode, true); } : undefined,
+    });
+    movedTimer.current = setTimeout(() => setMoved(null), 8000);
 
     if (!note) {
       const plan = asLoc(fresh.find((t) => t.id === task.id))?.transitPlan;
@@ -1075,10 +1481,9 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
     if (!asLocation(task)) return;
     // One commit path, shared with the Leave-now screen: rewrite the route,
     // replace the alerts that belonged to the departure she is abandoning.
-    await applyDepartureOption(task, plan, language).catch(() => {});
+    await applyDepartureOption(task, plan, language).catch((e) => console.warn("[Today] could not lock the chosen departure", e));
     setAlternatives((prev) => ({ ...prev, [task.id]: [plan] }));
-    const fresh = await getTasksForDate(getTodayString());
-    setTasks(sortTasksByPriorityAndTime(fresh));
+    await redrawDay(task.date || getTodayString());
     setReplanNotes((prev) => ({
       ...prev,
       [task.id]: language === 'he'
@@ -1230,7 +1635,30 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
 
   const handleUpdate = async (patch: Partial<Task>) => {
     if (!selectedTask) return;
-    setSelectedTask((p) => p ? { ...p, ...patch } : p);
+    const current = { ...selectedTask, ...patch };
+    setSelectedTask(current);
+    // The card may be of a task that no longer exists — a cancelled event opened
+    // from the 🔔 after it was removed (28.10: "I edit the hours and it doesn't
+    // save"). A write to a missing id did nothing and said nothing (rule 3).
+    const exists = (await getLocalTasks().catch(() => [] as Task[])).some((t) => t.id === selectedTask.id);
+    if (!exists) {
+      Alert.alert(
+        he ? 'המשימה הזו כבר הוסרה' : 'This task was removed',
+        he ? 'האירוע בוטל והוסר מהיום. לשמור אותו מחדש כמשימה שלך, עם השינוי?' : 'The event was cancelled and removed. Save it again as your own task, with this change?',
+        [
+          { text: he ? 'לא' : 'No', style: 'cancel', onPress: () => setSelectedTask(null) },
+          {
+            text: he ? 'לשמור מחדש' : 'Save it again',
+            onPress: async () => {
+              const { id: _id, createdAt: _c, completedAt: _d, notificationIds: _n, calendarEventId: _e, ...rest } = current as any;
+              const made = await addTask({ ...rest, status: 'pending' }).catch((e) => { console.warn('[Today] re-add failed', e); return null; });
+              if (made) { setSelectedTask(made); await load(); } else Alert.alert(he ? 'לא נשמר' : 'Not saved');
+            },
+          },
+        ],
+      );
+      return;
+    }
     await updateTaskFields(selectedTask.id, patch);
     await load();
   };
@@ -1347,7 +1775,7 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
       + (failed ? `${placed.length ? ' — ' : ''}${he ? `${failed} לא הצליחו, נסי שוב` : `${failed} couldn't be moved — try again`}` : ''),
     );
     await ensureTravelChain(today, language).catch((e) => console.warn('[Today] travel chain after reschedule', e));
-    await load(false);
+    await reloadShown();
   };
 
   // An overdue task is most often one she actually DID and never ticked off.
@@ -1364,58 +1792,6 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
     const gone = new Set(ids);
     setOverdue((prev) => prev.filter((t) => !gone.has(t.id)));
     for (const id of ids) await deleteTask(id);
-    await load(false);
-  };
-
-  // Apply one resolution. Everything here is a real edit to a real task —
-  // nothing is "suggested" into a state the user cannot see or undo.
-  const applyClashOption = async (opt: ClashOption) => {
-    if (opt.kind === 'move' && opt.newTime) {
-      await updateTaskFields(opt.taskId, { scheduledTime: opt.newTime, fixedTime: opt.newTime });
-    } else if (opt.kind === 'shorten' && opt.newTime) {
-      const task = tasks.find((t) => t.id === opt.taskId);
-      const endMin = 23 * 60;
-      const startMin = Number(opt.newTime.slice(0, 2)) * 60 + Number(opt.newTime.slice(3, 5));
-      await updateTaskFields(opt.taskId, {
-        scheduledTime: opt.newTime,
-        fixedTime: opt.newTime,
-        durationMinutes: Math.max(15, Math.min(task?.durationMinutes ?? 30, endMin - startMin)),
-      });
-    } else if (opt.kind === 'delay-next' && opt.newTime) {
-      await updateTaskFields(opt.taskId, { scheduledTime: opt.newTime, fixedTime: opt.newTime });
-    } else if (opt.kind === 'end-earlier' && opt.newTime) {
-      // Shorten the earlier task so the journey to the pinned one fits.
-      const task = tasks.find((t) => t.id === opt.taskId);
-      const start = task?.fixedTime || task?.scheduledTime;
-      if (start) {
-        const mins = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
-        await updateTaskFields(opt.taskId, {
-          durationMinutes: Math.max(15, mins(opt.newTime) - mins(start)),
-        });
-      }
-    } else if (opt.kind === 'attend-remotely') {
-      // Nothing to reschedule — the point is that it needs no travel. Record
-      // the decision so the travel chain stops planning a trip for it.
-      await updateTaskFields(opt.taskId, { hasLocation: false, location: undefined } as any);
-    } else if (opt.kind === 'choose') {
-      // Keeping one means the other is let go — recoverable, never deleted.
-      const clash = clashes.find((c) => c.options.some((o) => o === opt));
-      const drop = clash && (clash.a.id === opt.taskId ? clash.b.id : clash.a.id);
-      if (drop) await letGoTasks([drop]);
-    }
-
-    // Moving a clock without re-planning the journey leaves a route that is
-    // quietly wrong — the whole reason the clash existed. Drop the stored plan
-    // on BOTH tasks (the chain shifts for everything after the edit too) and
-    // let ensureTravelChain work them out again, which also re-arms the
-    // leave/wake alerts. Same pattern as handleTransportChange.
-    const clash = clashes.find((c) => c.options.includes(opt));
-    for (const t of [clash?.a, clash?.b]) {
-      if (!t) continue;
-      const loc = asLocation(t);
-      if (loc) await updateTaskFields(t.id, { location: { ...loc, transitPlan: undefined } } as any);
-    }
-    await ensureTravelChain(getTodayString(), language).catch(() => {});
     await load(false);
   };
 
@@ -1454,15 +1830,6 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
     }) ?? null
     : null;
   const lateBy = lateTrip ? clockMin - timeToMinutes((lateTrip.fixedTime || lateTrip.scheduledTime)!) : 0;
-  const pillTask = lateTrip ?? nextUp;
-  const nextUpTime = nextUp ? (nextUp.fixedTime || nextUp.scheduledTime || '') : '';
-  const nextUpWhen = nextUp
-    ? (nextUp.date && nextUp.date !== getTodayString()
-      ? `${formatDayLabel(nextUp.date, language)}${nextUpTime ? ` ${nextUpTime}` : ''}`
-      : nextUpTime)
-    : '';
-  const nextUpWake = nextUp ? wakeChipFor(nextUp, wakeInputs(profile)) : null;
-
 
   const leaveBy = tasks.map(asLoc).find((l) => l?.leaveHomeBy)?.leaveHomeBy;
   const transitStop = tasks.map(asLoc).find((l) => l?.transitPlan)?.transitPlan?.firstBusStop;
@@ -1487,10 +1854,65 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
   // Clock order, NOT the priority order used elsewhere: a chain's prevTask must
   // be the previous STOP of the day, or way-home plans chain off the wrong place.
   // The day being drawn: today's live list, or the browsed day's.
-  const dayTasks = showingToday ? tasks : otherDayTasks;
+  // One card per meeting: her "שיחה עם סגית" and Google's "Sagit/Koral- intro"
+  // at the same minute are one call (1.10) — collapseSameMeetings.
+  const dayLoading = !showingToday && otherDayKey !== dateKey;
+  // 28.10 (Koral): 'Set a new time: X' is a note on the 🔔 ('waiting for a new date'), never a row in the day.
+  // …and a task she postponed ('missed': "not going, new time later") leaves the day at once —
+  // it waits on the 🔔 as "⏳ waiting for a new date" (28.10: "I pressed later many times and it
+  // is STILL there — the interface must update fast").
+  const dayTasks = collapseSameMeetings((showingToday ? tasks : (dayLoading ? [] : otherDayTasks))
+    .filter((t) => !followUpOriginal(t.text) && t.status !== 'missed'));
+  // She is LOOKING at a day with a trip nobody has routed: route it now. Rule 7
+  // — "she went looking" is a trigger. Once per day per visit; the card says
+  // "routing…" meanwhile, and the chain's own warn says why if it fails (1.10:
+  // tomorrow's yoga sat on "routing…" under a fallback alarm until a tap).
+  const routedOnView = useRef(new Set<string>());
+  const waitingForRoute = dayTasks.some((t) => t.status !== 'complete' && Boolean(t.fixedTime)
+    && !isRemoteTask(t) && travelRowState(t) === 'pending');
+  useEffect(() => {
+    if (dayLoading || !waitingForRoute || routedOnView.current.has(dateKey)) return;
+    routedOnView.current.add(dateKey);
+    ensureTravelChain(dateKey, language)
+      .then(() => refreshDay())
+      .catch((e) => console.warn('[Today] routing the day on view failed', dateKey, e));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateKey, dayLoading, waitingForRoute]);
+  // Prep blocks no interview earns any more (a twin's second set, an orphan),
+  // swept when she LOOKS at a day — the calendar sync that also does it is
+  // throttled and silent (5.10: two "Prep for…" on Tuesday through two
+  // installs). Once per day per visit; redraw only if something went.
+  const sweptDays = useRef(new Set<string>());
+  useEffect(() => {
+    if (dayLoading || sweptDays.current.has(dateKey)) return;
+    sweptDays.current.add(dateKey);
+    sweepStalePrep()
+      .then((gone) => { if (gone > 0) refreshDay(); })
+      .catch((e) => console.warn('[Today] prep sweep failed', dateKey, e));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateKey, dayLoading]);
+  // A bus or train trip still ahead whose plan holds no ride — a leave time and
+  // a number of minutes, no train. 4.10: "it says 54 minutes, but what matters
+  // is when the train leaves, from which platform, where to board, where to get
+  // off and when it arrives." Re-route it once per visit, so the card shows the
+  // timetable instead of a sum.
+  const nowHHMM = new Date().toTimeString().slice(0, 5);
+  const ridelessTrip = dayLoading ? undefined : dayTasks.find((t) => t.status !== 'complete'
+    && Boolean(t.fixedTime) && !isRemoteTask(t) && travelRowState(t) === 'route'
+    && ['bus', 'train'].includes(String((t.location as any)?.transportType))
+    && ridesOf(t).length === 0
+    && (dateKey !== getTodayString() || timeToMinutes(t.fixedTime || '') > timeToMinutes(nowHHMM)));
+  useEffect(() => {
+    if (!ridelessTrip || routedOnView.current.has(`rides-${ridelessTrip.id}`)) return;
+    routedOnView.current.add(`rides-${ridelessTrip.id}`);
+    console.warn('[Today] a trip with no ride in its plan — re-routing', ridelessTrip.id);
+    ensureTravelChain(dateKey, language, { forceTaskId: ridelessTrip.id })
+      .then(() => refreshDay())
+      .catch((e) => console.warn('[Today] re-routing a trip with no ride failed', ridelessTrip.id, e));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateKey, ridelessTrip?.id]);
   const dayOrder = [...dayTasks].sort((a, b) =>
     ((a.fixedTime || a.scheduledTime || '99:99') < (b.fixedTime || b.scheduledTime || '99:99') ? -1 : 1));
-  const firstAwayId = dayOrder.find((t) => asLocation(t))?.id;
   /**
    * The ONE hour this day wakes her — the earliest wake any of its tasks needs.
    *
@@ -1499,19 +1921,9 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
    * A morning has one beginning; see utils/alarmPlan.dayWakeOwner.
    */
   const dayEarliestWake = earliestWakeOf(dayTasks, wakeInputs(profile));
-  // Clashes and doubles on ANY day on screen — 8.10 (reserve duty vs two
-  // interviews) said nothing because both checks ran for today only.
-  const dayClashes = showingToday ? clashes : resolveClashes(otherDayTasks).filter((c) => {
-    const verdict = classifyOverlap(c.a, c.b);
-    return !verdict || verdict.kind === 'spatial';
-  });
+  // Doubles on ANY day on screen — 8.10 (reserve duty vs two interviews) said
+  // nothing because the checks ran for today only. Clashes: dayProblems below.
   const daySameThing = showingToday ? sameThing : findSameThingGroups(otherDayTasks);
-  // Two places with no overlap but not enough time to get between them —
-  // the clash an overlap check cannot see (utils/overlapKind.tightTransfers).
-  const dayTight = tightTransfers(showingToday ? tasks : otherDayTasks);
-  const clashAt = dayClashes[0]
-    ? [dayClashes[0].a, dayClashes[0].b].map((t) => t.fixedTime || t.scheduledTime || '').filter(Boolean).sort()[1] || ''
-    : '';
   const nextPendingId = dayOrder.find((t) => t.status === 'pending')?.id;
   /**
    * Two different things, drawn two different ways.
@@ -1522,7 +1934,18 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
    * can be ticked off without pretending to own five hours of the day and
    * without colliding with a party it does not actually conflict with.
    */
-  const { timed: timelineTasks, flexible: dayFlexible } = splitDayTasks(dayOrder);
+  const split = splitDayTasks(dayOrder);
+  /**
+   * …but a flexible task that HAS an hour is drawn at that hour. 2.10: the
+   * prep block running 13:00–23:30 sat under "✨ Anytime today" while the now
+   * row offered her those same hours as "Free now" — "why isn't it in the
+   * diary with the heart on it?". Flexible still decides the clash kind and
+   * the place prompt (utils/taskShape); it no longer decides where the card
+   * goes. Only work with no hour at all is listed apart, below the day.
+   */
+  const hasHour = (t: Task) => Boolean(t.fixedTime || t.scheduledTime);
+  const timelineTasks = dayOrder.filter((t) => split.timed.includes(t) || hasHour(t));
+  const dayFlexible = split.flexible.filter((t) => !hasHour(t));
   /**
    * Standing work she wrote down on an earlier day and has not ticked yet.
    *
@@ -1542,21 +1965,8 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
    */
   const carriedFlexible = showingToday ? carried : [];
   const flexibleTasks = [...dayFlexible, ...carriedFlexible];
-  /**
-   * Which cards actually get drawn — utils/dayWindow, which explains the rule
-   * and is pinned by tests/run-day-window.ts. The short version: the cap used
-   * to take the first six tasks in CLOCK order, so by the afternoon all six
-   * were over and a 16:00 task added on a busy day appeared nowhere on the
-   * screen. The cut comes off the past end now.
-   */
+  // The past no longer needs a cap: it folds into "N earlier today" (EarlierRow).
   const nowClock = new Date().toTimeString().slice(0, 5);
-  // Today's clock hides today's past — never another day's morning.
-  const visibleIds = showingToday
-    ? visibleDayIds(timelineTasks, nowClock)
-    : new Set(timelineTasks.map((t) => t.id));
-  const visibleDayOrder = showAllTasks
-    ? timelineTasks : timelineTasks.filter((t) => visibleIds.has(t.id));
-  const hiddenTaskCount = timelineTasks.length - visibleDayOrder.length;
 
   // The free windows of the day, drawn between the cards. Bounded by her wake
   // and sleep times, never starting in the past, and ending at the departure
@@ -1564,7 +1974,7 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
   // minutes must not be offered as an hour.
   const gaps = constrainGaps(
     findDayGaps(timelineTasks, {
-      now: nowClock,
+      now: showingToday ? nowClock : undefined,
       dayStart: profile?.defaultWakeTime || '07:00',
       dayEnd: profile?.sleepTime || '22:00',
       minMinutes: 30,
@@ -1581,8 +1991,645 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
   // geometry in order to drop it on the floor. `gaps` survives because the
   // empty-day branch below still offers the whole day as free windows.
 
+  // ── The card list (Koral's picks, 30.9): cards, a now line, 2D, 3C. ──────
+  const he = language === 'he';
+  const dayStartAt = profile?.defaultWakeTime || '07:00';
+  const dayEndAt = profile?.sleepTime || '22:00';
+  const endOfTask = (t: Task) => addMinutes(t.fixedTime || t.scheduledTime || '00:00', t.durationMinutes || 30);
+  // Today's past folds into one line above the now line; other days show whole.
+  const earlier = showingToday
+    ? timelineTasks.filter((t) => endedBy(t, clock)) : [];  // not endOfTask: that wraps at midnight (utils/taskEnd)
+  const ahead = timelineTasks.filter((t) => !earlier.includes(t));
+  // HAPPENING now — started, not ended, not done. The now is inside these
+  // cards (a progress bar with the heart), not a line above them: 1.10, "it
+  // says 21:30 above the task that happens now".
+  const inProgress = showingToday
+    ? ahead.filter((t) => t.status !== 'complete' && Boolean(t.fixedTime || t.scheduledTime)
+      && timeToMinutes(t.fixedTime || t.scheduledTime || '') <= timeToMinutes(clock)) : [];
+  const upcoming = ahead.filter((t) => !inProgress.includes(t));
+  const nextCardId = showingToday ? upcoming.find((t) => t.status !== 'complete')?.id : undefined;
+  // One problem per pair (utils/dayProblems) — the 12:15 clash is drawn once.
+  const allProblems = dayProblems(dayTasks, dayEndAt);
+  const openProblems = allProblems.filter((p) => !answered[p.key]);
+  // Tasks drawn INSIDE a "which one?" card are not cards of their own.
+  const inPick = new Set(openProblems.flatMap((p) => (p.kind === 'overlap' ? [p.work.id, p.fixed.id] : [])));
+  const nowInCard = inProgress.some((t) => !inPick.has(t.id));
+  // Late stays late after she answers: the card keeps saying so (rule 1).
+  const lateInto = new Map(allProblems
+    .filter((p): p is TravelProblem => p.kind === 'travel')
+    .map((p) => [p.to.id, { lateBy: p.lateBy, leaveAt: endOfTask(p.from) }]));
+  // The work inside a "which one?" card is not drawn a second time.
+  const drawnInPick = new Set(openProblems.flatMap((p) => (p.kind === 'overlap' ? [p.work.id] : [])));
+  // Free windows between cards, 45 min and up, counted to each departure.
+  // Her routines on this day, as rows of their own (6.10, pick "A"). Until she
+  // answers, a routine's hour is not offered as free — it is cut from the
+  // windows exactly like a constraint.
+  const routineRows = routineRowsFor(routines, dateKey, dayTasks, {
+    now: showingToday ? clock : undefined, skipped: routineSkips[dateKey] || [],
+  });
+  const listGaps = constrainGaps(
+    findDayGaps(timelineTasks, {
+      now: showingToday ? clock : undefined, dayStart: dayStartAt, dayEnd: dayEndAt, minMinutes: 45,
+    }),
+    [...routines, ...routineRows.map((r) => ({ ...r.routine, kind: 'constraint' as const, weekdays: [], time: r.start }))],
+    dateKey,
+  );
+  // The ＋ under the now line: the window she is in, or the next one — counted
+  // from NOW to the next event, however short (18.10: 29 minutes before an
+  // 11:00 call is real; the 45-minute floor above hid it, so the + said only
+  // "Add something" and offered nothing that fitted).
+  // Every day has the ＋ (21.10: "on the next day the + is missing"). On another day there is no "now":
+  // it names the first window worth naming, never "free now".
+  const plusRaw = plusSlot(constrainGaps(
+    findDayGaps(timelineTasks, {
+      now: showingToday ? clock : undefined, dayStart: dayStartAt, dayEnd: dayEndAt, minMinutes: PLUS_MIN_MINUTES,
+    }),
+    [...routines, ...routineRows.map((r) => ({ ...r.routine, kind: 'constraint' as const, weekdays: [], time: r.start }))],
+    dateKey,
+  ), showingToday ? clock : dayStartAt);
+  const plus = plusRaw ? (showingToday ? plusRaw : { ...plusRaw, startsNow: false }) : null;
+  const nowGap = plus?.startsNow ? plus.gap : undefined;
+  const nextGap = plus && !plus.startsNow ? plus.gap : undefined;
+  const travelKeys = openProblems.filter((p) => p.kind === 'travel').map((p) => p.key).join('|');
+  // The day's ONE wake alarm, visible without a tap (rule 5) — and still drawn,
+  // as 🔕, when she muted it: hiding it would remove the only way back on.
+  const guessedOwner = ahead
+    .map((t) => ({ t, chip: wakeChipFor(t, wakeInputs(profile), { dayEarliestWake }) }))
+    .find((x) => x.chip);
+  // The pill's answer wins on its own day — her choice (another hour, off) is
+  // what Clock holds. 21.10: the pill said 08:18 and this row said 08:33.
+  const pillPlan = morningAlarm.plan?.date === dateKey ? morningAlarm.plan : null;
+  const pillTask = pillPlan?.task && ahead.find((t) => t.id === pillPlan.task!.id);
+  const wakeOwner = pillPlan && pillTask
+    ? { t: pillTask, chip: { at: pillPlan.at, muted: !pillPlan.on }, pill: true }
+    : guessedOwner ? { ...guessedOwner, pill: false } : undefined;
+  const wakeRow = wakeOwner && wakeOwner.chip
+    && (!showingToday || timeToMinutes(wakeOwner.chip.at) > timeToMinutes(clock)) ? (
+      <TouchableOpacity key="wake" style={styles.wakeRow} onPress={() => (wakeOwner.pill ? morningAlarm.openSheet() : handleAlarmPress(wakeOwner.t))}
+        accessibilityRole="button">
+        <Text style={styles.wakeText}>
+          {`${wakeOwner.chip.muted ? '🔕' : '⏰'} ${he ? `השכמה ${wakeOwner.chip.at}` : `Wake up ${wakeOwner.chip.at}`}`
+            + (wakeOwner.chip.muted ? (he ? ' · כבוי' : ' · off') : '')}
+        </Text>
+      </TouchableOpacity>
+    ) : null;
+
+  // The taxi answer needs a real car time from the first place to the second.
+  useEffect(() => {
+    const pending = openProblems.filter((p): p is TravelProblem => p.kind === 'travel' && !(p.key in faster));
+    if (!pending.length) return undefined;
+    let alive = true;
+    (async () => {
+      const stored = await loadProfile().catch(() => null);
+      for (const p of pending) {
+        let result: { minutes: number; lateBy: number } | null = null;
+        try {
+          const fromLoc: any = asLoc(p.from);
+          const dest = asLocation(p.to)?.address;
+          const at = p.to.fixedTime || p.to.scheduledTime;
+          // 0,0 is not a place (Null Island) — no origin, no probe.
+          if (stored && fromLoc?.lat && fromLoc?.lng && dest && at && p.mode !== 'car') {
+            const [car] = await GoogleService.compareModes(
+              dest, at, toChainProfile(stored) as UserProfile, p.to.date, ['car'],
+              { from: { lat: fromLoc.lat, lng: fromLoc.lng } });
+            const minutes = car?.plan.totalDurationMinutes;
+            if (minutes && minutes < p.travelMinutes) {
+              const land = timeToMinutes(endOfTask(p.from)) + minutes;
+              result = { minutes, lateBy: Math.max(0, land - timeToMinutes(at)) };
+            }
+          }
+        } catch (e) {
+          console.warn('[Today] no car option for', p.key, e);
+        }
+        if (!alive) return;
+        setFaster((prev) => ({ ...prev, [p.key]: result }));
+      }
+    })();
+    return () => { alive = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [travelKeys]);
+
+  const askToMove = async (p: TravelProblem) => {
+    const text = he
+      ? `היי, אני אאחר קצת — אפשר ב-${p.askFor}?`
+      : `Hi! I'm running a bit late — could we make it ${p.askFor}?`;
+    const phone = String((p.to as any).contact?.phone || '').replace(/\D/g, '');
+    const url = phone
+      ? `https://wa.me/${phone}?text=${encodeURIComponent(text)}`
+      : `whatsapp://send?text=${encodeURIComponent(text)}`;
+    try {
+      await Linking.openURL(url);
+      answerProblem(p.key, 'ask');
+    } catch (e) {
+      console.warn('[Today] WhatsApp did not open', e);
+      Alert.alert(he ? 'וואטסאפ לא נפתח' : "WhatsApp didn't open", text);
+    }
+  };
+
+  /** "✓ Going": the routine becomes a task — with its address, so it routes. */
+  const goToRoutine = async (r: RoutineRowData) => {
+    try {
+      await addTask({
+        text: r.title, category: r.routine.category || 'general', priority: 'need_to',
+        isFixed: true, fixedTime: r.start, scheduledTime: r.start,
+        durationMinutes: r.routine.durationMinutes || 60, date: dateKey,
+        status: 'pending', source: 'routine', historicalDurations: [], pickedAt: Date.now(),
+        // A string is enough: ensureTravelChain geocodes it (as a typed address is).
+        ...(r.address ? { location: r.address, hasLocation: true } : {}),
+      } as any);
+    } catch (e) {
+      console.warn('[Today] routine could not be added', r.key, e);
+      Alert.alert(he ? 'לא נשמר' : 'Not saved', String((e as Error)?.message || e));
+      return;
+    }
+    await reloadShown();
+  };
+  /** "Not today": hidden for this date only. */
+  const skipRoutine = async (r: RoutineRowData) => {
+    const next = { ...routineSkips, [dateKey]: [...(routineSkips[dateKey] || []), r.key] };
+    setRoutineSkips(next);
+    await AsyncStorage.setItem(ROUTINE_SKIPS_KEY, JSON.stringify(next))
+      .catch((e) => console.warn('[Today] routine skip not stored', e));
+  };
+
+  /** "Make it shorter": the work ends as the appointment begins (6.10). */
+  const shortenWork = async (work: Task, endAt: string, key: string) => {
+    const start = work.fixedTime || work.scheduledTime || '';
+    const minutes = timeToMinutes(endAt) - timeToMinutes(start);
+    if (!start || minutes < 5) return;
+    await updateTaskFields(work.id, { durationMinutes: minutes }).catch((e) =>
+      console.warn('[Today] shortening the work failed', work.id, e));
+    await answerProblem(key, 'shortened');
+    await reloadShown();
+  };
+
+  const keepAppointment = async (work: Task, fixed: Task, key: string, movesTo: string) => {
+    const title = work.text.split('\n')[0].trim();
+    if (movesTo === 'tomorrow') {
+      await updateTaskFields(work.id, { date: dayAfter(dateKey) } as any)
+        .catch((e) => console.warn('[Today] move to tomorrow failed', e));
+      await refreshDay();
+    } else {
+      await handleResolveConflict({ first: work, second: fixed, action: 'move-to', at: movesTo });
+    }
+    answerProblem(key, 'keep-fixed');
+    setLiveNote(he
+      ? `📝 "${title}" ← ${movesTo === 'tomorrow' ? 'מחר' : movesTo}`
+      : `📝 "${title}" moved to ${movesTo === 'tomorrow' ? 'tomorrow' : movesTo}`);
+  };
+
+  /**
+   * The line under a card that opens Meira's preparation, or null.
+   *
+   *   an interview            "Want to prepare? 📄 Brief · ⏱ prep tomorrow 19:00"
+   *                           — shown even when the brief could NOT be made, and
+   *                           then says "why none?": a missing chip is how "no
+   *                           company on the event" looked like "all fine".
+   *   a study block for one   links to that interview's brief
+   *   the next-up meeting     the brief it already had
+   *   anything else           the generic prep (songs for karaoke…)
+   */
+  const briefChipFor = (t: Task): { label: string; onPress: () => void } | null => {
+    const open = (id: string) => () => { setIvNote(''); setBriefSheetId(id); setBriefOpen(true); };
+    const iv = ivBriefs.find((x) => x.task.id === t.id);
+    if (iv) {
+      return {
+        label: interviewChipLabel(he, { ok: iv.brief.ok, prep: iv.prep, today: getTodayString() }),
+        onPress: open(t.id),
+      };
+    }
+    const parentId = (t as { prepForTaskId?: string }).prepForTaskId;
+    const parent = parentId ? ivBriefs.find((x) => x.task.id === parentId) : undefined;
+    if (parent) return { label: prepBlockChipLabel(he, parent.brief.ok), onPress: open(parent.task.id) };
+    const hasBrief = Boolean(meetingBrief && briefTaskId === t.id);
+    if (hasBrief || prep?.taskId === t.id) {
+      return {
+        label: !hasBrief && prep?.taskId === t.id
+          ? prepLabel(prep.result, he) : (he ? '📄 תדריך לפגישה ›' : '📄 Meeting brief ›'),
+        onPress: open(t.id),
+      };
+    }
+    return null;
+  };
+
+  /** The interview whose brief the sheet is showing, if that is what it is showing. */
+  const sheetIv = briefSheetId ? ivBriefs.find((x) => x.task.id === briefSheetId) : undefined;
+  const refreshSheetInterview = async () => {
+    if (!sheetIv) return;
+    setIvRefreshing(true);
+    setIvNote('');
+    try {
+      const fresh = await interviewBrief(sheetIv.task, true);
+      if (!fresh.ok && fresh.reason === 'unreachable' && sheetIv.brief.ok) {
+        // A refresh that could not reach the server must not replace a good
+        // brief with an error — but it must not look like it worked either.
+        setIvNote(`${briefReasonLine('unreachable', he)} · ${he ? 'זו הגרסה האחרונה שיש לי' : 'showing the last one I have'}`);
+      } else {
+        setIvBriefs((prev) => prev.map((x) => (x.task.id === sheetIv.task.id ? { ...x, brief: fresh } : x)));
+      }
+    } finally {
+      setIvRefreshing(false);
+    }
+  };
+
+  const card = (t: Task, current = false) => (dense && !focusing && openCardId !== t.id ? (
+    <CompactRow
+      key={`row-${t.id}`}
+      task={t}
+      he={he}
+      moved={Boolean(moved?.ids.includes(t.id))}
+      onOpen={() => setOpenCardId(t.id)}
+      onToggleComplete={() => handleComplete(t)}
+      drag={showingToday ? { onLift: liftFromTray, onMove: moveOverDay, onDrop: (x, y) => { void dropOnDay(x, y); }, onCancel: endDrag } : undefined}
+    />
+  ) : (
+    <DayCard
+      nowAt={current ? clock : undefined}
+      onPlan={(patch) => { updateTaskFields(t.id, patch).then(() => refreshDay()).catch((e) => console.warn('[Today] on-the-way plan not saved', t.id, e)); }}
+      home={{ lat: (profile as any)?.homeLat, lng: (profile as any)?.homeLng }}
+      wake={wakeChipFor(t, wakeInputs(profile), { dayEarliestWake })}
+      morningAlarm={morningAlarm.plan?.task?.id === t.id && morningAlarm.plan.date === t.date
+        ? { at: morningAlarm.plan.at, on: morningAlarm.plan.on, onToggle: morningAlarm.toggle, onLongPress: morningAlarm.openSheet }
+        : null}
+      getReady={getReadyTimeFor(t, wakeInputs(profile))}
+      key={`card-${t.id}`}
+      task={t}
+      he={he}
+      now={showingToday ? clock : undefined}
+      isNext={t.id === nextCardId}
+      // Started and she is not there: late NOW outranks a planned lateness.
+      late={lateTrip?.id === t.id ? { lateBy, leaveAt: he ? 'עכשיו' : 'now' } : (lateInto.get(t.id) ?? null)}
+      brief={briefChipFor(t)}
+      expanded={openCardId === t.id}
+      onToggleExpand={() => setOpenCardId((open) => (open === t.id ? null : t.id))}
+      onToggleComplete={() => handleComplete(t)}
+      onMove={() => setSelectedTask(t)}
+      onModeChange={(mode) => handleTransportChange(t, mode)}
+      onLeft={showingToday ? async () => {
+        await confirmDeparture(t.id).catch((e) => console.warn('[Today] departure not confirmed', e));
+        await refreshDay();
+      } : undefined}
+      onRetryRoute={() => {
+        ensureTravelChain(dateKey, language, { forceTaskId: t.id })
+          .then(() => refreshDay())
+          .catch((e) => console.warn('[Today] route retry failed', t.id, e));
+      }}
+      onAddPlace={() => setSelectedTask(t)}
+      // No suggestions queued (or already answered): the edit sheet, where she types it.
+      onWhereIs={() => {
+        Questions.askNow(`place:${t.id}`)
+          .then((shown) => { if (!shown) setSelectedTask(t); })
+          .catch((e) => { console.warn('[Today] where-is question not opened', t.id, e); setSelectedTask(t); });
+      }}
+      onOpenRoute={() => navigation.navigate('Trips')}
+      onCompareModes={() => handleCompareModes(t)}
+      onFromHere={() => handleChangeOrigin(t, 'current')}
+      onStepDeparture={async (from, dir) => {
+        const stored: any = await loadProfile().catch(() => null);
+        const p = normalizeProfile(stored) as UserProfile | null;
+        const loc = asLocation(t);
+        const dest = loc?.address || loc?.displayName || '';
+        if (!p || !dest) return { plan: null, reason: 'no-origin' };
+        return GoogleService.getNeighbourDeparture(from, dest, p, t.date, dir);
+      }}
+      onPickDeparture={(plan) => {
+        // Hers: keep the stored plan's origin, and tell the chain not to
+        // re-rank it away (TransitPlan.pickedBy).
+        const before = asLocation(t)?.transitPlan;
+        return handlePickAlternative(t, {
+          ...plan,
+          originAddress: plan.originAddress ?? before?.originAddress,
+          rulesVersion: before?.rulesVersion,
+          pickedBy: 'her',
+        });
+      }}
+      note={replanNotes[t.id]}
+    />
+  ));
+
+  const gapRow = (g: DayGap) => (
+    <View key={`gap-${g.start}`} ref={(v) => { zoneViews.current.set(g.start, { view: v, start: g.start, end: g.end }); }}
+      style={hoverZone === g.start ? styles.dropHover : undefined} collapsable={false}>
+    <GapSlotRow
+      gap={g}
+      language={language}
+      onRequestIdeas={handleRequestGapIdeas}
+      onPick={handlePickGapIdea}
+      onAddOwn={(gap) => navigation.navigate('AddTask', { initialTime: gap.start, initialUntil: gap.end, initialDate: dateKey } as any)}
+    />
+    </View>
+  );
+
+  const liftFromTray = (t: Task, x: number, y: number) => {
+    // A calendar event belongs to the calendar: it moves there, and the sync brings it here (her pick, 22.10).
+    if (isFromCalendar(t.id)) {
+      say(he ? 'אירוע מהיומן — משנים את השעה ביומן עצמו' : 'A calendar event — change its time in the calendar');
+      return;
+    }
+    dragging.current = t;
+    ghostRef.current?.show(t, x, y);
+    setRulerRows(hourRows(dayTasks.filter((x2) => x2.id !== t.id), timeToMinutes(clock), (profile as any)?.sleepTime || '23:00'));
+    zonesRef.current = [];
+    zoneViews.current.forEach((z, id) => {
+      z.view?.measureInWindow((zx, zy, w, h) => {
+        if (h > 0) zonesRef.current.push({ id, y: zy, height: h, start: z.start, end: z.end });
+      });
+    });
+  };
+  const moveOverDay = (x: number, y: number) => {
+    ghostRef.current?.move(x, y);
+    rulerRef.current?.hover(y);
+    const z = zoneAt(y, zonesRef.current);
+    setHoverZone((prev) => (prev === (z?.id ?? null) ? prev : (z?.id ?? null)));
+  };
+  const endDrag = () => { ghostRef.current?.hide(); setHoverZone(null); setRulerRows(null); dragging.current = null; };
+  /**
+   * Put a dropped task back. Cleared fields are written as null, not
+   * undefined — an undefined key never reaches the cloud row, and the hour
+   * would come back on the next pull (the untick-resurrection pattern). If
+   * the task's hour changed since the drop (another device, the agent), the
+   * undo does nothing and says so rather than overwrite the newer edit.
+   */
+  const undoDrop = async (t: Task, before: Partial<Task>, droppedAt: string) => {
+    try {
+      const now = (await getAllTasks()).find((x) => x.id === t.id);
+      if (!now || (now.scheduledTime || now.fixedTime) !== droppedAt) {
+        say(he ? 'המשימה השתנתה בינתיים — לא ביטלתי' : 'It changed meanwhile — not undone');
+        return;
+      }
+      if (before.date && now.date !== before.date) await moveTasksToDate([t.id], before.date);
+      await updateTaskFields(t.id, {
+        scheduledTime: before.scheduledTime ?? null,
+        fixedTime: before.fixedTime ?? null,
+        durationMinutes: before.durationMinutes,
+        pickedAt: null,
+      } as any);
+      await ensureTravelChain(dateKey, language).catch((e) => console.warn('[Today] chain after undo failed', e));
+      await redrawDay(dateKey);
+    } catch (e) {
+      console.warn('[Today] undo of a drop failed', t.id, e);
+      say(he ? 'לא הצלחתי לבטל — אפשר לשנות במשימה עצמה' : "Couldn't undo — change it on the task itself");
+    }
+  };
+  const dropOnDay = async (_x: number, y: number) => {
+    const t = dragging.current;
+    const row = rulerRef.current?.hover(y) ?? null;
+    endDrag();
+    if (!t) return;
+    if (!row) { say(he ? 'שחררי על אחת השעות' : 'Drop it on one of the hours'); return; }
+    const minutes = t.durationMinutes || 30;
+    // The same judgement as adding it with an hour: travel, margin, what is there (28.10).
+    const check = await checkBeforeSave({ id: t.id, text: t.text, date: dateKey, fixedTime: row.start, durationMinutes: minutes,
+      place: typeof t.location === 'object' ? (t.location?.address || t.location?.displayName) : undefined }, he ? 'he' : 'en');
+    let at = row.start;
+    if (check.error) console.warn('[Today] drop: fit check could not run', check.error);
+    if (check.error) say(he ? 'לא הצלחתי לבדוק אם זה נכנס — שיבצתי בכל זאת' : "Couldn't check whether it fits — placed anyway");
+    if (check.stop) {
+      const choice = await new Promise<'save' | 'alt' | 'no'>((resolve) => {
+        Alert.alert(he ? '⚠️ זה לא נכנס' : "⚠️ This doesn't fit", check.text, [
+          { text: he ? 'ביטול' : 'Cancel', style: 'cancel', onPress: () => resolve('no') },
+          { text: he ? 'לשמור בכל זאת' : 'Save anyway', onPress: () => resolve('save') },
+          ...(check.alt ? [{ text: he ? `לקבוע ב-${check.alt}` : `Book ${check.alt}`, onPress: () => resolve('alt' as const) }] : []),
+        ], { cancelable: true, onDismiss: () => resolve('no') });
+      });
+      if (choice === 'no') return;
+      if (choice === 'alt' && check.alt) at = check.alt;
+    }
+    const slot = { ok: true as const, time: at };
+    const before = { date: t.date, scheduledTime: t.scheduledTime, fixedTime: t.fixedTime, durationMinutes: t.durationMinutes } as Partial<Task>;
+    // One drop at a time: each one re-plans the day's trips (paid routes), and
+    // a second drop while the first is routing would ask Google twice (cost review 27.10).
+    if (dropBusy.current) { say(he ? 'רגע — עוד משבצת את הקודמת' : 'One moment — still placing the last one'); return; }
+    dropBusy.current = true;
+    say(he ? `משבצת ב־${slot.time}…` : `Placing at ${slot.time}…`);
+    try {
+      await applyScheduleAction({ kind: 'schedule', taskId: t.id, date: dateKey, time: slot.time, durationMinutes: minutes });
+      await ensureTravelChain(dateKey, language).catch((e) => console.warn('[Today] chain after a drop failed', e));
+      await redrawDay(dateKey);
+      say(he ? `${t.text} · ${slot.time}` : `${t.text} · ${slot.time}`, [t.id], () => { void undoDrop(t, before, slot.time); });
+    } catch (e) {
+      console.warn('[Today] the dropped task was not scheduled', t.id, e);
+      say(he ? 'לא הצלחתי לשבץ — נסי שוב' : "Couldn't place it — try again");
+    } finally {
+      dropBusy.current = false;
+    }
+  };
+
+  /** The ＋ and what it opens — on EVERY day, not only today (21.10). */
+  const plusBlock = (
+
+              <>
+                <NowAddRow he={he} open={suggestOpen} freeUntil={nowGap?.end} freeMinutes={nowGap?.minutes}
+                  nextStart={nextGap?.start} nextMinutes={nextGap?.minutes}
+                  onPress={() => setSuggestOpen((v) => !v)} />
+                {suggestOpen ? (
+                  <SuggestPanel
+                    he={he}
+                    date={dateKey}
+                    onAddOwn={() => navigation.navigate('AddTask', { initialTime: plus?.from ?? (showingToday ? clock : dayStartAt), initialUntil: plus?.until, initialDate: dateKey } as any)}
+                    onPrefill={(a) => navigation.navigate('AddTask', {
+                      initialText: he ? (a.textHe ?? a.text) : a.text,
+                      initialTime: a.time,
+                      initialDate: a.date ?? dateKey,
+                    } as any)}
+                    onOpenTask={(id) => navigation.navigate('TaskDetail', { taskId: id } as any)}
+                    onChanged={() => load(false)}
+                  />
+                ) : null}
+              </>
+  );
+
+  /** The day ahead, in order: free windows, the question before a clash, the cards. */
+  // A "set a new time" follow-up is a bell item, not a row in the day (28.10).
+  const anytime = sortFlexible(dayFlexible.filter((t) => !drawnInPick.has(t.id) && !followUpOriginal(t.text)));
+  const doneCount = dayTasks.filter((t) => t.status === 'complete').length;
+  // 🔔 — clashes, what an earlier day left open, today's tasks with no place (utils/waitingList).
+  const waiting = waitingList({
+    problems: openProblems,
+    overdue: showingToday ? overdue : [],
+    today: dayTasks,
+    needsPlace: (t) => Boolean(t.fixedTime) && !isFlexibleTask(t) && !isRemoteTask(t)
+      && !(typeof t.location === 'object' && (t.location?.address || t.location?.displayName)),
+    changes: changes.map((c) => ({ key: c.key, title: headline(c, language), taskId: c.taskId })),
+    followUps,
+    unscheduled: showingToday ? dayFlexible : [],
+  });
+  /**
+   * "Homework — when will you do it? Find you a free slot?" (28.10): Meira looks
+   * for the nearest time that fits TODAY (travel, margin and routines counted —
+   * the same judgement as "does it fit?"), or she picks the hour herself.
+   */
+  const findTimeFor = async (t: Task) => {
+    setAlertsOpen(false);
+    const loc: any = typeof t.location === 'object' ? t.location : null;
+    const a = await answerFeasibility({
+      kind: 'feasibility', date: getTodayString(), minutes: t.durationMinutes || 30, what: t.text,
+      place: loc?.address || loc?.displayName || undefined,
+    } as any, he ? 'he' : 'en').catch((e) => { console.warn('[Today] slot search failed', e); return null; });
+    const at = a?.alt;
+    const book = async (hhmm: string) => {
+      await updateTaskFields(t.id, { fixedTime: hhmm, scheduledTime: hhmm } as Partial<Task>);
+      await load(false);
+    };
+    const pickHour = () => {
+      const init = new Date(); init.setMinutes(init.getMinutes() + 30 - (init.getMinutes() % 15));
+      DateTimePickerAndroid.open({
+        value: init, mode: 'time', is24Hour: true,
+        onChange: (e, d) => {
+          if (e.type !== 'set' || !d) return;
+          book(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`).catch((err) => console.warn('[Today] hour not saved', err));
+        },
+      });
+    };
+    Alert.alert(
+      t.text,
+      a ? (at ? (he ? `פנוי היום ב-${at}. לקבוע?` : `Free today at ${at}. Book it?`) : a.text)
+        : (he ? 'לא הצלחתי לחפש זמן עכשיו — אפשר לבחור שעה.' : "Couldn't search for a time now — pick an hour."),
+      [
+        { text: he ? 'ביטול' : 'Cancel', style: 'cancel' },
+        { text: he ? 'אבחר שעה' : 'Pick an hour', onPress: pickHour },
+        ...(at ? [{ text: he ? `לקבוע ב-${at}` : `Book ${at}`, onPress: () => { book(at).catch((e) => console.warn('[Today] slot not saved', e)); } }] : []),
+      ],
+    );
+  };
+  // The home screen's 🔔 shows this same number (services/BellCount) — after render, never during it.
+  useEffect(() => { if (showingToday) setBellCount(waiting.length); }, [showingToday, waiting.length]);
+  /** Any row → that task's card, where everything can be edited (28.10). */
+  const openTaskCard = async (taskId: string) => {
+    setAlertsOpen(false);
+    const t = dayTasks.find((x) => x.id === taskId) ?? overdue.find((x) => x.id === taskId)
+      ?? (await getAllTasks().catch(() => [] as Task[])).find((x) => x.id === taskId);
+    if (t) setSelectedTask(t);
+    else Alert.alert(he ? 'המשימה כבר לא קיימת' : 'That task is gone', he ? 'אולי בוטלה או נמחקה.' : 'It may have been cancelled or deleted.');
+  };
+  const pickWaiting = (i: WaitingItem) => {
+    if (i.kind === 'clash' && i.problemKey) { setAlertsOpen(false); setView('all'); setPairOpenKey(i.problemKey); return; }
+    if (i.kind === 'unscheduled') {
+      const t = dayFlexible.find((x) => x.id === i.taskId);
+      if (t) findTimeFor(t).catch((e) => console.warn('[Today] find time failed', e));
+      return;
+    }
+    if (i.kind === 'followup') {
+      // "Later" was chosen: now the new date and hour — the original moves there.
+      const f = followUps.find((x) => x.id === i.taskId);
+      setAlertsOpen(false);
+      if (f) setNewDate(f, he).then((ok) => { if (ok) { loadBell(); load(false).catch(() => {}); } }).catch((e) => console.warn('[Today] new date failed', e));
+      return;
+    }
+    if (i.taskId) openTaskCard(i.taskId).catch(() => {});
+  };
+  const dayRows: React.ReactNode[] = [];
+  const windows: Array<{ start: string; render: () => React.ReactNode }> = [
+    ...listGaps.filter((g) => !(nowGap && g.start === nowGap.start)).map((g) => ({ start: g.start, render: () => gapRow(g) })),
+    ...routineRows.map((r) => ({
+      start: r.start,
+      render: () => (
+        <RoutineRow key={`routine-${r.key}`} row={r} he={he}
+          onGoing={() => goToRoutine(r)} onSkip={() => skipRoutine(r)}
+          onAskDays={() => { Questions.askNow(`routineDays:${r.key}`).catch(() => {}); }} />
+      ),
+    })),
+  ].sort((x, y) => timeToMinutes(x.start) - timeToMinutes(y.start));
+  let w = 0;
+  const drawnInPair = new Set<string>();
+  // The rows of what is HAPPENING end here — the ＋ row goes under them.
+  let nowRowsEnd = 0;
+  // Every task still ahead, the ones in progress included: a clash between two
+  // things that have started is still a clash (1.10 — drawing them apart from
+  // this loop dropped the birthday × study overlap card).
+  for (const t of ahead) {
+    if (drawnInPick.has(t.id) || drawnInPair.has(t.id)) continue;
+    const at = timeToMinutes(t.fixedTime || t.scheduledTime || '00:00');
+    while (w < windows.length && timeToMinutes(windows[w].start) < at) dayRows.push(windows[w++].render());
+    const travel = openProblems.find((p): p is TravelProblem => p.kind === 'travel' && p.to.id === t.id);
+    if (travel) {
+      dayRows.push(
+        <ClashQuestion
+          key={`clash-${travel.key}`}
+          problem={travel}
+          he={he}
+          faster={travel.key in faster ? faster[travel.key] : undefined}
+          askName={askNameOf(travel.to)}
+          onTaxi={() => { answerProblem(travel.key, 'taxi'); handleTransportChange(travel.to, 'car'); }}
+          onAsk={() => askToMove(travel)}
+          onGoLate={() => answerProblem(travel.key, 'late')}
+        />,
+      );
+    }
+    const overlap = openProblems.find((p) => p.kind === 'overlap' && p.fixed.id === t.id);
+    if (overlap && overlap.kind === 'overlap') {
+      const movesTo = moveSlotFor(overlap.work, dayTasks, {
+        now: showingToday ? clock : undefined, dayStart: dayStartAt, dayEnd: dayEndAt,
+      });
+      // The work started first: it can simply END as the appointment begins.
+      const workAt = overlap.work.fixedTime || overlap.work.scheduledTime || '';
+      const fixedAt = overlap.fixed.fixedTime || overlap.fixed.scheduledTime || '';
+      const shortenTo = workAt && fixedAt && timeToMinutes(workAt) < timeToMinutes(fixedAt) ? fixedAt : undefined;
+      dayRows.push(
+        <OverlapPick
+          key={`pick-${overlap.key}`}
+          problem={overlap}
+          he={he}
+          movesTo={movesTo}
+          onKeepFixed={() => keepAppointment(overlap.work, overlap.fixed, overlap.key, movesTo)}
+          onKeepWork={() => answerProblem(overlap.key, 'keep-work')}
+          shortenTo={shortenTo}
+          onShorten={shortenTo ? () => shortenWork(overlap.work, shortenTo, overlap.key) : undefined}
+        />,
+      );
+      if (inProgress.includes(t) || inProgress.includes(overlap.work)) nowRowsEnd = dayRows.length;
+      continue;
+    }
+    // Two appointments at once: ONE card, the two side by side (Koral, 27.10),
+    // drawn where the first of them starts; the second is not drawn again.
+    const pair = openProblems.find((p) => (p.kind === 'spatial' || p.kind === 'double')
+      && [p.a.id, p.b.id].includes(t.id));
+    if (pair && (pair.kind === 'spatial' || pair.kind === 'double')) {
+      const other = pair.a.id === t.id ? pair.b : pair.a;
+      drawnInPair.add(other.id);
+      dayRows.push(
+        <PairCard
+          key={`pair-${pair.key}`}
+          a={t}
+          b={other}
+          overlapMinutes={pair.overlapMinutes}
+          he={he}
+          openId={openCardId}
+          onOpen={(x) => setOpenCardId((open) => (open === x.id ? null : x.id))}
+          onComplete={(x) => handleComplete(x)}
+          onResolve={() => setPairOpenKey(pair.key)}
+          drag={showingToday ? { onLift: liftFromTray, onMove: moveOverDay, onDrop: (x, y) => { void dropOnDay(x, y); }, onCancel: endDrag } : undefined}
+        />,
+      );
+      // The half she tapped opens as its full card right under the pair.
+      const opened = [t, other].find((x) => x.id === openCardId);
+      if (opened) dayRows.push(card(opened, inProgress.includes(opened)));
+      if (inProgress.includes(t) || inProgress.includes(other)) nowRowsEnd = dayRows.length;
+      continue;
+    }
+    dayRows.push(card(t, inProgress.includes(t)));
+    if (inProgress.includes(t)) nowRowsEnd = dayRows.length;
+  }
+  while (w < windows.length) dayRows.push(windows[w++].render());
+
+  // The "2 events overlap" popup: the first open pair she has not seen yet, or
+  // the one she tapped. Chosen → the warning is answered; later → shown once.
+  const adviceProblem = openProblems.find((p) => (p.kind === 'spatial' || p.kind === 'double')
+    && (p.key === pairOpenKey || (!pairShown[p.key] && pairOpenKey === null)));
+  const pairAdvice = adviceProblem && (adviceProblem.kind === 'spatial' || adviceProblem.kind === 'double')
+    ? adviseOverlap(adviceProblem.a, adviceProblem.b, dayTasks,
+      profile?.homeLat && profile?.homeLng ? { lat: profile.homeLat, lng: profile.homeLng } : undefined)
+    : null;
+
   return (
     <View style={styles.root}>
+      <LinearGradient colors={sky.colors} style={StyleSheet.absoluteFill} pointerEvents="none" />
+      <PairAdviceModal
+        advice={pairAdvice}
+        he={he}
+        onChoose={(id) => { if (adviceProblem) { answerProblem(adviceProblem.key, `chose:${id}`); markPairShown(adviceProblem.key); } }}
+        onLater={() => { if (adviceProblem) markPairShown(adviceProblem.key); }}
+      />
 
       <ScrollView
         ref={scrollRef}
@@ -1596,7 +2643,7 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
         scrollIndicatorInsets={{ top: insets.top + HEADER_HEIGHT }}
       >
         {/* E2 (Koral, 28.9): events found in her email / goals, as ONE honey
-            banner opened from the 📅 icon in the header. */}
+            banner — opened since 8.10 by "📅 Update calendars" in the menu. */}
         {eventsOpen && suggestionCount > 0 && (
           <View style={styles.eventsBanner}>
             <View style={styles.eventsRow}>
@@ -1633,6 +2680,66 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
           </View>
         )}
 
+        {/* What the calendar moved or cancelled lives under the 🔔 now (28.10, Koral: "I don't
+            want cancellations on Today — under notifications"). See AlertsSheet. */}
+
+        {/* She left a task's place early: said, with undo — or asked (utils/leftEarly). */}
+        {showingToday && leftNote && (
+          <View style={styles.eventsBanner}>
+            <Text style={styles.eventsTitle}>{leftEarlyLine(leftNote.v, leftNote.title, he)}</Text>
+            <View style={[styles.eventsRow, { marginTop: 8 }]}>
+              {leftNote.v.wasThere ? (
+                <TouchableOpacity style={styles.eventsAddAll} activeOpacity={0.85} onPress={async () => {
+                  await updateTaskFields(leftNote.v.taskId, { durationMinutes: leftNote.was } as any)
+                    .catch((e) => console.warn('[Today] undo left-early failed', e));
+                  setLeftNote(null);
+                  load(false);
+                }}>
+                  <Text style={styles.eventsAddAllText}>{he ? 'ביטול' : 'Undo'}</Text>
+                </TouchableOpacity>
+              ) : (
+                <>
+                  {/* She never got there: cancelled, or a new time (open task until it has one). */}
+                  <TouchableOpacity style={styles.eventsAddAll} activeOpacity={0.85} onPress={() => {
+                    const id = leftNote.v.taskId;
+                    setLeftNote(null);
+                    answerRunningLate(id, 'cancel', he).then(() => load(false)).catch(() => {});
+                  }}>
+                    <Text style={styles.eventsAddAllText}>{he ? '✕ בוטל' : '✕ Cancelled'}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.eventsAddAll} activeOpacity={0.85} onPress={() => {
+                    const id = leftNote.v.taskId;
+                    setLeftNote(null);
+                    answerRunningLate(id, 'reschedule', he).then(() => load(false)).catch(() => {});
+                  }}>
+                    <Text style={styles.eventsAddAllText}>{he ? '🔁 מועד חדש' : '🔁 New time'}</Text>
+                  </TouchableOpacity>
+                  {/* GPS can miss an arrival — then it really did end early. */}
+                  <TouchableOpacity activeOpacity={0.85} hitSlop={8} onPress={async () => {
+                    await updateTaskFields(leftNote.v.taskId, {
+                      durationMinutes: leftNote.v.durationMinutes, leftEarlyHandled: true,
+                    } as any).catch((e) => console.warn('[Today] shortening a task failed', e));
+                    const { v, was } = leftNote;
+                    setLeftNote(null);
+                    load(false);
+                    offerFreedTime(v, was, await getCurrentLocation().catch(() => null));
+                  }}>
+                    <Text style={styles.eventsReview}>{he ? 'הייתי שם' : 'I was there'}</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+              <TouchableOpacity activeOpacity={0.85} hitSlop={8} onPress={async () => {
+                if (!leftNote.v.wasThere) {
+                  await updateTaskFields(leftNote.v.taskId, { leftEarlyHandled: true } as any).catch(() => {});
+                }
+                setLeftNote(null);
+              }}>
+                <Text style={styles.eventsReview}>{leftNote.v.wasThere ? (he ? 'סגירה' : 'OK') : (he ? 'לא' : 'No')}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
         {/* Nothing is syncing — say so, every time, until it is fixed. */}
         {showingToday && !signedIn && (
           <TouchableOpacity style={styles.offlineBanner} onPress={handleSignIn} activeOpacity={0.85}>
@@ -1643,59 +2750,51 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
             </Text>
           </TouchableOpacity>
         )}
-        {/* Google is refusing us — say so on the day itself, not only in a
-            Profile check nobody reopens. */}
-        {calendarError && calendarError !== 'not_connected' && (
+        {/* The tasks could not be refreshed from the cloud — what is drawn is
+            this phone's copy, and she is told so (rule 1). Tap = try again. */}
+        {showingToday && signedIn && tasksCloudError ? (
           <TouchableOpacity
-            style={styles.calErrorBanner}
-            onPress={() => navigation.navigate('ProfileEdit')}
+            style={styles.calPill}
             activeOpacity={0.85}
-          >
-            <Text style={styles.calErrorText}>
-              {language === 'he'
-                ? `⚠️ היומן לא נקרא — גוגל החזיר: ${calendarError}`
-                : `⚠️ Calendar not read — Google said: ${calendarError}`}
-            </Text>
-            <Text style={styles.calErrorHint}>
-              {language === 'he'
-                ? 'אירועים חדשים לא ייכנסו עד שזה יתוקן. הקישי כדי להתחבר מחדש לגוגל'
-                : 'New events cannot arrive until this is fixed. Tap to reconnect Google'}
-            </Text>
-          </TouchableOpacity>
-        )}
-        {/* One line, not a card: the clash itself is drawn INSIDE the
-            timeline with its two answers; this only says it exists and takes
-            her there (Koral, 28.9 — one place per thing). */}
-        {dayClashes.length > 0 && (
-          <TouchableOpacity
-            style={styles.clashLink}
-            activeOpacity={0.85}
-            onPress={() => scrollRef.current?.scrollTo({ y: Math.max(0, timelineY - 8), animated: true })}
-          >
-            <Text style={styles.clashLinkText} numberOfLines={1}>
-              {language === 'he'
-                ? `⚠️ ${dayClashes.length > 1 ? `${dayClashes.length} התנגשויות` : 'התנגשות'} ב-${clashAt} — לראות ›`
-                : `⚠️ ${dayClashes.length > 1 ? `${dayClashes.length} clashes` : 'Clash'} at ${clashAt} — see it ›`}
-            </Text>
-          </TouchableOpacity>
-        )}
-
-        {dayTight.map((tt) => (
-          <TouchableOpacity
-            key={`tight-${tt.from.id}-${tt.to.id}`}
-            style={styles.clashLink}
-            activeOpacity={0.85}
-            // The card of the second one: move it, or change how she gets there.
-            onPress={() => setSelectedTask(tt.to)}
             accessibilityRole="button"
+            onPress={() => { load(false).catch((e) => console.warn('[Today] task refresh retry failed', e)); }}
           >
-            <Text style={styles.clashLinkText} numberOfLines={2}>
-              {language === 'he'
-                ? `⚠️ ${tt.gapMinutes} דק׳ להגיע ל"${tt.to.text}" — הנסיעה ${tt.travelMinutes} · הגעה ${tt.arriveAt} (${tt.lateBy} דק׳ איחור) ›`
-                : `⚠️ ${tt.gapMinutes} min to reach "${tt.to.text}" — the ride is ${tt.travelMinutes} · arrive ${tt.arriveAt} (${tt.lateBy} min late) ›`}
+            <Text style={styles.calPillText}>
+              {he
+                ? '☁️ לא הצלחתי לרענן — מוצג מה שבטלפון. הקישי לנסות שוב'
+                : "☁️ Couldn't refresh — showing what's on this phone. Tap to retry"}
             </Text>
           </TouchableOpacity>
-        ))}
+        ) : null}
+        {/* The calendar could not be read — one small line, in words that
+            name the fix. On 30.9 a DNS blip filled the top of the screen with
+            a Java exception and told her to reconnect Google (utils/
+            calendarErrorKind). The clashes are drawn in the day itself now —
+            one card per problem, where it happens. */}
+        {calendarError && calendarError !== 'not_connected' ? (() => {
+          const kind = classifyCalendarError(calendarError) || 'other';
+          const line = calendarErrorLine(kind, he);
+          return (
+            <TouchableOpacity
+              style={styles.calPill}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              onPress={() => {
+                if (line.action === 'retry') {
+                  syncCalendarNow(language, 'today-pill')
+                    .catch((e) => console.warn('[Today] calendar retry failed', e));
+                } else if (line.action === 'reconnect') {
+                  // Straight to Calendars & mail (phone calendars first, 5.10), not the whole Menu.
+                  (navigation as any).navigate('ProfileEdit', { section: 'calendars' });
+                } else {
+                  Alert.alert(he ? 'היומן' : 'Calendar', calendarError);
+                }
+              }}
+            >
+              <Text style={styles.calPillText}>{line.text}</Text>
+            </TouchableOpacity>
+          );
+        })() : null}
 
         {/* "Is this the same interview?" — three rows for one appointment,
             each with a different hour, is what a conversation leaves behind.
@@ -1737,6 +2836,64 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
                 ? `🚏 פספסת את היציאה ל${missedTrip.task.text}`
                 : `🚏 You've missed the departure for ${missedTrip.task.text}`}
             </Text>
+            {/* Late even on the next one: say it, and ask (13.10, Koral: "you're
+                late — still going? reschedule? cancel? keep options!"). */}
+            {(() => {
+              const first = missedTrip.options.find((o) => !departureUncatchable(o, clock));
+              const late = minutesLate(missedTrip.task.fixedTime, first?.plan.arriveAt);
+              if (!late) return null;
+              const he = language === 'he';
+              // An interview / doctor / must cannot be late: the question is
+              // what happened, and "no new time" stays as an open task (13.10).
+              const must = isHighStakes(missedTrip.task);
+              const choices: Array<[string, 'reschedule' | 'cancel' | 'open']> = must
+                ? [[he ? '🔁 הוזז' : '🔁 Moved', 'reschedule'], [he ? '× בוטל' : '× Cancelled', 'cancel'],
+                  [he ? '⏳ לא יודעת' : "⏳ Don't know", 'open']]
+                : [[he ? '🔁 לדחות' : '🔁 Reschedule', 'reschedule'], [he ? '× לבטל' : '× Cancel', 'cancel']];
+              return (
+                <View>
+                  <Text style={styles.missedLate}>
+                    {must
+                      ? (he ? `⏰ גם עם הבאה מגיעים ב-${first!.plan.arriveAt} — ${late} דק׳ איחור, ולזה אי אפשר לאחר. מה קרה?`
+                        : `⏰ Even the next one arrives ${first!.plan.arriveAt} — ${late} min late, and this can't be late. What happened?`)
+                      : (he ? `⏰ גם עם הבאה מגיעים ב-${first!.plan.arriveAt} — ${late} דק׳ איחור. עדיין הולכת?`
+                        : `⏰ Even the next one arrives ${first!.plan.arriveAt} — ${late} min late. Still going?`)}
+                  </Text>
+                  {/* v3 late flow: the apology drafted — how late, when — to the
+                      person on the task (or a chat she picks). WhatsApp opens with
+                      the text in the box; she presses send, Meira never does. */}
+                  {(() => {
+                    const n = lateNotice(missedTrip.task, late, first!.plan.arriveAt, he);
+                    return (
+                      <TouchableOpacity
+                        style={styles.lateTell}
+                        accessibilityRole="button"
+                        onPress={() => Linking.openURL(n.url).catch((e) => {
+                          console.warn('[Today] WhatsApp did not open for the late note', e);
+                          Alert.alert(he ? 'וואטסאפ לא נפתח' : "WhatsApp didn't open", n.text);
+                        })}
+                      >
+                        <Text style={styles.lateTellText} numberOfLines={1}>
+                          {n.to
+                            ? (he ? `💬 להודיע ל${n.to} שאני מאחרת` : `💬 Tell ${n.to} I'm late`)
+                            : (he ? '💬 להודיע שאני מאחרת' : "💬 Tell them I'm late")}
+                        </Text>
+                        <Text style={styles.lateTellDraft} numberOfLines={2}>{n.text}</Text>
+                      </TouchableOpacity>
+                    );
+                  })()}
+                  <View style={styles.lateRow}>
+                    {choices.map(([label, intent]) => (
+                      <TouchableOpacity key={intent} style={styles.lateBtn} accessibilityRole="button"
+                        onPress={() => { answerRunningLate(missedTrip.task.id, intent, he).catch(() => {}); }}>
+                        <Text style={styles.lateBtnText}>{label}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                  <Text style={styles.lateHint}>{he ? 'עדיין הולכת? בחרי נסיעה:' : 'Still going? Pick a ride:'}</Text>
+                </View>
+              );
+            })()}
             {/* Filtered again HERE, not only when fetched. The probe runs at
                 most every few minutes; the clock does not wait for it, and a
                 row with a live "Take it" button under a train that has left is
@@ -1764,49 +2921,8 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
             </TouchableOpacity>
           </View>
         )}
-        {/* N2 (Koral, 28.9): the next important thing as one gold pill, in the
-            slot "Want to hear your day?" used to take. The ⏰ rides on it —
-            the NEXT UP card was the wake alarm's only home (rule 5). */}
-        {showingToday && pillTask && (
-          <NextImportantStrip
-            task={pillTask}
-            he={language === 'he'}
-            when={lateTrip ? (lateTrip.fixedTime || lateTrip.scheduledTime || '') : nextUpWhen}
-            wake={lateTrip ? null : nextUpWake}
-            leaveAt={lateTrip ? null : (asLoc(pillTask)?.leaveHomeBy ?? null)}
-            late={lateTrip ? {
-              minutes: lateBy,
-              arriveAt: asLoc(lateTrip)?.transitPlan?.arriveAt ?? null,
-            } : null}
-            briefReady={!lateTrip && Boolean((meetingBrief && briefTaskId === pillTask.id) || prep?.taskId === pillTask.id)}
-            briefLabel={!(meetingBrief && briefTaskId === pillTask.id) && prep?.taskId === pillTask.id
-              ? prepLabel(prep.result, language === 'he') : undefined}
-            // The task card — the same sheet a timeline tap opens. It used to
-            // open the Leave-now screen, which for a task with no journey was
-            // nearly empty (Koral, 29.9: "a screen I want to remove").
-            onPress={() => setSelectedTask(pillTask)}
-            onAlarm={() => handleAlarmPress(pillTask)}
-            onBrief={() => setBriefOpen(true)}
-          />
-        )}
-
-        {/* What you didn't finish — collapsed, and you decide what happens
-            to it. Previously these tasks kept their old date and vanished. */}
-        {showingToday && <YesterdayCard
-          tasks={overdue}
-          today={getTodayString()}
-          language={language}
-          onMove={handleMoveOverdue}
-          onReschedule={(t) => setSelectedTask(t)}
-          onLetGo={handleLetGoOverdue}
-          onComplete={handleCompleteOverdue}
-          // The row's third button lets go (recoverable) — it deleted for ever,
-          // with no confirmation, 4px from Done (council review, 28.9).
-          onDelete={handleLetGoOverdue}
-        />}
-
         {/* Task list */}
-        {loading ? (
+        {loading || dayLoading ? (
           <ActivityIndicator color={BRAND.sunGold} size="large" style={{ marginTop: 32 }} />
         ) : dayTasks.length === 0 ? (
           // An empty day is still a day: the rest of it is offered as free
@@ -1823,81 +2939,152 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
                       ? `${formatDayLabel(dateKey, language)} פנוי — מה נכניס?`
                       : `${formatDayLabel(dateKey, language)} is clear — what shall we put in?`)}
             </Text>
-            {gaps.map((gap) => (
-              <GapSlotRow
-                key={`gap-${gap.start}`}
-                gap={gap}
-                language={language}
-                onRequestIdeas={handleRequestGapIdeas}
-                onPick={handlePickGapIdea}
-                // initialDate too: the empty-day branch dropped it, so a task
-                // added to an empty TOMORROW landed on today and vanished.
-                onAddOwn={(g) => navigation.navigate(
-                  'AddTask', { initialTime: g.start, initialDate: dateKey } as any)}
-              />
-            ))}
+            {plusBlock}
+            {/* Her routines belong on an empty day most of all (6.10, pick A);
+                their hours are cut from the windows beside them. */}
+            {[
+              ...constrainGaps(gaps, routineRows.map((r) => ({
+                ...r.routine, kind: 'constraint' as const, weekdays: [], time: r.start,
+              })), dateKey).map((gap) => ({
+                start: gap.start,
+                node: (
+                  <GapSlotRow
+                    key={`gap-${gap.start}`}
+                    gap={gap}
+                    language={language}
+                    onRequestIdeas={handleRequestGapIdeas}
+                    onPick={handlePickGapIdea}
+                    // initialDate too: the empty-day branch dropped it, so a task
+                    // added to an empty TOMORROW landed on today and vanished.
+                    onAddOwn={(g) => navigation.navigate(
+                      'AddTask', { initialTime: g.start, initialUntil: g.end, initialDate: dateKey } as any)}
+                  />
+                ),
+              })),
+              ...routineRows.map((r) => ({
+                start: r.start,
+                node: (
+                  <RoutineRow key={`routine-${r.key}`} row={r} he={he}
+                    onGoing={() => goToRoutine(r)} onSkip={() => skipRoutine(r)}
+                    onAskDays={() => { Questions.askNow(`routineDays:${r.key}`).catch(() => {}); }} />
+                ),
+              })),
+            ].sort((x, y) => timeToMinutes(x.start) - timeToMinutes(y.start)).map((x) => x.node)}
           </View>
         ) : (
-          <View style={styles.section} onLayout={(e) => setTimelineY(e.nativeEvent.layout.y)}>
-
-            <Text style={styles.sectionLabel}>UP NEXT</Text>
-            {/* One timeline, shared with the Timeline tab: proportional spans,
-                the journey drawn between the blocks it joins, overlapping
-                commitments side by side, and the moment marked where it
-                actually falls. The old list of chain cards said the same
-                things in a shape that could not show duration or collision. */}
-            {/* visibleDayOrder, not timelineTasks. The cap above was computed
-                and then never used: DayTimeline got the FULL day, so every
-                task was already on screen and the "Show all N tasks" button
-                below opened onto nothing — it just hid itself. Handing the
-                timeline the windowed list is what makes both the cap and the
-                button mean something. */}
-            <DayTimeline
-              tasks={[...visibleDayOrder, ...flexibleTasks]}
-              language={language}
-              // The moment only exists on the day she is in. Marking "now" on
-              // Thursday's timeline draws a red rule through an hour that has
-              // not happened.
-              now={showingToday ? new Date().toTimeString().slice(0, 5) : undefined}
-              dayStart={profile?.defaultWakeTime || '08:00'}
-              dayEnd={profile?.sleepTime || '22:00'}
-              routines={routines}
-              date={dateKey}
-              onTaskTap={setSelectedTask}
-              onTaskHold={setSelectedTask}
-              onAddAtTime={(hhmm) => navigation.navigate(
-                'AddTask', { initialTime: hhmm, initialDate: dateKey } as any)}
-              onRequestIdeas={handleRequestGapIdeas}
-              onPickIdea={handlePickGapIdea}
-              onModeChange={handleTransportChange}
-              onOpenRoute={(t) => navigation.navigate(
-                'LeaveNow', { task: t, isFirstOfDay: t.id === firstAwayId } as any)}
-              onPlaceTask={setSelectedTask}
-              onResolveConflict={handleResolveConflict}
-              onShowOptions={handleTimelineOptions}
-              onPickOption={handlePickAlternative}
-              onToggleComplete={handleComplete}
-              onChangeOrigin={handleChangeOrigin}
-              onCompareModes={handleCompareModes}
-            />
-            {hiddenTaskCount > 0 && (
-              <TouchableOpacity
-                style={styles.showAll}
-                onPress={() => setShowAllTasks(true)}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.showAllText}>
-                  {language === 'he'
-                    ? `הצג את כל ${timelineTasks.length} המשימות`
-                    : `Show all ${timelineTasks.length} tasks`}
+          focusing ? (
+          // v3 Focus (Koral, 27.10): the day as a ring with the beating heart,
+          // what is happening now, the next three things, one suggestion — and
+          // a door to the whole day. Nothing is hidden for good: All day is one tap.
+          <View style={styles.section}>
+            <View style={styles.focusHero}>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={[styles.focusClock, { color: headInk }]}>{clock}</Text>
+                <Text style={[styles.focusSub, { color: headInk }]} numberOfLines={2}>
+                  {he
+                    ? `${formatDayLabel(dateKey, language)} · ${doneCount} מתוך ${dayTasks.length} בוצעו`
+                    : `${formatDayLabel(dateKey, language)} · ${doneCount} of ${dayTasks.length} done`}
                 </Text>
+              </View>
+              <DayRing tasks={dayTasks} nowMin={timeToMinutes(clock)} sunriseMin={sun.sunrise} sunsetMin={sun.sunset}
+                done={doneCount} total={dayTasks.length} he={he} ink={headInk} />
+            </View>
+            <View style={styles.cardList}>
+              {wakeRow}
+              {dayRows.slice(0, nowRowsEnd + 3)}
+            </View>
+            {plusBlock}
+            {dayRows.length > nowRowsEnd + 3 || anytime.length || earlier.length ? (
+              <TouchableOpacity style={styles.allDayLink} onPress={() => setView('all')} accessibilityRole="button">
+                <Text style={styles.allDayLinkText}>{he ? 'כל היום ›' : 'All day ›'}</Text>
               </TouchableOpacity>
-            )}
+            ) : null}
           </View>
+          ) : (
+          <View style={styles.section} onLayout={(e) => setTimelineY(e.nativeEvent.layout.y)}>
+            <View style={styles.denseRow}>
+              {[true, false].map((d) => (
+                <TouchableOpacity key={String(d)} onPress={() => setDense(d)} accessibilityRole="tab"
+                  accessibilityState={{ selected: dense === d }} style={[styles.denseChip, dense === d && styles.denseChipOn]}>
+                  <Text style={[styles.denseText, dense === d && styles.denseTextOn]}>
+                    {d ? (he ? 'מצומצם' : 'Compact') : (he ? 'מורחב' : 'Expanded')}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <TrayDock tasks={anytime} he={he} onLift={liftFromTray} onMove={moveOverDay}
+              onDrop={(x, y) => { void dropOnDay(x, y); }} onCancel={endDrag}
+              onOpen={(t) => setOpenCardId((open) => (open === t.id ? null : t.id))} />
+            {anytime.filter((t) => t.id === openCardId).map((t) => card(t))}
+            {/* Koral's picks, 30.9 (design canvas "Your picks"): what already
+                happened folds into one line; a now line with a beating heart
+                sits where she is; the ＋ under it offers the time she has;
+                then the day as cards — the question before a clash that does
+                not fit (3C), "which one?" where two things share an hour
+                (2D), free windows between them. */}
+            {showingToday ? (
+              <DayGoalCard he={language === 'he'} date={dateKey} tasks={dayTasks} onCompleteTask={(t) => handleComplete(t)} />
+            ) : null}
+            {showingToday && earlier.length > 0 ? (
+              <EarlierRow
+                count={earlier.length}
+                icons={earlier.map((t) => getCategoryMeta(t.category).icon)}
+                open={earlierOpen}
+                he={he}
+                onToggle={() => setEarlierOpen((open) => !open)}
+              />
+            ) : null}
+            {showingToday && earlierOpen ? <View style={styles.cardList}>{earlier.map((t) => card(t))}</View> : null}
+            {/* The now line stands alone only when no card in progress carries
+                it — a clash card holding both halves carries none. */}
+            {showingToday && !nowInCard ? <NowLine time={clock} he={he} /> : null}
+            {nowRowsEnd > 0 ? <View style={styles.cardList}>{dayRows.slice(0, nowRowsEnd)}</View> : null}
+            {plusBlock}
+            <View style={styles.cardList}>
+              {wakeRow}
+              {dayRows.slice(nowRowsEnd)}
+            </View>
+            {/* Her own work with no hour is drawn in the tray at the top of All day
+                (TrayDock, 27.10) — never dropped (1.10: the prep block vanished). */}
+          </View>
+          )
         )}
+
+        {/* What she didn't finish on earlier days — at the END of the day,
+            out of the way of what is next, and still one tap from Done / Move
+            / Let go. (Tasks does not carry these yet; until it does, they
+            stay reachable here.) */}
+        {showingToday && !focusing && <YesterdayCard
+          tasks={overdue}
+          today={getTodayString()}
+          language={language}
+          onMove={handleMoveOverdue}
+          onReschedule={(t) => setSelectedTask(t)}
+          onLetGo={handleLetGoOverdue}
+          onComplete={handleCompleteOverdue}
+          // The row's third button lets go (recoverable) — it deleted for ever,
+          // with no confirmation, 4px from Done (council review, 28.9).
+          onDelete={handleLetGoOverdue}
+        />}
 
         <View style={{ height: 120 }} />
       </ScrollView>
+
+      {rulerRows ? <HourRuler ref={rulerRef} rows={rulerRows} he={he} top={insets.top + 120} bottom={110} /> : null}
+      <DragGhost ref={ghostRef} he={he} />
+      <AlertsSheet visible={alertsOpen} items={waiting} he={he} onClose={() => setAlertsOpen(false)} onPick={pickWaiting}
+        changes={changes} changesError={changesError} onOpenTask={(id) => { openTaskCard(id).catch(() => {}); }}
+        onMore={() => { setAlertsOpen(false); setView('all'); }} />
+      {moved ? (
+        <View style={[styles.movedStrip, { bottom: 12 }]}>
+          <Text style={styles.movedText} numberOfLines={1}>{moved.line}</Text>
+          {moved.undo ? (
+            <TouchableOpacity onPress={() => { const u = moved.undo; setMoved(null); u?.(); }} accessibilityRole="button" style={styles.movedUndo}>
+              <Text style={styles.movedUndoText}>{he ? '↶ ביטול' : '↶ Undo'}</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      ) : null}
 
       {/* "Change time" on the ⏰ chip — the system time picker, so the hour is
           set the way every other hour in this app is set. */}
@@ -1924,48 +3111,47 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
           right under the greeting, the highest place on the screen, because
           every leave time is counted from it. */}
       <LinearGradient
-        colors={[BRAND.honey, BRAND.cream]}
+        colors={[sky.colors[0], sky.colors[1]]}
         style={[styles.headerOverlay, { paddingTop: insets.top + 6 }]}
       >
-        <View style={styles.header}>
-          <MeiraCoin size={32} label="Meira" />
-          <Text style={styles.greetingBig} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+        <View style={[styles.header, language === 'he' && { flexDirection: 'row-reverse' }]}>
+          {/* Meira's face is the door to her (canvas v4): tap → the chat. */}
+          <TouchableOpacity onPress={() => navigation.navigate('Meira')} hitSlop={8}
+            accessibilityRole="button" accessibilityLabel={language === 'he' ? 'לדבר עם מאירה' : 'Talk to Meira'}>
+            <MeiraCoin size={32} label="Meira" />
+          </TouchableOpacity>
+          <Text style={[styles.greetingBig, { color: headInk }, language === 'he' && { textAlign: 'right' }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
             {showingToday
-              ? getGreeting()
+              ? getGreeting(language === 'he')
               : showingTomorrow
                 ? (language === 'he' ? 'מחר' : 'Tomorrow')
                 : formatDayLabel(dateKey, language)}
           </Text>
-          <TouchableOpacity
-            style={styles.headerIcon}
-            onPress={() => setEventsOpen((v) => !v)}
-            accessibilityLabel={language === 'he' ? 'אירועים מהמייל' : 'Events from your email'}
-          >
-            <Text style={styles.headerIconText}>📅</Text>
-            {suggestionCount > 0 && (
-              <View style={styles.badge}><Text style={styles.badgeText}>{suggestionCount}</Text></View>
-            )}
+          <TouchableOpacity style={styles.headerIcon} onPress={() => setAlertsOpen(true)}
+            accessibilityLabel={language === 'he' ? `התראות — ${waiting.length}` : `Alerts — ${waiting.length}`}>
+            <LineIcon name="bell" size={20} color={BRAND.warmInk} />
+            {waiting.length ? (
+              <View style={styles.bellBadge}><Text style={styles.bellBadgeText}>{waiting.length}</Text></View>
+            ) : null}
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.headerIcon}
             onPress={() => navigation.navigate('SettingsMenu')}
             accessibilityLabel={language === 'he' ? 'תפריט' : 'Menu'}
           >
-            <Text style={[styles.headerIconText, { color: BRAND.warmInk }]}>☰</Text>
+            <LineIcon name="menu" size={20} color={BRAND.warmInk} />
           </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.headerIcon}
-            onPress={() => navigation.navigate('ProfileEdit')}
-            accessibilityLabel={language === 'he' ? 'פרופיל' : 'Profile'}
-          >
-            <Text style={styles.headerIconText}>👤</Text>
-          </TouchableOpacity>
+          {/* One door (8.10, Koral): the profile is the menu's "👤 את", and the
+              📅 is the menu's "📅 עדכון יומנים", which opens the banner below. */}
         </View>
-        <Text style={styles.headerSub} numberOfLines={1}>
+        <Text style={[styles.headerSub, { color: headInk }, language === 'he' && styles.headerSubHe]} numberOfLines={1}>
           {showingToday
             ? `${presence.state !== 'unknown' ? '' : '📍 '}${presence.state !== 'unknown' || hereLabel
               ? `${describeDayPresence(presence, language === 'he')}${hereLabel && presence.state !== 'at-venue' ? ` · ${hereLabel}` : ''}`
-              : (language === 'he' ? 'מיקום כבוי' : 'Location off')} · ${language === 'he' ? `נשארו ${pending.length}` : `${pending.length} left today`}`
+              : (language === 'he' ? 'מיקום כבוי' : 'Location off')}`
+            // No "· N left today" (Koral, 17.10: "why 2 left today?! it was
+            // great"): on one line the count either cut the place off or, with
+            // no fix yet, stood in for it. The day below already shows what's left.
             : (language === 'he' ? `${dayTasks.length} מתוכננות` : `${dayTasks.length} planned`)}
         </Text>
 
@@ -1975,16 +3161,31 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
             they stay one tap apart; anything further is the date picker. A
             timeline that can only draw two days is a diary that ends on
             Wednesday. */}
+        {/* v3 (27.10): Focus | All day for today; any other day is "all day".
+            Tomorrow stays one tap away (the chip), any other day is the 📅. */}
         <View style={styles.dayToggle}>
-          <TouchableOpacity
-            onPress={() => setDateKey(getTodayString())}
-            activeOpacity={0.85}
-            style={[styles.dayChip, showingToday && styles.dayChipOn]}
-          >
-            <Text style={[styles.dayChipText, showingToday && styles.dayChipTextOn]} numberOfLines={1}>
-              {language === 'he' ? 'היום' : 'Today'}
-            </Text>
-          </TouchableOpacity>
+          {showingToday ? (
+            <>
+              <TouchableOpacity onPress={() => setView('focus')} activeOpacity={0.85}
+                style={[styles.dayChip, view === 'focus' && styles.dayChipOn]} accessibilityRole="tab"
+                accessibilityState={{ selected: view === 'focus' }}>
+                <Text style={[styles.dayChipText, view === 'focus' && styles.dayChipTextOn]} numberOfLines={1}>
+                  {language === 'he' ? '◎ פוקוס' : '◎ Focus'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setView('all')} activeOpacity={0.85}
+                style={[styles.dayChip, view === 'all' && styles.dayChipOn]} accessibilityRole="tab"
+                accessibilityState={{ selected: view === 'all' }}>
+                <Text style={[styles.dayChipText, view === 'all' && styles.dayChipTextOn]} numberOfLines={1}>
+                  {language === 'he' ? '☰ כל היום' : '☰ All day'}
+                </Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <TouchableOpacity onPress={() => setDateKey(getTodayString())} activeOpacity={0.85} style={styles.dayChip}>
+              <Text style={styles.dayChipText} numberOfLines={1}>{language === 'he' ? '‹ חזרה להיום' : '‹ Back to today'}</Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             onPress={() => setDateKey(getTomorrowString())}
             activeOpacity={0.85}
@@ -1997,16 +3198,13 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
           <TouchableOpacity
             onPress={() => setShowDayPicker(true)}
             activeOpacity={0.85}
-            style={[styles.dayChip, !showingToday && !showingTomorrow && styles.dayChipOn]}
+            style={[styles.dateBtn, !showingToday && !showingTomorrow && styles.dayChipOn]}
+            accessibilityLabel={language === 'he' ? 'בחירת תאריך' : 'Pick a day'}
           >
-            <Text
-              style={[styles.dayChipText, !showingToday && !showingTomorrow && styles.dayChipTextOn]}
-              numberOfLines={1}
-            >
-              📅 {language === 'he' ? 'תאריך' : 'Pick a day'}
-            </Text>
+            <Text style={styles.dateBtnText}>📅</Text>
           </TouchableOpacity>
         </View>
+        <MorningAlarmPill he={language === 'he'} state={morningAlarm} />
       </LinearGradient>
 
       {showDayPicker && (
@@ -2026,10 +3224,24 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
       )}
       <BottomSheet visible={briefOpen} onClose={() => setBriefOpen(false)} heightRatio={0.8}>
         <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}>
-          {prep && !(meetingBrief && briefTaskId === prep.taskId) && (
+          {sheetIv && (
+            <>
+              <InterviewPrepHeader task={sheetIv.task} prep={sheetIv.prep} he={language === 'he'} />
+              {!!ivNote && (
+                <Text style={styles.ivNote} numberOfLines={3}>{ivNote}</Text>
+              )}
+              <MeetingBriefCard
+                brief={sheetIv.brief}
+                language={language}
+                refreshing={ivRefreshing}
+                onRefresh={refreshSheetInterview}
+              />
+            </>
+          )}
+          {!sheetIv && prep && briefSheetId === prep.taskId && !(meetingBrief && briefTaskId === prep.taskId) && (
             <TaskPrepCard prep={prep.result} he={language === 'he'} taskText={prep.text} />
           )}
-          {meetingBrief && briefTaskId === nextUp?.id && (
+          {!sheetIv && meetingBrief && briefTaskId === nextUp?.id && briefSheetId === nextUp?.id && (
             <MeetingBriefCard
               brief={meetingBrief}
               language={language}
@@ -2083,7 +3295,7 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
  */
 const OPTIONS_TTL_MS = 4 * 60 * 1000;
 
-const HEADER_HEIGHT = 74 + 42;   // + the day-chip row
+const HEADER_HEIGHT = 74 + 42 + 44;   // + the day-chip row + the morning ⏰ pill
 
 const styles = StyleSheet.create({
   greetingBig: { flex: 1, fontFamily: FONTS.display, fontSize: 22, color: BRAND.warmInk },
@@ -2092,17 +3304,21 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: BRAND.line, alignItems: 'center', justifyContent: 'center',
   },
   headerIconText: { fontSize: 17 },
-  badge: {
-    position: 'absolute', top: -3, right: -3, minWidth: 17, height: 17, borderRadius: 9,
-    backgroundColor: BRAND.danger, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4,
-  },
-  badgeText: { color: BRAND.white, fontFamily: FONTS.bodyHeavy, fontSize: 10 },
   headerSub: { fontFamily: FONTS.bodyBold, fontSize: 12, color: BRAND.inkSoft, marginTop: 4, marginLeft: 42 },
-  clashLink: {
-    backgroundColor: BRAND.creamCard, borderWidth: 1.5, borderColor: BRAND.danger, borderRadius: 14,
-    paddingVertical: 10, paddingHorizontal: 14, marginBottom: 10, minHeight: 44, justifyContent: 'center',
+  headerSubHe: { marginLeft: 0, marginRight: 42, textAlign: 'right', writingDirection: 'rtl' },
+  // One small line when the calendar could not be read (utils/calendarErrorKind).
+  calPill: {
+    alignSelf: 'flex-start', minHeight: 36, justifyContent: 'center', borderRadius: 12,
+    paddingHorizontal: 12, marginBottom: 10, backgroundColor: BRAND.timeChipBg,
   },
-  clashLinkText: { fontFamily: FONTS.bodyHeavy, fontSize: 13, color: BRAND.danger },
+  calPillText: { fontFamily: FONTS.bodyHeavy, fontSize: 12, color: BRAND.goldInk },
+  anytimeHead: { fontFamily: FONTS.bodyHeavy, fontSize: 13, color: BRAND.goldInk, marginTop: 4, marginBottom: 2 },
+  cardList: { gap: 10 },
+  wakeRow: {
+    minHeight: 44, justifyContent: 'center', borderRadius: 14, paddingHorizontal: 14,
+    backgroundColor: BRAND.timeChipBg,
+  },
+  wakeText: { fontFamily: FONTS.bodyHeavy, fontSize: 14, color: BRAND.goldInk },
   eventsBanner: {
     backgroundColor: BRAND.honey, borderWidth: 1, borderColor: BRAND.sunGold, borderRadius: 16,
     padding: 12, marginBottom: 12,
@@ -2111,12 +3327,13 @@ const styles = StyleSheet.create({
   eventsTitle: { flex: 1, fontFamily: FONTS.bodyHeavy, fontSize: 14, color: BRAND.onGold },
   eventsAddAll: { backgroundColor: BRAND.warmInk, borderRadius: 999, paddingVertical: 8, paddingHorizontal: 14, minHeight: 36, justifyContent: 'center' },
   eventsAddAllText: { color: BRAND.white, fontFamily: FONTS.bodyHeavy, fontSize: 12 },
-  eventsSub: { fontFamily: FONTS.bodySemi, fontSize: 12, color: '#7A5A18', marginTop: 6 },
+  eventsSub: { fontFamily: FONTS.bodySemi, fontSize: 12, color: BRAND.goldInk, marginTop: 6 },
   eventsReview: { fontFamily: FONTS.bodyHeavy, textDecorationLine: 'underline', color: BRAND.onGold },
   // Warm cream. Today and the timeline blocks inside it are one palette
   // again: the blocks were briefly moved to a clay-accented set while the
   // screen around them stayed cream-and-gold, so Today read as two designs
   // stacked. Everything here is BRAND.
+  // The sky gradient is drawn over this; cream only shows for a frame on mount.
   root: { flex: 1, backgroundColor: BRAND.cream },
   scroll: { paddingHorizontal: 16 },
 
@@ -2124,12 +3341,7 @@ const styles = StyleSheet.create({
   headerOverlay: {
     position: 'absolute', top: 0, left: 0, right: 0,
     paddingHorizontal: 16, paddingBottom: 10,
-    borderBottomWidth: 1, borderBottomColor: BRAND.line,
-    // BRAND.cream (#FCF7EC) at 72%, so expo-blur has the canvas colour to
-    // work from rather than turning the top of the screen grey. It was the
-    // old paper white, which tinted the glass a shade cooler than the day
-    // scrolling under it.
-    backgroundColor: 'rgba(252,247,236,0.72)',
+    borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.45)',
     overflow: 'hidden',
   },
   greeting: { fontSize: 14, fontFamily: FONTS.body, color: BRAND.inkSoft },
@@ -2149,6 +3361,37 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: BRAND.line, backgroundColor: BRAND.creamCard,
   },
   dayChipOn: { backgroundColor: BRAND.sunGold, borderColor: BRAND.amber },
+  dateBtn: {
+    width: 40, alignItems: 'center', justifyContent: 'center', borderRadius: RADIUS.pill,
+    borderWidth: 1, borderColor: BRAND.line, backgroundColor: BRAND.creamCard,
+  },
+  dateBtnText: { fontSize: 15 },
+  bellBadge: {
+    position: 'absolute', top: -2, right: -2, minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 4,
+    backgroundColor: BRAND.danger, alignItems: 'center', justifyContent: 'center',
+  },
+  bellBadgeText: { fontFamily: FONTS.bodyHeavy, fontSize: 10, color: BRAND.white },
+  denseRow: { flexDirection: 'row', justifyContent: 'flex-end', gap: 6, marginBottom: 8 },
+  denseChip: { minHeight: 32, justifyContent: 'center', paddingHorizontal: 12, borderRadius: RADIUS.pill, backgroundColor: 'rgba(255,253,247,0.6)' },
+  denseChipOn: { backgroundColor: BRAND.warmInk },
+  denseText: { fontFamily: FONTS.bodyBold, fontSize: 12, color: BRAND.warmInk },
+  denseTextOn: { color: BRAND.white },
+  dropHover: { borderRadius: 18, borderWidth: 2, borderColor: '#7B6CFF', backgroundColor: 'rgba(123,108,255,0.10)' },
+  movedStrip: {
+    position: 'absolute', left: 14, right: 14, minHeight: 52, borderRadius: 26, paddingHorizontal: 16,
+    flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: 'rgba(14,18,44,0.9)',
+  },
+  movedText: { flex: 1, fontFamily: FONTS.bodySemi, fontSize: 13, color: BRAND.white },
+  movedUndo: { minHeight: 40, justifyContent: 'center', paddingHorizontal: 14, borderRadius: 20, backgroundColor: BRAND.sunGold },
+  movedUndoText: { fontFamily: FONTS.bodyHeavy, fontSize: 13, color: BRAND.onGold },
+  focusHero: { flexDirection: 'row', alignItems: 'center', gap: 16, paddingHorizontal: 6, paddingBottom: 14 },
+  focusClock: { fontFamily: FONTS.bodyHeavy, fontSize: 46, lineHeight: 50, fontVariant: ['tabular-nums'] },
+  focusSub: { fontFamily: FONTS.bodySemi, fontSize: 14, marginTop: 4 },
+  allDayLink: {
+    alignSelf: 'center', minHeight: 44, justifyContent: 'center', paddingHorizontal: 18, marginTop: 4,
+    borderRadius: RADIUS.pill, backgroundColor: 'rgba(255,253,247,0.85)',
+  },
+  allDayLinkText: { fontFamily: FONTS.bodyHeavy, fontSize: 13, color: BRAND.goldInk },
   dayChipText: {
     fontFamily: FONTS.bodySemi, fontSize: 12.5, color: BRAND.inkSoft, textAlign: 'center',
   },
@@ -2178,6 +3421,7 @@ const styles = StyleSheet.create({
   },
   briefingPlayText: { fontSize: 12, fontFamily: FONTS.bodyBold, color: BRAND.onGold },
   briefingClose: { fontSize: 14, color: BRAND.inkFaint, fontFamily: FONTS.bodyBold },
+  ivNote: { marginTop: 12, marginHorizontal: 16, fontFamily: FONTS.bodySemi, fontSize: 13, lineHeight: 19, color: BRAND.danger },
 
   greetingCard: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
@@ -2206,13 +3450,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14, paddingVertical: 10, marginBottom: 12,
   },
   offlineText: { fontFamily: FONTS.bodyBold, fontSize: 13, color: '#A32B47' },
-  calErrorBanner: {
-    backgroundColor: '#FDECEF', borderRadius: RADIUS.card,
-    borderWidth: 1, borderColor: '#EF476F',
-    paddingHorizontal: 14, paddingVertical: 10, marginBottom: 12, gap: 4,
-  },
-  calErrorText: { fontFamily: FONTS.bodyBold, fontSize: 13, color: '#A32B47' },
-  calErrorHint: { fontFamily: FONTS.body, fontSize: 12, color: '#A32B47' },
   clashBox: {
     backgroundColor: '#FFF4E5', borderRadius: RADIUS.card,
     borderWidth: 1, borderColor: '#FF9F1C',
@@ -2238,13 +3475,6 @@ const styles = StyleSheet.create({
   suggestTitle: { fontFamily: FONTS.bodyBold, fontSize: 14, color: BRAND.inkSoft },
   suggestChevron: { fontSize: 11, color: BRAND.inkFaint },
   suggestBody: { marginTop: 10, gap: 8 },
-  showAll: {
-    alignSelf: 'center', marginTop: 10,
-    paddingVertical: 8, paddingHorizontal: 16,
-    borderRadius: 999, borderWidth: 1, borderColor: BRAND.line,
-    backgroundColor: BRAND.creamCard,
-  },
-  showAllText: { fontFamily: FONTS.bodyHeavy, fontSize: 13, color: BRAND.inkSoft },
   beforeGoCard: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     backgroundColor: BRAND.honey, borderRadius: RADIUS.card,
@@ -2268,13 +3498,30 @@ const styles = StyleSheet.create({
   },
   liveNoteText: { fontFamily: FONTS.bodySemi, fontSize: 13, color: BRAND.warmInk, lineHeight: 19 },
   liveNoteMore: { fontFamily: FONTS.bodyHeavy, fontSize: 13, color: BRAND.goldInk, marginTop: 6 },
+  // v3: a glass card with a soft red edge — urgent, never alarming.
   missedBox: {
-    backgroundColor: BRAND.creamCard, borderWidth: 1.5, borderColor: BRAND.danger,
-    borderRadius: RADIUS.chip + 4, padding: 12, gap: 10, marginBottom: 12,
+    backgroundColor: 'rgba(255,255,255,0.94)', borderWidth: 1, borderColor: '#F6B8C6', borderTopWidth: 4, borderTopColor: BRAND.danger,
+    borderRadius: 22, padding: 14, gap: 10, marginBottom: 12, ...SHADOWS.card,
   },
+  lateTell: {
+    marginTop: 10, padding: 12, borderRadius: 16, backgroundColor: '#E6FAF3', borderWidth: 1, borderColor: '#9FE6CC', gap: 4,
+  },
+  lateTellText: { fontFamily: FONTS.bodyHeavy, fontSize: 14, color: '#0B6B4F' },
+  lateTellDraft: { fontFamily: FONTS.bodySemi, fontSize: 12.5, color: BRAND.inkSoft, lineHeight: 18 },
   missedTitle: { fontFamily: FONTS.bodyHeavy, fontSize: 14, color: BRAND.warmInk, lineHeight: 20 },
-  missedDismiss: { alignSelf: 'center', paddingVertical: 6, paddingHorizontal: 14 },
-  missedDismissText: { fontFamily: FONTS.bodySemi, fontSize: 12.5, color: BRAND.inkFaint },
+  missedDismiss: { alignSelf: 'center', minHeight: MIN_TOUCH, justifyContent: 'center', paddingHorizontal: 16 },
+  missedLate: { fontFamily: FONTS.bodySemi, fontSize: 13.5, color: BRAND.warmInk, marginTop: 6, lineHeight: 19 },
+  // Wraps: three answers ("Moved / Cancelled / Don't know") in Hebrew do not fit one line of a phone,
+  // and squeezed side by side (flex 1 on each) they broke mid-word. flexBasis is the width a button
+  // wants; what does not fit goes to the next line and the line's buttons share the room.
+  lateRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
+  lateBtn: {
+    flexGrow: 1, flexBasis: 96, minHeight: MIN_TOUCH, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 12,
+    borderWidth: 1.5, borderColor: BRAND.goldInk, alignItems: 'center', justifyContent: 'center', backgroundColor: BRAND.creamCard,
+  },
+  lateBtnText: { fontFamily: FONTS.bodyBold, fontSize: 13, textAlign: 'center', color: BRAND.warmInk },
+  lateHint: { fontFamily: FONTS.body, fontSize: 12.5, color: BRAND.inkSoft, marginTop: 8 },
+  missedDismissText: { fontFamily: FONTS.bodySemi, fontSize: 13, color: BRAND.inkSoft },
   focusSlim: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     backgroundColor: BRAND.goldSoft, borderWidth: 1, borderColor: BRAND.sunGold,

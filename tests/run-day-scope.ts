@@ -66,10 +66,18 @@ console.log('\n2. Add Task honours the day it was opened on\n');
 const addTask = read('src/screens/AddTaskScreen.tsx');
 ok(/addMorningTasksFromSpeech\(trimmed, initialDate\)/.test(addTask),
   'the LLM path is given the day, not just the sentence');
-ok(/addManualTask\(trimmed, \{ \.\.\.\(extra \?\? \{\}\), date: initialDate \}\)/.test(addTask),
-  'and so is the manual fallback');
+// 17.10 (live chips): the manual fallback is given the EFFECTIVE day — the day
+// she can see on the date chip — and that day falls back to the day the screen
+// was opened on. It is the same rule one step more precise: the chip says
+// "Sun 18.10", so 18.10 is what is saved, not whatever initialDate was. The
+// fallback to initialDate is asserted separately, so the original guarantee
+// (no sentence date → the day on screen, never today) is not weakened.
+ok(/addManualTask\(trimmed, \{ \.\.\.\(extra \?\? \{\}\), date: effectiveDate/.test(addTask),
+  'and so is the manual fallback (the effective day)');
+ok(/\(parse\.date \?\? initialDate\)/.test(addTask) && /\(dateOverride \?\? initialDate\)/.test(addTask),
+  'the effective day falls back to the day the screen was opened on');
 // Rule 3: the confirmation must be able to be wrong, or it is not a check.
-ok(/landed/.test(addTask) && /Added to \$\{\(landed/.test(addTask),
+ok(/landed/.test(addTask) && /Added to '\}\$\{\(landed/.test(addTask),
   'the toast names the day the task actually landed on, read back from the result');
 
 const useTasks = read('src/hooks/useTasks.ts');
@@ -182,8 +190,10 @@ ok(/export const ROUTE_RULES_VERSION = \d+;/.test(sync),
   'the choosing rules carry a version');
 ok(/const byOldRules = Boolean\(existing && \(existing\.rulesVersion \?\? 1\) < ROUTE_RULES_VERSION\)/
   .test(sync), 'a plan from an older version is stale');
-ok(/const stale = wrongOrigin \|\| byOldRules \|\|/.test(sync),
+ok(/const stale = wrongOrigin \|\| \(!herPick && byOldRules\) \|\|/.test(sync),
   'independently of its age and of how soon it departs');
+// 13.10: a departure SHE picked with the arrows is kept — only a new origin re-plans it.
+ok(/const herPick = existing\?\.pickedBy === 'her';/.test(sync), "her own pick is not re-ranked away");
 ok(/rulesVersion: ROUTE_RULES_VERSION/.test(sync),
   'and every plan we store is stamped with it');
 
@@ -223,7 +233,7 @@ const decisionSource = (): string => {
 };
 
 const fingerprint = createHash('sha256').update(decisionSource()).digest('hex').slice(0, 16);
-const EXPECTED = { version: 3, fingerprint: 'c1a39b9d50b34852' };
+const EXPECTED = { version: 7, fingerprint: 'd85a776651d46545' };   // 4: railCarries, 5: vehicle continuity + start here, 6: margin 20 (13.10), 7: changes ranked by the wait they cost (21.10, transitParse.transitScore)
 const version = Number(/export const ROUTE_RULES_VERSION = (\d+);/.exec(sync)?.[1] ?? 0);
 
 ok(version === EXPECTED.version && fingerprint === EXPECTED.fingerprint,
@@ -231,6 +241,9 @@ ok(version === EXPECTED.version && fingerprint === EXPECTED.fingerprint,
   `v${version} / ${fingerprint} — if you changed how a route is chosen, bump `
   + 'ROUTE_RULES_VERSION so the plans already on her phone are recomputed, then '
   + 'record the new pair here');
+
+ok(/const startedAlready = isToday[\s\S]{0,200}minutesUntil\(String\(t\.fixedTime \|\| t\.scheduledTime\)\) < 0;\s*if \(startedAlready && !forced\) \{[\s\S]{0,120}continue;/.test(sync),
+  'a trip that has already started is left to the live re-plan — the chain never re-plans it arrive-by a deadline behind her (21.10)');
 
 ok(/const wakeUpBy = subtractMinutes\(plan\.leaveHomeAt, prepMinutes\);/.test(sync),
   'the get-ready time is derived from THIS plan\'s departure');

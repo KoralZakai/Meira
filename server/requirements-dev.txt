@@ -1,0 +1,20 @@
+# Test-only dependencies for the Python suite.
+#
+# WHY THIS FILE EXISTS
+# requirements.txt is what the Docker image installs — it carries the runtime
+# and nothing else, which is correct. But the test suite needs two more
+# packages, and they were declared NOWHERE. The suite therefore passed or
+# failed according to what happened to be installed on the machine running it:
+# on a clean checkout, `pytest tests/ -q` reported
+#
+#     4 failed, 625 passed
+#
+# and all four were tests/test_account_deletion.py — the GDPR erase path. They
+# are the only tests in the suite written as bare `async def` with
+# @pytest.mark.asyncio rather than unittest.IsolatedAsyncioTestCase (which
+# pytest runs natively), so they are the only ones that need the plugin. The
+# failure names the plugin, so it is loud rather than silent — but "green"
+# still meant "green on a machine that already had it", which is not a fact
+# about the code. CI installs this file, so now it is.
+pytest>=8.0
+pytest-asyncio>=0.23

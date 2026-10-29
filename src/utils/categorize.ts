@@ -31,6 +31,49 @@ export const DEFAULT_DURATIONS: Record<TaskCategory, number> = {
 };
 
 /**
+ * One-letter Hebrew prefixes that may sit in front of a keyword: ב in, ל to,
+ * מ from, ה the, ו and, ש that, כ as. Mirrors `_HEBREW_PREFIXES` in
+ * server/categorize.py.
+ */
+const HEBREW_PREFIXES = 'בלמהושכ';
+/** Lower-cased Latin letters, digits and Hebrew letters. JS `\b` knows only ASCII. */
+const WORD_CHAR_RE = /[a-z0-9\u05d0-\u05ea]/;
+
+/** Does a keyword found at text[i..] begin a word (allowing up to two Hebrew prefixes)? */
+function startsAWord(text: string, i: number): boolean {
+  for (let k = 0; k < 3; k += 1) {
+    const j = i - k;
+    if (j < 0) return false;
+    if (k > 0 && !HEBREW_PREFIXES.includes(text[j])) return false;
+    if (j === 0 || !WORD_CHAR_RE.test(text[j - 1])) return true;
+  }
+  return false;
+}
+
+/**
+ * Is `keyword` in `text` as the START of a word? Port of `has_keyword`.
+ *
+ * It used to be `text.includes(keyword)`, which filed "דחוף לשלוח מייל" (urgent)
+ * under leisure because "חוף" (beach) is inside "דחוף", and "brunch with Dana"
+ * under gym because "run" is inside "brunch". A keyword may be preceded by up to
+ * two Hebrew prefix letters and by no other letter. The END stays open on
+ * purpose: "אימון" must still find "אימונים", and the table's stems ("אימונ",
+ * "מתאמנ") depend on it. A keyword ending in a digit ("1:1") must not run on
+ * into more digits, or "1:15" would be a one-on-one.
+ */
+export function hasKeyword(text: string, keyword: string): boolean {
+  let from = 0;
+  for (;;) {
+    const i = text.indexOf(keyword, from);
+    if (i < 0) return false;
+    const end = i + keyword.length;
+    const runsOnIntoDigits = /[0-9]$/.test(keyword) && end < text.length && /[0-9]/.test(text[end]);
+    if (startsAWord(text, i) && !runsOnIntoDigits) return true;
+    from = i + 1;
+  }
+}
+
+/**
  * Order matters: the FIRST rule that matches wins, so the specific ones
  * ('interview') sit above the general ones ('meeting', 'work'). An interview
  * invitation says "interview" AND, further down, "meeting" — reordering this
@@ -43,8 +86,10 @@ const RULES: Array<[TaskCategory, string[], TaskPriority, number]> = [
   ['zoom', ['zoom', 'teams', 'google meet', 'video call', 'webinar',
     'זום', 'מיטס', 'וידאו'], 'have_to', 45],
   ['conference', ['conference', 'summit', 'convention', 'כנס', 'כנסים'], 'have_to', 120],
-  ['gym', ['gym', 'workout', 'training', 'fitness', 'run', 'running',
-    'yoga', 'pilates', 'swim', 'אימון', 'חדר כושר', 'כושר',
+  // "work out" / "working out" are two words and the `work` rule below owns the
+  // word "work": without them here a workout was filed under 💼 Work (15.10).
+  ['gym', ['gym', 'workout', 'work out', 'working out', 'training', 'fitness', 'run', 'running',
+    'yoga', 'pilates', 'swim', 'אימון', 'אימונ', 'להתאמן', 'מתאמנ', 'חדר כושר', 'כושר',
     'ריצה', 'יוגה', 'שחייה', 'פילאטיס', 'קיקבוקס'], 'need_to', 60],
   ['course', ['course', 'study', 'studying', 'lecture', 'homework',
     'exam', 'assignment', 'קורס', 'ללמוד', 'לימודים',
@@ -52,19 +97,28 @@ const RULES: Array<[TaskCategory, string[], TaskPriority, number]> = [
   ['class', ['class', 'lesson', 'seminar', 'שיעור', 'סדנה'], 'have_to', 90],
   ['hobby_class', ['hobby', 'workshop', 'חוג', 'חוגים'], 'nice_to_do', 90],
   ['meeting', ['meeting', 'appointment', '1:1', 'standup', 'sync',
-    'פגישה', 'פגישות', 'מפגש', 'תור'], 'have_to', 45],
+    'פגישה', 'פגישות', 'פגישת', 'פגישתי', 'מפגש', 'תור'], 'have_to', 45],
   ['call', ['call', 'phone', 'ring', 'voicemail',
     'להתקשר', 'שיחה', 'טלפון', 'לחזור אליו', 'לחזור אליה'], 'need_to', 15],
   // Job hunting is work: "לשלוח קורות חיים ל-Checkpoint" matched nothing and
   // was filed under 💪 Gym on 22.9. Same words as server/categorize.py.
+  // Field work is work too — Meira's own users. "Site visit — Intel Haifa"
+  // matched nothing and fell to the `meeting` shrug: 60 min of warning
+  // instead of 30, on every one of a technician's working days.
   ['work', ['work', 'office', 'project', 'deploy', 'shift', 'client',
     'cv', 'resume', 'job application', 'reserve duty', 'miluim',
+    'site visit', 'site survey', 'survey', 'install', 'commissioning', 'maintenance',
+    'repair', 'inspection', 'field work', 'on-site', 'on site',
     'עבודה', 'לעבוד', 'משרד', 'פרויקט', 'משמרת', 'לקוח',
-    'קורות חיים', 'קו״ח', 'מועמדות', 'מילואים'], 'have_to', 60],
-  ['leisure', ['movie', 'cinema', 'relax', 'party', 'dinner out', 'beach',
-    'karaoke', 'concert',
+    'קורות חיים', 'קו״ח', 'מועמדות', 'מילואים',
+    'ביקור באתר', 'ביקור שטח', 'סיור באתר', 'התקנה', 'תחזוקה', 'תיקון', 'עבודת שטח', 'טכנאי'], 'have_to', 60],
+  // "ים" alone would be inside "מים" (water) and "שים" (put): only the sea
+  // with its prefix is a keyword.
+  ['leisure', ['movie', 'cinema', 'relax', 'party', 'dinner out', 'dinner', 'brunch', 'beach',
+    'karaoke', 'concert', 'netflix',
     'סרט', 'קולנוע', 'מסיבה', 'לנוח', 'חוף', 'בילוי',
-    'קריוקי', 'הופעה'], 'nice_to_do', 60],
+    'קריוקי', 'הופעה', 'ארוחת ערב', 'ארוחת בוקר', 'ארוחת צהריים',
+    'לים', 'הים', 'בים', 'סדרה', 'נטפליקס'], 'nice_to_do', 60],
   ['aspiration', ['goal', 'dream', 'someday', 'שאיפה', 'חלום', 'מתישהו'], 'nice_to_do', 30],
 ];
 
@@ -85,7 +139,7 @@ const GENERIC_WHEN_REMOTE = new Set<TaskCategory>(['meeting', 'call', 'work', 'g
 /**
  * Categories that say WHO rather than WHAT, and so lose to a better signal.
  *
- * A title of "Meeting" or "Ceva — Dana" tells us almost nothing. When the
+ * A title of "Meeting" or "Ceva — Marika" tells us almost nothing. When the
  * body says "An in-person interview has been scheduled for you", the body is
  * right and the title is noise. Only these weak labels step aside; a title
  * that already said "interview" or "doctor" is not overruled by prose.
@@ -161,7 +215,7 @@ export function inferFromText(
   let matched = false;
 
   for (const [cat, keywords, pri, dur] of RULES) {
-    if (keywords.some((kw) => lowered.includes(kw))) {
+    if (keywords.some((kw) => hasKeyword(lowered, kw))) {
       category = cat; priority = pri; durationMinutes = dur; matched = true;
       break;
     }
@@ -201,7 +255,7 @@ export interface EventSignals {
  *
  * It used to read only the title, and the title is the one field nobody
  * controls. "Your in-person interview with Ceva" happened to contain the word;
- * an invitation titled "Ceva — Dana Levi" would have been missed
+ * an invitation titled "Ceva — Marika Klubakov" would have been missed
  * completely, while its body said "An in-person interview has been scheduled
  * for you" and its organiser was `scheduler@comeet-notifications.com`. Both
  * signals were sitting in the payload, unread.

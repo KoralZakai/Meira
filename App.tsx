@@ -10,10 +10,11 @@
 // narration and redacts phone numbers, emails, tokens and GPS fixes out of
 // whatever warn/error still carry.
 import './src/bootstrapLogging';
+import './src/utils/perf';  // APP_T0 — first, so "+app" timings start at bundle load
 
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, AppState, View } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from './src/services/EncryptedStorage';  // AES-256-GCM at rest (7.10)
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import type { Session } from '@supabase/supabase-js';
@@ -26,7 +27,7 @@ import AgentsScreen from './src/screens/AgentsScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import CheckInScreen from './src/screens/CheckInScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
-import OnboardingScreen from './src/screens/OnboardingScreen';
+import OnboardingScreen, { FIRST_MEETING_SNOOZE_KEY } from './src/screens/OnboardingScreen';
 import ProfileEditScreen from './src/screens/ProfileEditScreen';
 import GoalsScreen from './src/screens/GoalsScreen';
 import StatsScreen from './src/screens/StatsScreen';
@@ -40,6 +41,7 @@ import LeaveNowScreen from './src/screens/LeaveNowScreen';
 import FocusNowScreen from './src/screens/FocusNowScreen';
 import DayReviewScreen from './src/screens/DayReviewScreen';
 import Analytics from './src/screens/Analytics';
+import FindTimeScreen from './src/screens/FindTimeScreen';
 import { RootStackParamList } from './src/types/navigation';
 import { CheckInType } from './src/types/models';
 import {
@@ -51,14 +53,21 @@ import {
 } from './src/services/NotificationService';
 import { rehydrateReminders } from './src/services/ReminderService';
 import { runStoreMigration } from './src/services/StoreMigration';
-import { armDueAlarms } from './src/services/AlarmPlanner';
+import { armDueAlarms, syncWakeAlarms } from './src/services/AlarmPlanner';
+import { onTasksWritten } from './src/services/TaskStorage';
 import {
-  getSettings, saveSettings, saveSettingsChecked, getTasksForDate, getAllTasks, saveAllTasks, healTaskStore,
+  getSettings, saveSettings, saveSettingsChecked, getTasksForDate, getAllTasks, healTaskStore,
+  invalidateTaskCache, pushLocalTasksToCloud, updateTaskFields,
 } from './src/services/TaskStorage';
+import { answerRunningLate } from './src/services/RunningLate';
 import { getTodayString } from './src/utils/timeUtils';
+import { loadProfile } from './src/services/UserProfileStorage';
 import { Task } from './src/types';
 import { registerPush } from './src/services/PushService';
 import { startCalendarAutoSync } from './src/services/CalendarAutoSync';
+import MeiraAskHost from './src/components/MeiraAskHost';
+import FocusLectureHost from './src/components/FocusLectureHost';
+import * as Questions from './src/services/QuestionService';
 import { installRouteGateway } from './src/services/RouteGateway';
 import {
   speakMorningBriefingNow,
@@ -68,6 +77,7 @@ import {
 import { LumiProvider } from './src/hooks/useLumiContext';
 import { isSupabaseConfigured } from './src/services/supabaseClient';
 import { getSession, onAuthChange } from './src/services/SupabaseAuthService';
+import { warmServer } from './src/services/LumiServer';
 import SignInScreen from './src/screens/SignInScreen';
 import CrashCatcher from './src/components/CrashCatcher';
 import { COLORS, BRAND } from './src/constants/theme';
@@ -132,10 +142,14 @@ async function armTomorrowAlarms(): Promise<void> {
   const soonKey = `${soon.getFullYear()}-${String(soon.getMonth() + 1).padStart(2, '0')}-${String(soon.getDate()).padStart(2, '0')}`;
   const upcoming = (await getAllTasks()).filter((t) => t.date >= today && t.date <= soonKey);
   await armDueAlarms(upcoming);
+  // …and the morning's owner, which a task saved elsewhere (WhatsApp, the
+  // server, another device) reached with no state at all — no write on this
+  // phone, so the save hook never saw it (rule 7: app open is a trigger).
+  await syncWakeAlarms().catch((e) => console.warn('[App] wake alarm sweep failed', e));
 }
 
 // Routes are asked for through the SERVER, whose Maps key is unrestricted.
-// The key inside the APK is restricted to com.lumi.app + SHA-1, which Google
+// The key inside the APK is restricted to meira.secretary + SHA-1, which Google
 // enforces through headers only the Maps SDK sends — so every Directions call
 // made directly from the phone was REQUEST_DENIED (107 of them in one day).
 // At module scope on purpose: a headless background sync never mounts a
@@ -145,6 +159,20 @@ installRouteGateway();
 function LumiAppShell() {
   // Focused route name — the floating Lumi hides where a bigger Lumi lives.
   const [routeName, setRouteName] = useState<string | undefined>(undefined);
+
+  // Any save — chat, mic, (+), a calendar import — re-checks the morning alarm
+  // and sets it in Clock now (AlarmPlanner.syncWakeAlarms). Debounced: one save
+  // is several writes, and a calendar import is dozens.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const off = onTasksWritten(() => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        syncWakeAlarms().catch((e) => console.warn('[App] wake alarm after a save failed', e));
+      }, 1500);
+    });
+    return () => { off(); if (timer) clearTimeout(timer); };
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -212,11 +240,16 @@ function LumiAppShell() {
         // call discarded them — so the next launch could not cancel what this
         // one scheduled and simply scheduled a second copy. After N launches
         // every alert fired N times. One write, not N.
+        //
+        // Only the ONE field rehydrate produces, merged into the LOCAL row.
+        // This used to be `saveAllTasks(getAllTasks()…)` — a cloud-merged read
+        // written back over local storage on every launch that re-armed
+        // anything, plus a full cloud sync. That is the shape that brought
+        // unticked tasks back (TodaySchedule fixed its copy the same way).
         const touched = await rehydrateTaskAlerts(upcoming, settings.language);
-        if (touched.length) {
-          const byId = new Map(touched.map((t: Task) => [t.id, t]));
-          const all = await getAllTasks();
-          await saveAllTasks(all.map((t: Task) => byId.get(t.id) ?? t));
+        for (const t of touched) {
+          await updateTaskFields(t.id, { notificationIds: t.notificationIds })
+            .catch((e) => console.warn('[App] could not save re-armed alert ids', t.id, e));
         }
         await rehydrateReminders();
         // Alarms planned for a far-future task can only be SET once they are
@@ -242,6 +275,9 @@ function LumiAppShell() {
       // calendar is read. Foreground on every return, plus a background job
       // while the app is closed.
       startCalendarAutoSync(settings.language);
+      // Meira's questions: an answer that could not reach the server is sent
+      // now, and her rules are fetched (QuestionService, trigger 2).
+      Questions.onAppActive().catch((e) => console.warn('[App] questions start failed', e));
     };
 
     setup();
@@ -249,8 +285,12 @@ function LumiAppShell() {
     // App-open moments: wake-alarm / first-of-the-morning briefing spoken
     // aloud (day, date, hour, today's tasks), evening plan-tomorrow nudge.
     runDailyMoments().catch(() => {});
+    // Wake the sleeping server now, while she looks at the day — not on her
+    // first mic turn (LumiServer.warmServer). Fire-and-forget.
+    warmServer('launch');
     const appStateSub = AppState.addEventListener('change', (s) => {
       if (s !== 'active') return;
+      warmServer('foreground');
       runDailyMoments().catch(() => {});
       // …and sweep the alarms again. armDueAlarms only ever ran at COLD START,
       // so a phone that stays open all day never re-checked: an alarm planned
@@ -258,6 +298,8 @@ function LumiAppShell() {
       // nothing scheduled to notice. Coming back to the app is exactly when to
       // look. Idempotent — only 'planned' tasks are touched.
       armTomorrowAlarms().catch(() => {});
+      // A new "open" for the one-question-per-open limit; the outbox; her rules.
+      Questions.onAppActive().catch((e) => console.warn('[App] questions resume failed', e));
     });
 
     const sub = subscribeNotificationTap(
@@ -293,8 +335,19 @@ function LumiAppShell() {
       // Task-scoped notifications carry the screen they want (alertPlan
       // ALERT_SCREEN): leave-time alerts open the LeaveNow focus screen with
       // the countdown + route, everything else opens the task detail.
-      (taskId: string, screen?: string) => {
+      (taskId: string, screen?: string, intent?: 'cancel' | 'reschedule' | 'open') => {
         if (!mounted || !navRef.isReady()) return;
+        // "You're late — reschedule? cancel?" (13.10): answered on the spot.
+        if (intent) {
+          getSettings()
+            .then((st) => answerRunningLate(taskId, intent, st.language === 'he'))
+            .catch((e) => console.warn('[App] running-late answer failed', e));
+          return;
+        }
+        if (screen === 'FindTime') {
+          navRef.navigate('FindTime', taskId ? { groupId: taskId } : undefined);
+          return;
+        }
         if (screen === 'LeaveNow') {
           getTasksForDate(getTodayString())
             .then((ts: Task[]) => {
@@ -332,12 +385,16 @@ function LumiAppShell() {
         config: {
           screens: {
             PersonalityHandoff: 'personality',
+            Onboarding: 'meet',
             MainTabs: { screens: { Today: 'schedule' } },
           },
         } as any,
       }}
       onStateChange={() => setRouteName(navRef.getCurrentRoute()?.name)}
-      onReady={() => setRouteName(navRef.getCurrentRoute()?.name)}
+      onReady={() => {
+        setRouteName(navRef.getCurrentRoute()?.name);
+        openFirstMeetingIfNeeded().catch((e) => console.warn('[App] first meeting check failed', e));
+      }}
     >
       <StatusBar style="dark" />
       <Stack.Navigator initialRouteName="MainTabs">
@@ -371,7 +428,13 @@ function LumiAppShell() {
         <Stack.Screen name="FocusNow" component={FocusNowScreen} options={{ headerShown: false, presentation: 'fullScreenModal' }} />
         <Stack.Screen name="DayReview" component={DayReviewScreen} options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="Analytics" component={Analytics} options={{ headerShown: false, presentation: 'modal' }} />
+        <Stack.Screen name="FindTime" component={FindTimeScreen} options={{ headerShown: false }} />
       </Stack.Navigator>
+      {/* Meira's questions — over whichever screen she is on (QuestionService decides when). */}
+      <MeiraAskHost />
+      {/* Learning sessions (17.10): the lecture when a block was bypassed, and the root trigger that
+          reconciles the blocker and schedules study sessions on every return to the app. */}
+      <FocusLectureHost />
       {/* Floating Lumi companion — every screen except where a bigger Lumi lives. */}
     </NavigationContainer>
   );
@@ -390,7 +453,41 @@ function LumiAppShell() {
  * Settings first: the server resolves a phone through app_settings."whatsAppPhone",
  * so that row is what unblocks the WhatsApp backlog.
  */
-async function backfillCloudAfterSignIn(): Promise<void> {
+/**
+ * Meira's first meeting opens by itself (8.10, Koral: "when the user sets up
+ * Meira for the first time, Meira says hi and asks…"). It existed only behind
+ * Profile → "start over" — a capability with no trigger (rule 7). Opens once
+ * the app is signed in and the navigator is ready, unless she finished it,
+ * already has a home and a morning saved (a returning user), or said ⏭ later
+ * today.
+ */
+async function openFirstMeetingIfNeeded(): Promise<void> {
+  const p = await loadProfile().catch(() => null);
+  if (p?.onboardingComplete || (p?.homeAddress && p?.totalMorningRoutineMinutes)) return;
+  const snoozed = await AsyncStorage.getItem(FIRST_MEETING_SNOOZE_KEY).catch(() => null);
+  if (snoozed === getTodayString()) return;
+  if (navRef.isReady() && navRef.getCurrentRoute()?.name !== 'Onboarding') navRef.navigate('Onboarding');
+}
+
+// Which account this phone last pushed its tasks for. The backfill is for the
+// moment someone SIGNS IN — not for every launch: Supabase reports a restored
+// session as SIGNED_IN too (auth-js _recoverAndRefresh), and INITIAL_SESSION /
+// TOKEN_REFRESHED arrive on every start and every hour. It used to run on all
+// of them, so every launch downloaded and re-uploaded every task (245 rows,
+// 19.10). Cleared on sign-out, so signing back in pushes again.
+const BACKFILLED_FOR_KEY = 'lumi.cloudBackfilledFor.v1';
+
+async function backfillOnSignIn(userId: string): Promise<void> {
+  const done = await AsyncStorage.getItem(BACKFILLED_FOR_KEY).catch(() => null);
+  if (done === userId) return;   // this phone already pushed for this account
+  if (await backfillCloudAfterSignIn()) {
+    await AsyncStorage.setItem(BACKFILLED_FOR_KEY, userId)
+      .catch((e) => console.warn('[App] could not record the sign-in backfill', e));
+  }
+}
+
+/** True when the settings reached the cloud and the tasks were pushed. */
+async function backfillCloudAfterSignIn(): Promise<boolean> {
   try {
     const settings = await getSettings();
     const res = await saveSettingsChecked(settings);
@@ -399,11 +496,13 @@ async function backfillCloudAfterSignIn(): Promise<void> {
         ? '[App] post-sign-in: settings reached the cloud'
         : `[App] post-sign-in: settings did NOT reach the cloud — ${res.reason}`,
     );
-    const tasks = await getAllTasks();
-    await saveAllTasks(tasks);
-    console.warn(`[App] post-sign-in: pushed ${tasks.length} task(s)`);
+    // What only this phone has — never the cloud's copy written back over it.
+    const { pushed, local } = await pushLocalTasksToCloud();
+    console.warn(`[App] post-sign-in: pushed ${pushed} of ${local} task(s) the cloud lacked`);
+    return res.cloudSynced;
   } catch (err: any) {
     console.warn('[App] post-sign-in backfill failed:', err?.message || err);
+    return false;
   }
 }
 
@@ -425,14 +524,22 @@ function AuthGate() {
     getSession().then((s) => {
       if (mounted) setSession(s);
     });
-    const unsub = onAuthChange((s) => {
+    const unsub = onAuthChange((s, event) => {
       if (mounted) setSession(s);
+      // Another account (or none): the shared task read must not outlive it.
+      if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') invalidateTaskCache();
+      if (event === 'SIGNED_OUT') {
+        AsyncStorage.removeItem(BACKFILLED_FOR_KEY)
+          .catch((e) => console.warn('[App] could not clear the sign-in backfill mark', e));
+      }
       // Signing in has to PUSH what is already on the phone. Until now the only
       // cloud write happened during bootstrap — i.e. BEFORE sign-in — so a user
       // who signed in mid-session stayed invisible to the cloud until some
       // unrelated edit happened to trigger a write. That is why /diag/sync kept
       // reporting 0 rows immediately after a sign-in that had plainly worked.
-      if (s) backfillCloudAfterSignIn();
+      if (s && event === 'SIGNED_IN' && s.user?.id) {
+        backfillOnSignIn(s.user.id).catch((e) => console.warn('[App] sign-in backfill failed', e));
+      }
     });
     return () => {
       mounted = false;

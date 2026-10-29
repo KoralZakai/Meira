@@ -4,6 +4,7 @@
  */
 import { classifyOverlap, overlapMinutesOf, isFloatingTask, suggestReschedule, ASSUMED_TRAVEL_MINUTES, isSettled } from '../src/utils/overlapKind';
 import { Task } from '../src/types/index';
+import { isRemoteTask, isOnlineOnlyPlace } from '../src/utils/meetingLink';
 
 let failures = 0; let checks = 0;
 const check = (l: string, ok: boolean, d = '') => {
@@ -44,6 +45,17 @@ function main() {
   check('send-the-CV inside a conference is PARALLEL, not a spatial clash',
     f.kind === 'parallel', f.kind);
   check('no travel warning is implied', f.travelMinutes === 0);
+
+  // 6.10 — her prep ran to 15:37 over the 15:00 Datadog call and nothing asked.
+  const prep = t('prep', '13:53', 104, { category: 'course', isFixed: false, text: 'Prepare for: Mock interview' } as any);
+  const datadog = t('dd', '15:00', 60, { category: 'call', meetingUrl: 'https://meet.google.com/abc' } as any);
+  const w = classifyOverlap(prep, datadog)!;
+  check('her own work 37 min into a call is DISPLACED, not parallel',
+    w.kind === 'displaced' && w.displacedTaskId === 'prep', `${w.kind} ${w.displacedTaskId}`);
+  check('...a call inside an in-person conference still rides along',
+    classifyOverlap(datadog, t('conf3', '14:00', 240, at('Tel Aviv University') as any))!.kind === 'parallel');
+  check('...and ten minutes of work over a call is not worth a question',
+    classifyOverlap(t('prep2', '14:00', 70, { category: 'course', isFixed: false, text: 'Prepare for: X' } as any), datadog)!.kind === 'parallel');
 
   console.log('\n2. Same place — double-booked, not impossible');
   const s = classifyOverlap(
@@ -96,6 +108,29 @@ function main() {
   check('an hour of desk work inside a conference is still PARALLEL',
     seated.kind === 'parallel', seated.kind);
 
+  console.log('\n3b2. Work that fills a short appointment — Koral, 30.9');
+  // A two-hour business plan laid exactly over a 90-minute meetup at Sarona.
+  // The meetup was filed as a 'call', so it was treated as remote, and the
+  // pair was called parallel: the phone hid what the server reported.
+  const meetup = t('meetup', '18:30', 90, {
+    text: 'AI Performance Engineering meetup', category: 'call',
+    location: { address: 'Sarona Market, Kalman Magen St 3, Tel Aviv-Yafo', lat: 32.07, lng: 34.79,
+      confirmed: true, leaveHomeBy: '18:02', travelMinutes: 18 },
+  } as any);
+  const plan = t('plan', '18:30', 122, { text: 'לעשות תכנית עסקית' });
+  const bp = classifyOverlap(plan, meetup)!;
+  check('a call WITH an address is a place to be, not a remote call',
+    !isFloatingTask(meetup));
+  check('two hours of work over a 90-min meetup is DISPLACED, not parallel', bp.kind === 'displaced', bp.kind);
+  check('the work is what gives way', bp.displacedTaskId === 'plan');
+  check('no departure is claimed — it fills the meetup, it does not cover the ride',
+    bp.departureAt === undefined, String(bp.departureAt));
+  const shortWork = classifyOverlap(t('sms', '18:40', 20), meetup)!;
+  check('20 minutes of it is still parallel — a text between talks is normal',
+    shortWork.kind === 'parallel', shortWork.kind);
+  check('a call with only "Microsoft Teams Meeting" as its place is still remote',
+    isFloatingTask(t('teams', '10:00', 30, { category: 'call', location: 'Microsoft Teams Meeting' } as any)));
+
   console.log('\n3c. Advice has to be possible in the actual vehicle');
   const callOnBike = classifyOverlap(
     t('c1', '18:45', 20, { category: 'call', meetingUrl: 'https://us02web.zoom.us/j/9' }),
@@ -108,6 +143,18 @@ function main() {
     t('ride2', '19:00', 60, { location: { address: 'Kaufmann 11', lat: 32.06, lng: 34.76, confirmed: true, transportType: 'bus' } } as any),
   )!;
   check('...on a bus it still is', callOnBus.suggestDuringTravel === true);
+
+  console.log('\n3b3. "בזום" is a place name for no place — Koral, 1.10');
+  {
+    // The 1.10 Today drew "routing…" on a call whose place was "בזום": a call
+    // WITH a physical place needs a ride, and the Hebrew preposition hid Zoom.
+    const call = { id: 'c', text: 'שיחה עם סגית', category: 'call', location: { address: 'בזום' } } as any;
+    check('a call "בזום" is remote', isRemoteTask(call) === true);
+    for (const w of ['בזום', 'ב-זום', 'בטימס', 'on Zoom', 'via Teams', 'בטלפון', 'phone'])
+      check(`"${w}" is online-only`, isOnlineOnlyPlace(w));
+    for (const w of ['בזל 5', 'Zoom Cafe, Dizengoff 50', 'טלפונים 4 תל אביב'])
+      check(`"${w}" is a real place`, !isOnlineOnlyPlace(w));
+  }
 
   console.log('\n4. Things it must not claim');
   check('tasks that do not overlap return nothing',

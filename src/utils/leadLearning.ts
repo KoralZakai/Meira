@@ -66,6 +66,24 @@ export function nextLearnedLead(previous: number, target: number): number {
 }
 
 /**
+ * Her habitual departure delay, in minutes — the other half of what the slip
+ * teaches.
+ *
+ * The learned lead moves the WARNING earlier. This number moves the PLAN: a
+ * gap between two places is only comfortable if it holds the trip plus her
+ * buffer plus the minutes she usually leaves late (utils/dayFeasibility). Only
+ * lateness counts toward the margin — leaving early is not a habit to plan
+ * around — but it is averaged in, so a run of early starts wears it back down.
+ *
+ * Same rolling weight as everything else here (70% history, 30% new).
+ */
+export function nextDepartDelay(previous: number | undefined, slip: number): number {
+  const base = typeof previous === 'number' && Number.isFinite(previous) ? previous : 0;
+  const next = base * (1 - NEW_SAMPLE_WEIGHT) + slip * NEW_SAMPLE_WEIGHT;
+  return Math.round(next * 10) / 10;
+}
+
+/**
  * Fold one completed trip into the learned-lead table.
  *
  * Returns undefined when there is nothing to learn, so the caller can skip the

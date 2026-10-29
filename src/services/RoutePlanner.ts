@@ -17,6 +17,7 @@ import {
 } from '../utils/transitParse';
 import { nowHHMM } from '../utils/liveRoutePlan';
 import { correctPlaceName } from '../utils/fuzzyMatch';
+import { StepDir, pickNeighbour } from '../utils/neighbourDeparture';
 import {
   RouteFailure, classifyDirectionsStatus, networkFailure, failureLogLine,
 } from '../utils/routeFailure';
@@ -34,7 +35,7 @@ const mapsKey = (): string => process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '';
  * is in the environment.
  *
  * The phone's own Maps key CANNOT do this job. It is restricted to
- * `com.lumi.app` + SHA-1, which Google enforces through headers only the Maps
+ * `meira.secretary` + SHA-1, which Google enforces through headers only the Maps
  * SDK sends, so a `fetch()` from React Native is REQUEST_DENIED every time —
  * 107 times in one day on her device. The restriction is right; the asker was
  * wrong.
@@ -60,6 +61,46 @@ export function hasDirectionsGateway(): boolean {
 }
 
 const directionsGateway = (): DirectionsGateway | null => _gateway;
+
+/**
+ * Places Text Search, the same way: through the server (POST /app/place/search)
+ * once RouteGateway installs it. The APK key is Android-restricted, so a fetch
+ * from the phone was REQUEST_DENIED — and a key that allows a web-service API
+ * at all is a key anyone who unzips the APK can bill (8.10). Throws on a
+ * refusal: [] means only "Google found nothing".
+ */
+export type PlaceHit = { name: string; address: string; lat: number; lng: number };
+export type PlacesGateway = (req: { query: string; type?: string; radius?: number }) => Promise<PlaceHit[]>;
+
+let _places: PlacesGateway | null = null;
+
+export function setPlacesGateway(g: PlacesGateway | null): void {
+  _places = g;
+}
+
+export async function placeTextSearch(
+  query: string,
+  opts: { type?: string; radius?: number } = {},
+): Promise<PlaceHit[]> {
+  if (_places) return _places({ query, ...opts });
+  // Node harness only (no server session there): the key from the environment.
+  const key = mapsKey();
+  if (!key) throw new Error('no Places route: no server gateway and no key');
+  const url = 'https://maps.googleapis.com/maps/api/place/textsearch/json'
+    + `?query=${encodeURIComponent(query)}&region=il&language=he`
+    + (opts.type ? `&type=${opts.type}` : '') + (opts.radius ? `&radius=${opts.radius}` : '')
+    + `&key=${key}`;
+  const data = await (await fetch(url)).json();
+  if (data.status && !['OK', 'ZERO_RESULTS'].includes(data.status)) {
+    throw new Error(`Places ${data.status}`);
+  }
+  return (data.results || []).slice(0, 5).map((r: any) => ({
+    name: r.name,
+    address: r.formatted_address || r.name,
+    lat: r.geometry?.location?.lat,
+    lng: r.geometry?.location?.lng,
+  }));
+}
 
 /**
  * The last `max` consecutive transit departures that arrive at or before
@@ -628,8 +669,10 @@ export async function getDepartNowPlan(
         origin,
         destination: corrected,
         date,
+        // depart_epoch (to the minute) is part of the server's cache key. Without it every "now"
+        // transit question looked the same for five minutes and returned a departure that had gone.
         queries: [transit
-          ? { mode: 'transit', transit_mode: mode === 'bus' ? 'bus' : 'train|tram|subway' }
+          ? { mode: 'transit', transit_mode: mode === 'bus' ? 'bus' : 'train|tram|subway', depart_epoch: Math.floor(departEpoch / 60) * 60 }
           : { mode: gmode, depart_epoch: departEpoch }],
       }))[0];
       if (!r || r.status !== 'OK') {
@@ -805,6 +848,88 @@ export async function getDepartNowOptions(
 }
 
 /**
+ * "‹ earlier · later ›" — the journey just before or after `current`, from the
+ * SAME origin (where the stored plan starts) to the same place. Koral, 13.10:
+ * "you chose a train that arrives too early for me and I want to see later".
+ *
+ * Later = depart after the current one leaves; a later feeder bus to the same
+ * train is skipped (up to four probes) so the arrow lands on the next TRAIN.
+ * Earlier = arrive by a minute before the current arrival.
+ *
+ * Returns the reason with the empty answer (rule 1): "no later one today" and
+ * "Google refused" are different things to tell her.
+ */
+export async function getNeighbourDeparture(
+  current: TransitPlan,
+  destination: string,
+  userProfile: UserProfile,
+  date: string,
+  dir: StepDir,
+): Promise<{ plan: TransitPlan | null; reason?: 'none' | 'no-origin' | 'refused' | 'unreachable' }> {
+  const gateway = directionsGateway();
+  const key = mapsKey();
+  if (!gateway && !key) return { plan: null, reason: 'refused' };
+  const origin = (current.startLat && current.startLng)
+    ? `${current.startLat},${current.startLng}`
+    : (current.originAddress
+      || (userProfile.homeLat && userProfile.homeLng ? `${userProfile.homeLat},${userProfile.homeLng}` : userProfile.homeAddress));
+  if (!origin) return { plan: null, reason: 'no-origin' };
+  const corrected = correctPlaceName(destination);
+  const epochOf = (hhmm: string) => Math.floor(new Date(`${date}T${hhmm.padStart(5, '0')}:00`).getTime() / 1000);
+
+  const ask = async (q: { depart_epoch?: number; arriveBy?: string }): Promise<TransitPlan[] | 'refused'> => {
+    let data: any;
+    if (gateway) {
+      const r = (await gateway({
+        origin, destination: corrected, date,
+        ...(q.arriveBy ? { arriveBy: q.arriveBy } : {}),
+        queries: [{ mode: 'transit', ...(q.depart_epoch ? { depart_epoch: q.depart_epoch } : {}) }],
+      }))[0];
+      if (!r || r.status !== 'OK') {
+        console.warn('[RoutePlanner] neighbour departure', dir, r?.status ?? 'NO_RESULT', r?.error_message ?? '');
+        return r?.status === 'ZERO_RESULTS' ? [] : 'refused';
+      }
+      data = r.data;
+    } else {
+      const when = q.arriveBy ? `&arrival_time=${epochOf(q.arriveBy)}` : `&departure_time=${q.depart_epoch}`;
+      data = await (await fetch(`https://maps.googleapis.com/maps/api/directions/json?origin=${encodeURIComponent(origin)}`
+        + `&destination=${encodeURIComponent(corrected)}&mode=transit${when}&alternatives=true&region=il&language=he&key=${key}`)).json();
+      if (data?.status !== 'OK') {
+        console.warn('[RoutePlanner] neighbour departure', dir, data?.status, data?.error_message ?? '');
+        return data?.status === 'ZERO_RESULTS' ? [] : 'refused';
+      }
+    }
+    return parseTransitAlternatives(data, '', corrected, current.originLabel || 'Home');
+  };
+
+  try {
+    if (dir === 'earlier') {
+      const plans = await ask({ arriveBy: hhmmMinus(current.arriveAt, 1) });
+      if (plans === 'refused') return { plan: null, reason: 'refused' };
+      const plan = pickNeighbour(plans, current, 'earlier');
+      return plan ? { plan } : { plan: null, reason: 'none' };
+    }
+    let anchor = hhmmPlus(current.leaveHomeAt, 1);
+    for (let i = 0; i < 4; i += 1) {
+      const plans = await ask({ depart_epoch: epochOf(anchor) });
+      if (plans === 'refused') return { plan: null, reason: 'refused' };
+      const plan = pickNeighbour(plans, current, 'later');
+      if (plan) return { plan };
+      // Only the same train again (a later feeder bus): step past it.
+      const same = plans.filter((p) => p.leaveHomeAt >= anchor).sort((a, b) => a.leaveHomeAt.localeCompare(b.leaveHomeAt))[0];
+      if (!same) break;
+      const next = hhmmPlus(same.leaveHomeAt, 1);
+      if (next <= anchor) break;   // wrapped past midnight
+      anchor = next;
+    }
+    return { plan: null, reason: 'none' };
+  } catch (e) {
+    console.warn('[RoutePlanner] neighbour departure unreachable:', e);
+    return { plan: null, reason: 'unreachable' };
+  }
+}
+
+/**
  * Plans for several modes at once, sorted fastest-first (modes with no route
  * are dropped).
  */
@@ -861,19 +986,14 @@ export async function compareModes(
 export async function searchPlaces(
   query: string,
 ): Promise<{ name: string; address: string; lat: number; lng: number; confidence: number }[]> {
-  const key = mapsKey();
-  if (!key) return [];
   try {
-    const corrected = correctPlaceName(query);
-    const url = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(corrected)}&region=il&key=${key}`;
-    const res = await fetch(url);
-    const data = await res.json();
-    return (data.results || []).slice(0, 3).map((r: any, i: number) => ({
-      name: r.name,
-      address: r.formatted_address,
-      lat: r.geometry.location.lat,
-      lng: r.geometry.location.lng,
+    const hits = await placeTextSearch(correctPlaceName(query));
+    return hits.slice(0, 3).map((r, i) => ({
+      ...r,
       confidence: i === 0 ? 0.9 : i === 1 ? 0.7 : 0.5,
     }));
-  } catch { return []; }
+  } catch (e) {
+    console.warn('[RoutePlanner] place search failed:', String((e as Error)?.message ?? e));
+    return [];
+  }
 }

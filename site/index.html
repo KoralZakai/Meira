@@ -1,381 +1,44 @@
 <!doctype html>
-<html lang="en">
+<html lang="he" dir="rtl">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<!-- HEAD-START -->
-<title>Meira</title>
-<meta name="description" content="Meira is a personal secretary on your phone. Keep your calendar; she works backwards from every meeting to wake you, get you ready and get you there on time.">
+<script>
+  // Hebrew for a Hebrew browser, English for everyone else — unless the
+  // visitor already picked a language with the switch (app.js remembers it).
+  (function () {
+    var saved = null;
+    try { saved = localStorage.getItem("meira.lang"); } catch (e) { /* storage blocked: decide from the browser */ }
+    if (saved === "he") return;
+    if (saved === "en") { location.replace("en/"); return; }
+    var langs = (navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language || ""]).join(",").toLowerCase();
+    if (!/(^|,)(he|iw)(-|,|$)/.test(langs)) location.replace("en/");
+  })();
+</script>
+<title>מאירה — מגיעים בזמן</title>
+<meta name="description" content="מאירה היא מזכירה אישית בטלפון. היא קוראת את היומן ומחשבת אחורה מכל פגישה: מתי לקום, מתי לצאת ובאיזו דרך, ומעירה אתכם בזמן.">
+<link rel="canonical" href="https://meirasecretary.github.io/">
+<link rel="alternate" hreflang="he" href="https://meirasecretary.github.io/">
+<link rel="alternate" hreflang="en" href="https://meirasecretary.github.io/en/">
+<link rel="alternate" hreflang="x-default" href="https://meirasecretary.github.io/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Meira">
+<meta property="og:locale" content="he_IL">
+<meta property="og:title" content="מאירה — מגיעים בזמן">
+<meta property="og:description" content="היא קוראת את היומן ומחשבת אחורה: מתי לקום, מתי לצאת ובאיזו דרך. בטא חינמית לאנדרואיד.">
+<meta property="og:url" content="https://meirasecretary.github.io/">
+<meta property="og:image" content="https://meirasecretary.github.io/og-he.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#FFFDF5">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Fredoka:wght@500;600&family=Nunito:wght@400;600;700;800&display=swap">
-<style>
-  :root {
-    --bg: #FFFDF5;
-    --card: #FFF8E7;
-    --surface: #FFFFFF;
-    --ink: #2D2D2D;
-    --ink-2: #5F5B70;
-    --ink-3: #8A8A9A;
-    --line: #F0E5C8;
-    --yellow: #FFD166;
-    --yellow-deep: #F2B53B;
-    --yellow-ink: #2D2D2D;
-    --purple: #6C63FF;
-    --purple-soft: #EFEEFF;
-    --purple-ink: #4A42D6;
-    --green: #06D6A0;
-    --green-ink: #047A5C;
-    --orange: #FF9F1C;
-    --orange-ink: #B25F00;
-    --red: #EF476F;
-    --red-ink: #C22A50;
-    --shadow: 0 10px 30px rgba(108, 99, 255, .08), 0 2px 6px rgba(45, 45, 45, .05);
-    --shadow-lift: 0 18px 44px rgba(108, 99, 255, .14), 0 4px 10px rgba(45, 45, 45, .06);
-    --phone: #2D2D2D;
-    --radius: 16px;
-    --f-display: "Fredoka", "Nunito", ui-rounded, system-ui, sans-serif;
-    --f-body: "Nunito", ui-rounded, system-ui, -apple-system, "Segoe UI", sans-serif;
-    --f-mono: "DM Mono", ui-monospace, "SF Mono", Menlo, monospace;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      color-scheme: dark;
-      --bg: #1A1A2E;
-      --card: #252542;
-      --surface: #2C2C4E;
-      --ink: #F5F3FF;
-      --ink-2: #B9B7D2;
-      --ink-3: #8F8DAD;
-      --line: #36365C;
-      --purple: #8C85FF;
-      --purple-soft: #2E2A5A;
-      --purple-ink: #B7B2FF;
-      --green-ink: #3BE3B6;
-      --orange-ink: #FFB65C;
-      --red-ink: #FF7C9A;
-      --shadow: 0 10px 30px rgba(0, 0, 0, .28);
-      --shadow-lift: 0 18px 44px rgba(0, 0, 0, .38);
-      --phone: #0F0F1E;
-    }
-  }
-  :root[data-theme="dark"] {
-    color-scheme: dark;
-    --bg: #1A1A2E;
-    --card: #252542;
-    --surface: #2C2C4E;
-    --ink: #F5F3FF;
-    --ink-2: #B9B7D2;
-    --ink-3: #8F8DAD;
-    --line: #36365C;
-    --purple: #8C85FF;
-    --purple-soft: #2E2A5A;
-    --purple-ink: #B7B2FF;
-    --green-ink: #3BE3B6;
-    --orange-ink: #FFB65C;
-    --red-ink: #FF7C9A;
-    --shadow: 0 10px 30px rgba(0, 0, 0, .28);
-    --shadow-lift: 0 18px 44px rgba(0, 0, 0, .38);
-    --phone: #0F0F1E;
-  }
-
-  * { box-sizing: border-box; }
-  html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
-  body {
-    margin: 0;
-    background: var(--bg);
-    color: var(--ink);
-    font-family: var(--f-body);
-    font-size: 17px;
-    line-height: 1.6;
-    -webkit-font-smoothing: antialiased;
-    overflow-x: hidden;
-  }
-  .wrap { max-width: 1120px; margin: 0 auto; padding-inline: 20px; }
-  h1, h2, h3 { font-family: var(--f-display); font-weight: 600; line-height: 1.1; text-wrap: balance; margin: 0; letter-spacing: -.01em; }
-  h1 { font-size: clamp(2.4rem, 6vw, 4.1rem); }
-  h2 { font-size: clamp(1.9rem, 4.2vw, 2.8rem); }
-  h3 { font-size: 1.25rem; font-weight: 600; }
-  p { margin: 0; }
-  .t { font-family: var(--f-mono); font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
-  .eyebrow {
-    font-weight: 800; font-size: .78rem; letter-spacing: .12em; text-transform: uppercase;
-    color: var(--purple-ink);
-  }
-  .lede { color: var(--ink-2); font-size: 1.15rem; max-width: 34em; }
-  a { color: var(--purple-ink); }
-  :focus-visible { outline: 3px solid var(--purple); outline-offset: 3px; border-radius: 8px; }
-
-  /* ---------- nav ---------- */
-  .nav { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-block: 18px; }
-  .brand { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; color: var(--ink); }
-  .brand-name { font-family: var(--f-display); font-weight: 600; font-size: 1.6rem; letter-spacing: -.01em; }
-  .coin { width: 34px; height: 34px; flex: none; }
-  .btn {
-    appearance: none; border: 0; cursor: pointer; text-decoration: none;
-    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-    font-family: var(--f-body); font-weight: 800; font-size: 1rem;
-    padding: 13px 22px; border-radius: 999px;
-    background: var(--yellow); color: var(--yellow-ink);
-    box-shadow: 0 8px 20px rgba(242, 181, 59, .35), inset 0 -3px 0 rgba(0, 0, 0, .08);
-    transition: transform .15s ease, box-shadow .15s ease, background .15s ease;
-    white-space: nowrap;
-  }
-  .btn:hover { background: var(--yellow-deep); transform: translateY(-1px); }
-  .btn:active { transform: translateY(1px); }
-  .btn[disabled] { opacity: .7; cursor: progress; transform: none; }
-  .btn-sm { padding: 10px 18px; font-size: .95rem; }
-
-  /* ---------- hero ---------- */
-  .hero { display: grid; grid-template-columns: 1.08fr .92fr; gap: 48px; align-items: center; padding-block: 36px 72px; }
-  .hero-copy { display: flex; flex-direction: column; gap: 22px; }
-  .hero h1 em { font-style: normal; color: var(--purple-ink); }
-  .hero .fine { color: var(--ink-3); font-size: .92rem; display: flex; flex-wrap: wrap; gap: 6px 16px; }
-  .hero .fine span { display: inline-flex; align-items: center; gap: 6px; }
-  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); display: inline-block; }
-
-  .signup { display: flex; flex-direction: column; gap: 10px; max-width: 480px; }
-  .signup-row {
-    display: flex; gap: 8px; padding: 6px; border-radius: 999px;
-    background: var(--surface); border: 1.5px solid var(--line); box-shadow: var(--shadow);
-  }
-  .signup-row:focus-within { border-color: var(--purple); }
-  .signup input {
-    flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--ink);
-    font: inherit; font-size: 1rem; padding: 8px 14px;
-  }
-  .signup input::placeholder { color: var(--ink-3); }
-  .signup-status { font-size: .95rem; font-weight: 700; min-height: 1.5em; padding-left: 16px; }
-  .signup-status[data-kind="ok"] { color: var(--green-ink); }
-  .signup-status[data-kind="error"] { color: var(--red-ink); }
-  .signup-status[data-kind="info"] { color: var(--ink-2); }
-
-  /* ---------- phone ---------- */
-  .phone-stage { position: relative; display: flex; justify-content: center; }
-  .phone-stage::before {
-    content: ""; position: absolute; inset: 8% -4% 6% 6%;
-    background: radial-gradient(60% 60% at 50% 45%, rgba(255, 209, 102, .55), transparent 70%),
-                radial-gradient(50% 50% at 70% 70%, rgba(108, 99, 255, .22), transparent 70%);
-    filter: blur(8px); z-index: 0;
-  }
-  .phone {
-    position: relative; z-index: 1; width: 320px; max-width: 100%;
-    background: var(--phone); border-radius: 44px; padding: 12px;
-    box-shadow: var(--shadow-lift);
-  }
-  .screen {
-    background: var(--bg); border-radius: 34px; overflow: hidden;
-    padding: 14px 14px 18px; display: flex; flex-direction: column; gap: 12px; min-height: 560px;
-  }
-  .statusbar { display: flex; justify-content: space-between; font-size: .75rem; font-weight: 800; color: var(--ink-2); padding: 0 8px; }
-  .notif {
-    display: flex; gap: 10px; align-items: flex-start;
-    background: var(--surface); border-radius: 18px; padding: 10px 12px; box-shadow: var(--shadow);
-    font-size: .86rem; line-height: 1.35;
-    animation: drop .7s cubic-bezier(.2, .9, .3, 1.2) .2s both;
-  }
-  .notif .coin { width: 28px; height: 28px; }
-  .notif b { display: block; font-size: .72rem; color: var(--ink-3); font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
-  .day-head { display: flex; justify-content: space-between; align-items: baseline; padding: 4px 6px 0; }
-  .day-head h3 { font-size: 1.05rem; }
-  .day-head span { font-size: .78rem; color: var(--ink-3); font-weight: 700; }
-
-  /* ---------- the backward chain (used in phone and demo) ---------- */
-  .chain { list-style: none; margin: 0; padding: 0; position: relative; display: flex; flex-direction: column; gap: 6px; }
-  .chain::before {
-    content: ""; position: absolute; left: 49px; top: 14px; bottom: 14px; width: 2px;
-    background: linear-gradient(to top, var(--purple), var(--yellow-deep));
-    border-radius: 2px; opacity: .55;
-  }
-  .step { position: relative; display: grid; grid-template-columns: 42px 16px 1fr; gap: 8px; align-items: center; padding: 6px 8px 6px 0; border-radius: 12px; }
-  .step .t { font-size: .84rem; font-weight: 500; text-align: right; color: var(--ink-2); }
-  .step .pin { width: 12px; height: 12px; border-radius: 50%; background: var(--surface); border: 2.5px solid var(--yellow-deep); justify-self: center; position: relative; z-index: 1; }
-  .step .what { font-size: .86rem; line-height: 1.3; font-weight: 700; }
-  .step .what small { display: block; font-weight: 600; color: var(--ink-3); font-size: .74rem; }
-  .step[data-k="wake"] .pin { border-color: var(--orange); }
-  .step[data-k="leave"] .pin { border-color: var(--orange); background: var(--orange); }
-  .step[data-k="event"] { background: var(--purple-soft); }
-  .step[data-k="event"] .pin { border-color: var(--purple); background: var(--purple); }
-  .step[data-k="event"] .t, .step[data-k="event"] .what { color: var(--purple-ink); }
-  .phone .step { animation: rise .55s ease both; }
-  .phone .step:nth-last-child(1) { animation-delay: .5s; }
-  .phone .step:nth-last-child(2) { animation-delay: .75s; }
-  .phone .step:nth-last-child(3) { animation-delay: 1s; }
-  .phone .step:nth-last-child(4) { animation-delay: 1.25s; }
-  .phone .step:nth-last-child(5) { animation-delay: 1.5s; }
-  .phone .step:nth-last-child(6) { animation-delay: 1.75s; }
-  .backlabel {
-    display: flex; align-items: center; gap: 6px; font-size: .74rem; font-weight: 800; color: var(--purple-ink);
-    padding-left: 34px; letter-spacing: .02em;
-  }
-  .brief {
-    background: var(--card); border-radius: 14px; padding: 10px 12px; font-size: .8rem; line-height: 1.4; color: var(--ink-2);
-    border: 1px dashed var(--line);
-  }
-  .brief strong { color: var(--ink); }
-
-  @keyframes rise { from { opacity: .2; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-  @keyframes drop { from { opacity: .2; transform: translateY(-14px) scale(.97); } to { opacity: 1; transform: none; } }
-
-  /* ---------- sections ---------- */
-  section { padding-block: 72px; }
-  .sec-head { display: flex; flex-direction: column; gap: 14px; max-width: 720px; margin-bottom: 40px; }
-  .band { background: var(--card); }
-
-  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; counter-reset: s; }
-  .how { display: flex; flex-direction: column; gap: 10px; padding: 26px; border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); }
-  .how::before {
-    counter-increment: s; content: counter(s);
-    font-family: var(--f-display); font-weight: 600; font-size: 1.05rem;
-    width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center;
-    background: var(--yellow); color: var(--yellow-ink); margin-bottom: 6px;
-  }
-  .how p { color: var(--ink-2); }
-
-  /* ---------- demo ---------- */
-  .demo { display: grid; grid-template-columns: .9fr 1.1fr; gap: 28px; align-items: start; }
-  .controls { display: flex; flex-direction: column; gap: 22px; }
-  .control-label { font-weight: 800; font-size: .82rem; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 10px; display: block; }
-  .seg { display: flex; flex-wrap: wrap; gap: 8px; border: 0; margin: 0; padding: 0; min-width: 0; }
-  .seg legend { padding: 0; }
-  .seg input { position: absolute; opacity: 0; pointer-events: none; }
-  .seg label {
-    cursor: pointer; padding: 10px 16px; border-radius: 999px; font-weight: 700; font-size: .95rem;
-    background: var(--surface); border: 1.5px solid var(--line); color: var(--ink-2);
-    transition: background .15s, border-color .15s, color .15s;
-    display: inline-flex; align-items: center; gap: 8px;
-  }
-  .seg label:hover { border-color: var(--purple); }
-  .seg input:checked + label { background: var(--purple); border-color: var(--purple); color: #fff; }
-  .seg input:focus-visible + label { outline: 3px solid var(--purple); outline-offset: 2px; }
-  .assume { font-size: .92rem; color: var(--ink-2); background: var(--surface); border-radius: var(--radius); padding: 16px 18px; border: 1px solid var(--line); }
-  .assume ul { margin: 8px 0 0; padding-left: 18px; }
-  .assume li { margin: 2px 0; }
-
-  .result { background: var(--surface); border-radius: 22px; padding: 22px; box-shadow: var(--shadow-lift); display: flex; flex-direction: column; gap: 16px; }
-  .result-head { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; flex-wrap: wrap; }
-  .result-head h3 { font-size: 1.3rem; }
-  .result-head .t { color: var(--ink-3); font-size: .9rem; }
-  .result .chain::before { left: 57px; }
-  .result .step { grid-template-columns: 50px 16px 1fr; padding-block: 8px; }
-  .result .step .t { font-size: .98rem; }
-  .result .step .what { font-size: 1rem; }
-  .result .step .what small { font-size: .84rem; }
-  .note { display: flex; gap: 10px; align-items: flex-start; border-radius: 14px; padding: 12px 14px; font-size: .95rem; line-height: 1.45; }
-  .note svg { flex: none; margin-top: 2px; }
-  .note-fallback { background: color-mix(in srgb, var(--orange) 14%, var(--surface)); color: var(--ink); }
-  .note-meira { background: var(--purple-soft); color: var(--ink); }
-  .flash { animation: flash .5s ease; }
-  @keyframes flash { from { background: color-mix(in srgb, var(--yellow) 45%, transparent); } }
-
-  /* ---------- features ---------- */
-  .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
-  .feat { background: var(--surface); border-radius: var(--radius); padding: 24px; display: flex; flex-direction: column; gap: 12px; border: 1px solid var(--line); }
-  .feat .ic { width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center; background: var(--card); color: var(--purple-ink); }
-  .feat p { color: var(--ink-2); font-size: .98rem; }
-  .feat .say {
-    margin-top: auto; font-size: .88rem; font-weight: 700; color: var(--ink);
-    background: var(--card); border-radius: 12px; padding: 9px 12px; line-height: 1.35;
-  }
-
-  /* ---------- feasibility ---------- */
-  .fit { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: center; }
-  .fit-card { background: var(--surface); border-radius: 22px; padding: 22px; box-shadow: var(--shadow-lift); display: flex; flex-direction: column; gap: 14px; }
-  .fit-q { font-weight: 800; font-size: 1.05rem; }
-  .fit-row { display: grid; grid-template-columns: 56px 1fr; gap: 12px; align-items: start; font-size: .95rem; }
-  .fit-row .t { color: var(--ink-2); font-weight: 500; padding-top: 1px; }
-  .fit-row small { display: block; color: var(--ink-3); font-weight: 600; }
-  .gapbar { position: relative; height: 34px; border-radius: 10px; background: var(--card); overflow: hidden; display: flex; font-size: .74rem; font-weight: 800; }
-  .gapbar span { display: flex; align-items: center; justify-content: center; white-space: nowrap; overflow: hidden; }
-  .gapbar .g-meet { background: color-mix(in srgb, var(--purple) 30%, var(--surface)); color: var(--ink); }
-  .gapbar .g-drive { background: color-mix(in srgb, var(--orange) 30%, var(--surface)); color: var(--ink); }
-  .gapbar .g-late { background: color-mix(in srgb, var(--red) 30%, var(--surface)); color: var(--ink); }
-  .verdict { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 14px; background: color-mix(in srgb, var(--red) 12%, var(--surface)); font-size: .95rem; line-height: 1.45; }
-  .verdict b { color: var(--red-ink); }
-  .choices { display: flex; flex-wrap: wrap; gap: 8px; }
-  .chip { font-size: .88rem; font-weight: 800; padding: 8px 14px; border-radius: 999px; background: var(--yellow); color: var(--yellow-ink); }
-  .chip.ghost { background: var(--card); color: var(--ink-2); }
-  .fit-copy { display: flex; flex-direction: column; gap: 16px; }
-  .fit-copy ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px; }
-  .fit-copy li { display: flex; gap: 10px; color: var(--ink-2); }
-  .fit-copy li::before { content: ""; flex: none; width: 8px; height: 8px; margin-top: .6em; border-radius: 50%; background: var(--purple); }
-
-  /* ---------- one place ---------- */
-  .swap { display: grid; grid-template-columns: 1fr auto 1fr; gap: 28px; align-items: center; }
-  .pile { display: flex; flex-wrap: wrap; gap: 10px; }
-  .pile span {
-    padding: 10px 16px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line);
-    color: var(--ink-3); font-weight: 700; text-decoration: line-through; text-decoration-color: var(--red); text-decoration-thickness: 2px;
-  }
-  .pile span:nth-child(odd) { transform: rotate(-2deg); }
-  .pile span:nth-child(3n) { transform: rotate(1.5deg); }
-  .arrow { color: var(--purple); }
-  .one { background: var(--surface); border-radius: 22px; padding: 24px; box-shadow: var(--shadow-lift); display: flex; gap: 16px; align-items: center; }
-  .one .coin { width: 56px; height: 56px; }
-  .one p { color: var(--ink-2); font-size: .98rem; }
-  .one strong { display: block; font-family: var(--f-display); font-weight: 600; font-size: 1.35rem; color: var(--ink); }
-
-  /* ---------- day timeline ---------- */
-  .day { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; max-width: 760px; }
-  .day li { display: grid; grid-template-columns: 64px 1fr; gap: 16px; align-items: start; }
-  .day .t { font-size: 1rem; color: var(--ink-2); padding-top: 12px; text-align: right; }
-  .day .t small { display: block; font-family: var(--f-body); font-size: .72rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); line-height: 1.2; }
-  .bubble { background: var(--surface); border-radius: 4px 18px 18px 18px; padding: 12px 16px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 2px; }
-  .bubble .msg { font-weight: 800; }
-  .bubble .why { font-size: .88rem; color: var(--ink-3); }
-  .bubble[data-tone="warn"] { box-shadow: inset 4px 0 0 var(--orange), var(--shadow); }
-  .bubble[data-tone="urgent"] { box-shadow: inset 4px 0 0 var(--red), var(--shadow); }
-  .bubble[data-tone="good"] { box-shadow: inset 4px 0 0 var(--green), var(--shadow); }
-  .bubble[data-tone="meira"] { box-shadow: inset 4px 0 0 var(--purple), var(--shadow); }
-
-  /* ---------- final cta ---------- */
-  .final { text-align: left; display: grid; grid-template-columns: 1.1fr .9fr; gap: 32px; align-items: center; background: var(--purple); color: #fff; border-radius: 28px; padding: 44px; }
-  .final h2 { color: #fff; }
-  .final p { color: rgba(255, 255, 255, .85); }
-  .final .signup-row { border-color: transparent; }
-  .final .signup-status[data-kind="ok"], .final .signup-status[data-kind="error"], .final .signup-status[data-kind="info"] { color: #fff; }
-  footer { padding-block: 40px 56px; color: var(--ink-3); font-size: .9rem; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px 24px; }
-  footer p { max-width: 60ch; }
-
-  /* ---------- responsive ---------- */
-  @media (max-width: 900px) {
-    .hero, .demo, .fit, .final { grid-template-columns: 1fr; }
-    .hero { gap: 40px; padding-block: 16px 48px; }
-    .features { grid-template-columns: repeat(2, 1fr); }
-    .steps { grid-template-columns: 1fr; }
-    .swap { grid-template-columns: 1fr; }
-    .arrow { transform: rotate(90deg); justify-self: center; }
-    .final { padding: 32px 24px; }
-  }
-  @media (max-width: 560px) {
-    body { font-size: 16px; }
-    .wrap { padding-inline: 16px; }
-    section { padding-block: 52px; }
-    .features { grid-template-columns: 1fr; }
-    .signup-row { flex-direction: column; border-radius: 20px; }
-    .signup .btn { width: 100%; }
-    .nav .btn { display: none; }
-    .screen { min-height: 0; }
-    .result { padding: 16px; }
-    .day li { grid-template-columns: 50px 1fr; gap: 10px; }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    *, *::before, *::after { animation: none !important; transition: none !important; }
-    html { scroll-behavior: auto; }
-  }
-</style>
-<!-- HEAD-END -->
-<script>
-  // Public by construction: the Supabase anon key ships in every APK too, and
-  // RLS on public.waitlist allows INSERT only (supabase/migrations/0012).
-  window.MEIRA_WAITLIST = {
-    url: "https://ybagugvwqtjtbllgxyin.supabase.co/rest/v1/waitlist",
-    key: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InliYWd1Z3Z3cXRqdGJsbGd4eWluIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODExNzgzNDYsImV4cCI6MjA5Njc1NDM0Nn0.oKT2aQ3B056_Q20ltp2dPWJvMrd9v1p4dOgLFisLCLk"
-  };
-</script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Fredoka:wght@500;600&family=Nunito:wght@400;600;700;800&family=Rubik:wght@400;500;700;800&family=Varela+Round&display=swap">
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
-<!-- BODY-START -->
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <defs>
     <symbol id="coin" viewBox="0 0 40 40">
@@ -384,58 +47,80 @@
       <path d="M20 11.5V20h7" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
       <circle cx="20" cy="20" r="2" fill="#FFD166"/>
     </symbol>
+    <symbol id="dl" viewBox="0 0 24 24">
+      <path d="M12 4v11M7 10l5 5 5-5M5 20h14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
   </defs>
 </svg>
 
 <div class="wrap">
-  <nav class="nav" aria-label="Main">
+  <nav class="nav" aria-label="ראשי">
     <a class="brand" href="#top" id="top">
       <svg class="coin" aria-hidden="true"><use href="#coin"/></svg>
-      <span class="brand-name">Meira</span>
+      <span class="brand-name">מאירה</span>
     </a>
-    <a class="btn btn-sm" href="#join">Get early access</a>
+    <div class="nav-right">
+      <a class="lang" href="en/" hreflang="en" lang="en" data-lang="en">English</a>
+      <a class="btn btn-sm" href="#join">הורדה</a>
+    </div>
   </nav>
 
   <header class="hero">
     <div class="hero-copy">
-      <span class="eyebrow">A personal secretary on your phone</span>
-      <h1>You keep the calendar. <em>Meira gets you there.</em></h1>
-      <p class="lede">Meira reads your calendar and works backwards from every meeting. She decides when you wake up, how long you need to get ready, when to leave and which way to go. Then she tells you each one at the right moment.</p>
-      <form class="signup" data-source="hero" novalidate>
+      <span class="eyebrow">מזכירה אישית בטלפון</span>
+      <h1>אתם מנהלים את היומן. <em>מאירה מביאה אתכם בזמן.</em></h1>
+      <p class="lede">מאירה קוראת את היומן, סופרת אחורה מכל פגישה, ואומרת לכם מתי לקום, מתי לצאת ואיך להגיע.</p>
+      <div class="get">
+        <a class="btn btn-lg" href="https://github.com/MeiraSecretary/meirasecretary.github.io/releases/latest/download/Meira.apk">
+          <svg width="20" height="20" aria-hidden="true"><use href="#dl"/></svg>הורדה לאנדרואיד
+        </a>
+        <p class="get-fine">בטא · חינם · אנדרואיד 7 ומעלה</p>
+        <details class="howto">
+          <summary>איך מתקינים?</summary>
+          <ol>
+            <li>לוחצים <b>הורדה לאנדרואיד</b> ופותחים את הקובץ <b>Meira.apk</b>.</li>
+            <li>אם הטלפון שואל, מאשרים התקנה מהמקור הזה (הדפדפן).</li>
+            <li>אם Play Protect מזהיר, לוחצים <b>פרטים נוספים ← התקנה בכל זאת</b>. בסמסונג, אם ההתקנה נחסמה: הגדרות ← אבטחה ופרטיות ← חוסם אוטומטי ← כיבוי.</li>
+            <li>כשמחברים את יומן Google, תופיע הודעה שהאפליקציה עוד לא אומתה. זה כי אנחנו בבטא: לוחצים <b>מתקדם</b> ואז ממשיכים לאפליקציה.</li>
+          </ol>
+        </details>
+      </div>
+      <form class="signup" data-source="beta-hero" novalidate>
         <div class="signup-row">
-          <label class="sr" for="email-hero" style="position:absolute;left:-9999px">Email address</label>
-          <input id="email-hero" name="email" type="email" inputmode="email" autocomplete="email" placeholder="you@work.com" required>
-          <button class="btn" type="submit">Get early access</button>
+          <label for="email-hero" class="sr-only">כתובת מייל</label>
+          <input id="email-hero" name="email" type="email" inputmode="email" autocomplete="email" placeholder="המייל שלכם" dir="auto" required>
+          <button class="btn btn-alt" type="submit">אני רוצה להיות בבטא</button>
         </div>
+        <p class="signup-hint">נצרף אתכם לגרסת Google Play כשתיפתח.</p>
         <p class="signup-status" role="status" aria-live="polite"></p>
       </form>
       <p class="fine">
-        <span><i class="dot"></i>Android first</span>
-        <span>Works with Google Calendar</span>
-        <span>Your calendar is read on your phone</span>
+        <span><i class="dot"></i>אנדרואיד</span>
+        <span>עובד עם Google Calendar, ‏Outlook ויומן הטלפון</span>
+        <span>היומן נקרא בטלפון שלכם</span>
       </p>
     </div>
 
     <div class="phone-stage">
-      <div class="phone" role="img" aria-label="Meira on a phone: an interview at 10:00 in Ra'anana, worked backwards to a 07:10 wake-up alarm.">
+      <div class="phone" role="img" aria-label="מאירה בטלפון: ראיון ב-10:00 ברעננה, מחושב אחורה עד שעון מעורר ב-07:10.">
         <div class="screen">
-          <div class="statusbar"><span class="t">07:10</span><span>Tue</span></div>
+          <div class="statusbar"><span class="t">07:10</span><span>יום ג׳</span></div>
           <div class="notif">
             <svg class="coin" aria-hidden="true"><use href="#coin"/></svg>
-            <div><b>Meira · now</b>⏰ Wake up! Interview at 10:00 in Ra'anana</div>
+            <div><b>מאירה · עכשיו</b>⏰ להתעורר! ראיון ב-10:00 ברעננה</div>
           </div>
-          <div class="day-head"><h3>Interview day</h3><span>counted from 10:00</span></div>
+          <div class="day-head"><h3>יום ראיון</h3><span>מחושב מ-10:00</span></div>
           <ol class="chain">
-            <li class="step" data-k="wake"><span class="t">07:10</span><i class="pin"></i><span class="what">Wake-up alarm<small>set on your phone</small></span></li>
-            <li class="step"><span class="t">07:18</span><i class="pin"></i><span class="what">Review your notes<small>25 min, before the rush</small></span></li>
-            <li class="step"><span class="t">07:43</span><i class="pin"></i><span class="what">Get ready<small>45 min, learned from you</small></span></li>
-            <li class="step" data-k="leave"><span class="t">08:28</span><i class="pin"></i><span class="what">Leave home<small>8 min walk to the stop</small></span></li>
-            <li class="step"><span class="t">08:36</span><i class="pin"></i><span class="what">Bus 29<small>arrives 09:44</small></span></li>
-            <li class="step" data-k="event"><span class="t">10:00</span><i class="pin"></i><span class="what">Job interview<small>Ra'anana</small></span></li>
+            <li class="step" data-k="wake"><span class="t">07:10</span><i class="pin"></i><span class="what">שעון מעורר<small>מכוון בטלפון שלכם</small></span></li>
+            <li class="step"><span class="t">07:18</span><i class="pin"></i><span class="what">לעבור על החומר<small>25 דק׳, לפני הלחץ</small></span></li>
+            <li class="step"><span class="t">07:43</span><i class="pin"></i><span class="what">להתארגן<small>45 דק׳, נלמד מכם</small></span></li>
+            <li class="step" data-k="leave"><span class="t">08:28</span><i class="pin"></i><span class="what">לצאת מהבית<small>8 דק׳ הליכה לתחנה</small></span></li>
+            <li class="step"><span class="t">08:36</span><i class="pin"></i><span class="what">קו 29<small>מגיע ב-09:44</small></span></li>
+            <li class="step" data-k="event"><span class="t">10:00</span><i class="pin"></i><span class="what">ראיון עבודה<small>רעננה</small></span></li>
           </ol>
           <div class="backlabel">
             <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M7 12V2M3 6l4-4 4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            Meira counts backwards from the meeting
+            מאירה סופרת אחורה מהפגישה
           </div>
         </div>
       </div>
@@ -443,25 +128,25 @@
   </header>
 </div>
 
-<section class="band" id="how">
+<section class="band" id="features">
   <div class="wrap">
     <div class="sec-head">
-      <span class="eyebrow">How it works</span>
-      <h2>You add the meeting. Meira handles the rest.</h2>
+      <span class="eyebrow">מה מאירה פותרת</span>
+      <h2>אתם מנהלים יומן. היא דואגת לכל השאר.</h2>
     </div>
-    <div class="steps">
-      <div class="how">
-        <h3>Put it in your calendar</h3>
-        <p>As you already do. Meira picks up new events on her own, including the ones a recruiter sends with the address hidden in the invitation text.</p>
-      </div>
-      <div class="how">
-        <h3>She works backwards</h3>
-        <p>From the start time she counts back through the trip, the time you need to get ready and anything you should prepare, all the way to your alarm.</p>
-      </div>
-      <div class="how">
-        <h3>She gets you out the door</h3>
-        <p>The alarm rings, the "leave now" arrives on time, and if you're still home when the bus is close, she tells you that too.</p>
-      </div>
+    <div class="tiles">
+      <article class="tile" data-f="calendars" tabindex="0" role="button" aria-haspopup="dialog"><span class="tile-ic" aria-hidden="true">🗓️</span><h3>כל היומנים במקום אחד</h3><p>גוגל, Outlook, Teams והיומן שבטלפון.</p></article>
+      <article class="tile" data-f="backwards" tabindex="0" role="button" aria-haspopup="dialog"><span class="tile-ic" aria-hidden="true">⏪</span><h3>גוזרת זמנים אחורה</h3><p>מהפגישה ועד השעון המעורר.</p></article>
+      <article class="tile" data-f="alarm" tabindex="0" role="button" aria-haspopup="dialog"><span class="tile-ic" aria-hidden="true">⏰</span><h3>שעון מעורר שמכוון את עצמו</h3><p>לפי השעה שצריך לצאת.</p></article>
+      <article class="tile" data-f="route" tabindex="0" role="button" aria-haspopup="dialog"><span class="tile-ic" aria-hidden="true">🚌</span><h3>הדרך הכי טובה</h3><p>אוטובוס, רכבת, מונית, רכב או אופניים.</p></article>
+      <article class="tile" data-f="disruptions" tabindex="0" role="button" aria-haspopup="dialog"><span class="tile-ic" aria-hidden="true">🚧</span><h3>תקלות בדרך</h3><p>שביתות, עבודות ועומסים מהחדשות.</p></article>
+      <article class="tile" data-f="clash" tabindex="0" role="button" aria-haspopup="dialog"><span class="tile-ic" aria-hidden="true">📍</span><h3>התנגשות בין מקומות</h3><p>אספיק מהרצליה לחולון?</p></article>
+      <article class="tile" data-f="moved" tabindex="0" role="button" aria-haspopup="dialog"><span class="tile-ic" aria-hidden="true">🔁</span><h3>פגישה זזה?</h3><p>חלופות לפי איפה שתהיו.</p></article>
+      <article class="tile" data-f="prep" tabindex="0" role="button" aria-haspopup="dialog"><span class="tile-ic" aria-hidden="true">🎯</span><h3>מכינה לראיון</h3><p>זמן לימוד, מחקר על המראיין, סיכום הפגישה הקודמת.</p></article>
+      <article class="tile" data-f="knows" tabindex="0" role="button" aria-haspopup="dialog"><span class="tile-ic" aria-hidden="true">🧠</span><h3>מכירה אתכם</h3><p>כמה זמן מתארגנים, מתי מתאמנים, יש רכב?</p></article>
+      <article class="tile" data-f="nudge" tabindex="0" role="button" aria-haspopup="dialog"><span class="tile-ic" aria-hidden="true">🔔</span><h3>מדד נודניקיות</h3><p>אתם בוחרים כמה היא דוחפת.</p></article>
+      <article class="tile" data-f="focus" tabindex="0" role="button" aria-haspopup="dialog"><span class="tile-ic" aria-hidden="true">📵</span><h3>מצב למידה</h3><p>בזמן למידה חוסמת וואטסאפ, אינסטגרם, טיקטוק וכל אפליקציה שתבחרו.</p></article>
+      <article class="tile tile-soon" data-f="group" tabindex="0" role="button" aria-haspopup="dialog"><span class="tile-ic" aria-hidden="true">🤝</span><h3>זמן משותף לקבוצה</h3><p>מוצאת שעה שמתאימה לכולם.</p><span class="tag tag-soon">בקרוב</span></article>
     </div>
   </div>
 </section>
@@ -469,36 +154,27 @@
 <section id="try">
   <div class="wrap">
     <div class="sec-head">
-      <span class="eyebrow">Try it</span>
-      <h2>Pick a meeting. Watch Meira plan the morning.</h2>
-      <p class="lede">Every time here is worked out from the meeting backwards, the same way Meira does it. Change how you like to travel and the whole morning moves.</p>
+      <span class="eyebrow">נסו בעצמכם</span>
+      <h2>בחרו פגישה. תראו איך מאירה מתכננת את הבוקר.</h2>
     </div>
     <div class="demo">
       <div class="controls">
         <fieldset class="seg" id="pick-event">
-          <legend class="control-label">The meeting</legend>
-          <input type="radio" name="ev" id="ev-interview" value="interview" checked><label for="ev-interview">Job interview</label>
-          <input type="radio" name="ev" id="ev-meeting" value="meeting"><label for="ev-meeting">Client meeting</label>
-          <input type="radio" name="ev" id="ev-exam" value="exam"><label for="ev-exam">Exam</label>
+          <legend class="control-label">הפגישה</legend>
+          <input type="radio" name="ev" id="ev-interview" value="interview" checked><label for="ev-interview">ראיון עבודה</label>
+          <input type="radio" name="ev" id="ev-meeting" value="meeting"><label for="ev-meeting">פגישה עם לקוח</label>
+          <input type="radio" name="ev" id="ev-exam" value="exam"><label for="ev-exam">מבחן</label>
         </fieldset>
         <fieldset class="seg" id="pick-mode">
-          <legend class="control-label">You prefer to travel by</legend>
-          <input type="radio" name="mode" id="mode-train" value="train" checked><label for="mode-train">Train</label>
-          <input type="radio" name="mode" id="mode-bus" value="bus"><label for="mode-bus">Bus</label>
-          <input type="radio" name="mode" id="mode-car" value="car"><label for="mode-car">Car</label>
+          <legend class="control-label">אתם מעדיפים לנסוע ב</legend>
+          <input type="radio" name="mode" id="mode-train" value="train" checked><label for="mode-train">רכבת</label>
+          <input type="radio" name="mode" id="mode-bus" value="bus"><label for="mode-bus">אוטובוס</label>
+          <input type="radio" name="mode" id="mode-car" value="car"><label for="mode-car">רכב</label>
         </fieldset>
-        <div class="assume">
-          <strong>What Meira knows about you in this example</strong>
-          <ul>
-            <li>You leave from home in Tel Aviv.</li>
-            <li>Getting ready takes you <span class="t">45</span> min. She learned that from your mornings, not from a default.</li>
-            <li>You like a few minutes after the alarm before you start.</li>
-            <li>Timetables here are sample data.</li>
-          </ul>
-        </div>
+        <p class="assume">שעות לדוגמה · יציאה מתל אביב · 45 דק׳ התארגנות (נלמד מהבקרים שלכם)</p>
       </div>
       <div class="result" id="result" aria-live="polite">
-        <div class="result-head"><h3 id="r-title">Job interview</h3><span class="t" id="r-when">10:00 · Ra'anana</span></div>
+        <div class="result-head"><h3 id="r-title">ראיון עבודה</h3><span class="t" id="r-when">10:00 · רעננה</span></div>
         <ol class="chain" id="r-chain"></ol>
         <div class="note note-fallback" id="r-fallback" hidden>
           <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l10 18H2L12 3z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 10v4M12 17.5v.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
@@ -513,81 +189,28 @@
   </div>
 </section>
 
-<section class="band" id="features">
-  <div class="wrap">
-    <div class="sec-head">
-      <span class="eyebrow">What she does for you</span>
-      <h2>The small decisions you make every morning, made for you.</h2>
-    </div>
-    <div class="features">
-      <article class="feat">
-        <div class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M5 3 2 6M19 3l3 3"/></svg></div>
-        <h3>A wake-up alarm that's worked out</h3>
-        <p>A real alarm on your phone, set from your first appointment, travel and routine. It's set only on mornings that need one.</p>
-        <p class="say">⏰ Wake up! Interview at 10:00 in Ra'anana</p>
-      </article>
-      <article class="feat">
-        <div class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v3M12 18v3M4.2 7.5l2.6 1.5M17.2 15l2.6 1.5M4.2 16.5 6.8 15M17.2 9l2.6-1.5"/><circle cx="12" cy="12" r="3.5"/></svg></div>
-        <h3>Knows how long you take</h3>
-        <p>AI estimates how long you need to get ready. When she guesses wrong, she learns your real time and gets closer each morning.</p>
-        <p class="say">Getting ready took you 45 min, not 30. Noted ✓</p>
-      </article>
-      <article class="feat">
-        <div class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="3" width="14" height="14" rx="3"/><path d="M5 11h14M8.5 20l-2 2M15.5 20l2 2"/><circle cx="9" cy="14" r=".6" fill="currentColor"/><circle cx="15" cy="14" r=".6" fill="currentColor"/></svg></div>
-        <h3>The best way there, your way</h3>
-        <p>Train, bus, car or bike: she starts with the way you prefer. If it can't get you there on time, she picks the next best and says so.</p>
-        <p class="say">No train in time, so Bus 29 at 08:36 🚌</p>
-      </article>
-      <article class="feat">
-        <div class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg></div>
-        <h3>Reminders that know where you are</h3>
-        <p>The "leave now" comes at your real leave time. If the bus is close and you're still home, she says so, and when you should be arriving she asks if you made it.</p>
-        <p class="say">⚠️ Bus in 5 min! You haven't left yet.</p>
-      </article>
-      <article class="feat">
-        <div class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5M9 8h7M9 12h5"/></svg></div>
-        <h3>Ready for the big ones</h3>
-        <p>When there's an interview or exam on your calendar, she books study time for the two days before and on the morning itself. Before a meeting she also looks up who you're meeting.</p>
-        <p class="say">📚 Interview in 2 days. Study block tonight, 19:00</p>
-      </article>
-      <article class="feat">
-        <div class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 20h18M6 16l4-5 3 3 5-7"/><circle cx="18" cy="7" r="1.5"/></svg></div>
-        <h3>Learns your habits</h3>
-        <p>How long things really take, which way you like to travel, when your mornings start. The more you use her, the less you have to tell her.</p>
-        <p class="say">Your trip to the office takes 38 min, not 30. Adjusted.</p>
-      </article>
-    </div>
-  </div>
-</section>
-
 <section id="fit">
   <div class="wrap fit">
     <div class="fit-copy">
-      <span class="eyebrow">Before you say yes</span>
-      <h2>"Can I make it?" answered with the drive included.</h2>
-      <p class="lede">Most calendars only check that two meetings don't overlap. Meira also counts the trip between them. Back-to-back across town is a clash, even when the calendar shows a free slot.</p>
-      <ul>
-        <li>Checks whether a new meeting fits, counting the trip in and out</li>
-        <li>Flags clashes early, and offers what could be moved</li>
-        <li>Knows which of your appointments can't move</li>
-      </ul>
+      <span class="eyebrow">לפני שאומרים כן</span>
+      <h2>"אני אספיק?" תשובה שכוללת את הנסיעה.</h2>
     </div>
     <div class="fit-card">
-      <p class="fit-q">Dentist at 13:00 in Holon?</p>
-      <div class="fit-row"><span class="t">12:00</span><span>Team meeting, Herzliya<small>ends 12:45 · can't move</small></span></div>
+      <p class="fit-q">רופא שיניים ב-13:00 בחולון?</p>
+      <div class="fit-row"><span class="t">12:00</span><span>ישיבת צוות, הרצליה<small>נגמרת ב-12:45 · לא זזה</small></span></div>
       <div class="gapbar" aria-hidden="true">
-        <span class="g-meet" style="flex:45">meeting</span>
-        <span class="g-drive" style="flex:35">35 min drive</span>
-        <span class="g-late" style="flex:20">+20</span>
+        <span class="g-meet" style="flex:45">פגישה</span>
+        <span class="g-drive" style="flex:35">35 דק׳ נסיעה</span>
+        <span class="g-late" style="flex:20" dir="ltr">+20</span>
       </div>
-      <div class="fit-row"><span class="t">13:00</span><span>Dentist, Holon<small>you'd arrive 13:20</small></span></div>
+      <div class="fit-row"><span class="t">13:00</span><span>רופא שיניים, חולון<small>הייתם מגיעים ב-13:20</small></span></div>
       <div class="verdict">
         <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" style="flex:none;margin-top:2px"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M9 9l6 6M15 9l-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-        <span><b>Doesn't fit.</b> The drive alone takes 35 min. 13:30 works.</span>
+        <span><b>לא נכנס.</b> רק הנסיעה לוקחת 35 דק׳. 13:30 מתאים.</span>
       </div>
-      <div class="choices" aria-label="Example options">
-        <span class="chip">Book 13:30</span>
-        <span class="chip ghost">Find another day</span>
+      <div class="choices" aria-label="אפשרויות לדוגמה">
+        <span class="chip">לקבוע ל-13:30</span>
+        <span class="chip ghost">יום אחר</span>
       </div>
     </div>
   </div>
@@ -596,239 +219,68 @@
 <section class="band" id="one-place">
   <div class="wrap">
     <div class="sec-head">
-      <span class="eyebrow">Everything in one place</span>
-      <h2>No more checking five apps before you leave.</h2>
-      <p class="lede">No more guessing when to set the alarm, digging through train timetables or checking Waze for the drive time. Meira puts it all together.</p>
+      <span class="eyebrow">הכול במקום אחד</span>
+      <h2>בלי לבדוק חמש אפליקציות לפני שיוצאים.</h2>
+      <p class="lede">לא עוד Maps, Waze או Moovit. לא עוד לחשוב לבד מתי לקום ומתי לצאת.</p>
     </div>
     <div class="swap">
-      <div class="pile" aria-label="What you juggle today">
-        <span>Alarm clock</span><span>Calendar</span><span>Train timetable</span><span>Waze</span><span>Bus app</span><span>Sticky notes</span><span>"When do I leave?"</span>
+      <div class="pile" aria-label="מה שאתם מתמרנים היום">
+        <span>שעון מעורר</span><span>יומן גוגל</span><span>יומן Outlook</span><span>Google Maps</span><span>Waze</span><span>Moovit</span><span>לוח זמנים של רכבת</span><span>"מתי לצאת?"</span>
       </div>
       <svg class="arrow" width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6"/></svg>
       <div class="one">
         <svg class="coin" aria-hidden="true"><use href="#coin"/></svg>
-        <div><strong>Meira</strong><p>Wake time, get-ready time, the route, the "leave now" and the "did you make it?", all from the calendar you already keep.</p></div>
+        <div><strong>מאירה</strong><p>שעת קימה, זמן התארגנות, המסלול, ה"צאו עכשיו" וה"הגעתם?", הכול מתוך היומן שכבר יש לכם.</p></div>
       </div>
     </div>
-  </div>
-</section>
-
-<section id="day">
-  <div class="wrap">
-    <div class="sec-head">
-      <span class="eyebrow">A day with Meira</span>
-      <h2>Short messages, at the right moments.</h2>
-      <p class="lede">She doesn't lecture you. Each message is one line, sent when you need it.</p>
-    </div>
-    <ol class="day">
-      <li><span class="t"><small>Sun</small>19:00</span><div class="bubble" data-tone="meira"><span class="msg">📚 Interview in 2 days. Study block starts now</span><span class="why">She saw it on your calendar and made time to prepare.</span></div></li>
-      <li><span class="t"><small>Tue</small>07:10</span><div class="bubble" data-tone="warn"><span class="msg">⏰ Wake up! Interview at 10:00 in Ra'anana</span><span class="why">Counted back from 10:00: the bus, your routine and 25 min of review.</span></div></li>
-      <li><span class="t"><small>Tue</small>08:16</span><div class="bubble"><span class="msg">🚪 Leave in 12 min. Bus 29 at 08:36</span><span class="why">A heads-up before the real one.</span></div></li>
-      <li><span class="t"><small>Tue</small>08:28</span><div class="bubble" data-tone="warn"><span class="msg">🚪 Leave now! Bus 29 in 8 min</span><span class="why">Your walk to the stop takes 8 min.</span></div></li>
-      <li><span class="t"><small>Tue</small>08:31</span><div class="bubble" data-tone="urgent"><span class="msg">⚠️ Bus in 5 min! Haven't left yet. Next bus at 08:51</span><span class="why">Only if you're still home.</span></div></li>
-      <li><span class="t"><small>Tue</small>09:55</span><div class="bubble" data-tone="good"><span class="msg">📍 Should be arriving now. Made it?</span><span class="why">One tap, and she learns how long the trip really took.</span></div></li>
-    </ol>
   </div>
 </section>
 
 <div class="wrap" id="join">
   <div class="final">
     <div style="display:flex;flex-direction:column;gap:14px">
-      <h2>Stop planning your mornings. Let Meira do it.</h2>
-      <p>Meira is coming to Android first. Leave your email and we'll tell you when you can install her.</p>
+      <h2>תפסיקו לתכנן את הבקרים. תנו למאירה.</h2>
+      <p>מאירה בבטא לאנדרואיד. הורידו אותה עכשיו, או השאירו מייל ונצרף אתכם לגרסת Google Play.</p>
     </div>
-    <form class="signup" data-source="footer" novalidate>
-      <div class="signup-row">
-        <label for="email-footer" style="position:absolute;left:-9999px">Email address</label>
-        <input id="email-footer" name="email" type="email" inputmode="email" autocomplete="email" placeholder="you@work.com" required>
-        <button class="btn" type="submit">Get early access</button>
+    <div class="final-actions">
+      <div class="get">
+        <a class="btn btn-lg" href="https://github.com/MeiraSecretary/meirasecretary.github.io/releases/latest/download/Meira.apk">
+          <svg width="20" height="20" aria-hidden="true"><use href="#dl"/></svg>הורדה לאנדרואיד
+        </a>
+        <p class="get-fine">בטא · חינם · אנדרואיד 7 ומעלה</p>
       </div>
-      <p class="signup-status" role="status" aria-live="polite"></p>
-    </form>
+      <form class="signup" data-source="beta-footer" novalidate>
+        <div class="signup-row">
+          <label for="email-footer" class="sr-only">כתובת מייל</label>
+          <input id="email-footer" name="email" type="email" inputmode="email" autocomplete="email" placeholder="המייל שלכם" dir="auto" required>
+          <button class="btn btn-alt" type="submit">אני רוצה להיות בבטא</button>
+        </div>
+        <p class="signup-hint">נצרף אתכם לגרסת Google Play כשתיפתח.</p>
+        <p class="signup-status" role="status" aria-live="polite"></p>
+      </form>
+    </div>
   </div>
   <footer>
-    <span class="brand-name" style="font-size:1.2rem;color:var(--ink)">Meira</span>
-    <p>Meira reads your Google Calendar on your phone. We use your email only to tell you when Meira is ready.</p>
+    <span class="brand-name" style="font-size:1.2rem;color:var(--ink)">מאירה</span>
+    <nav class="foot-links" aria-label="משפטי">
+      <a href="privacy.html">מדיניות פרטיות</a>
+      <a href="delete-account.html">מחיקת חשבון ונתונים</a>
+      <a href="mailto:koralzakai1@gmail.com">צור קשר</a>
+      <a href="en/" hreflang="en" lang="en" data-lang="en">English</a>
+    </nav>
+    <p>מאירה קוראת את היומן בטלפון שלכם. במייל שתשאירו כאן נשתמש רק כדי לצרף אתכם לבטא ולעדכן על מאירה.</p>
   </footer>
 </div>
 
-<script>
-(function () {
-  "use strict";
-
-  // ---------- time helpers ----------
-  const toMin = (hhmm) => { const [h, m] = hhmm.split(":").map(Number); return h * 60 + m; };
-  const fmt = (min) => { const h = Math.floor(min / 60), m = min % 60; return String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0"); };
-
-  const GET_READY = 45;   // learned, per the "what Meira knows" box
-  const WAKE_BUFFER = 8;  // minutes between the alarm and starting to get ready
-
-  // Sample data. Transit options are timetable departures; car is a drive
-  // estimate plus parking. `early` is how early she aims to arrive.
-  const EVENTS = {
-    interview: {
-      title: "Job interview", time: "10:00", place: "Ra'anana", early: 10,
-      prep: { label: "Review your notes", min: 25 },
-      modes: {
-        train: [{ dep: "08:32", arr: "10:04", walk: 12, via: "Train + bus hop" }],
-        bus: [{ dep: "08:36", arr: "09:44", walk: 8, via: "Bus 29" }, { dep: "08:51", arr: "09:59", walk: 8, via: "Bus 29" }],
-        car: { drive: 55, park: 5 }
-      },
-      note: "She'll ask how it went, and plan your review time around the next one."
-    },
-    meeting: {
-      title: "Client meeting", time: "09:30", place: "Haifa", early: 10,
-      prep: null,
-      modes: {
-        train: [{ dep: "07:44", arr: "09:02", walk: 10, via: "Train to Haifa" }, { dep: "08:14", arr: "09:32", walk: 10, via: "Train to Haifa" }],
-        bus: [{ dep: "07:10", arr: "09:12", walk: 6, via: "Intercity bus" }],
-        car: { drive: 95, park: 5 }
-      },
-      note: "She looks up the company and the person before you go, and gives you three questions to ask."
-    },
-    exam: {
-      title: "Exam", time: "09:00", place: "Tel Aviv University", early: 15,
-      prep: { label: "Last look at your summary", min: 25 },
-      modes: {
-        train: [{ dep: "08:07", arr: "08:31", walk: 9, via: "Train to University" }],
-        bus: [{ dep: "07:50", arr: "08:24", walk: 5, via: "Bus 25" }, { dep: "08:05", arr: "08:40", walk: 5, via: "Bus 25" }],
-        car: { drive: 30, park: 10 }
-      },
-      note: "Exams get 15 min of margin, not 10, because you need time to find your seat."
-    }
-  };
-
-  // A preference is a ladder, not a constraint: the preferred way first, and
-  // the next rung only when the preferred one can't get you there in time.
-  const LADDER = { train: ["train", "bus"], bus: ["bus", "train"], car: ["car"] };
-  const MODE_NAME = { train: "train", bus: "bus", car: "car" };
-
-  function planTrip(ev, pref) {
-    const arriveBy = toMin(ev.time) - ev.early;
-    let missed = null;
-    for (const mode of LADDER[pref]) {
-      if (mode === "car") {
-        const c = ev.modes.car;
-        const leave = arriveBy - c.drive - c.park;
-        return { mode, leave, arrive: arriveBy, label: "Drive", detail: "about " + c.drive + " min at that hour, plus " + c.park + " to park", missed };
-      }
-      const inTime = ev.modes[mode].filter((o) => toMin(o.arr) <= arriveBy);
-      if (inTime.length) {
-        const best = inTime.reduce((a, b) => (toMin(b.dep) > toMin(a.dep) ? b : a));
-        return { mode, leave: toMin(best.dep) - best.walk, dep: toMin(best.dep), arrive: toMin(best.arr), label: best.via, walk: best.walk, missed };
-      }
-      if (!missed) {
-        const late = ev.modes[mode].slice().sort((a, b) => toMin(a.arr) - toMin(b.arr))[0];
-        missed = { mode, late };
-      }
-    }
-    return null;
-  }
-
-  function row(k, time, what, small) {
-    const li = document.createElement("li");
-    li.className = "step";
-    if (k) li.dataset.k = k;
-    li.innerHTML = '<span class="t"></span><i class="pin"></i><span class="what"><span class="w"></span><small></small></span>';
-    li.querySelector(".t").textContent = time;
-    li.querySelector(".w").textContent = what;
-    li.querySelector("small").textContent = small;
-    return li;
-  }
-
-  const $ = (id) => document.getElementById(id);
-
-  function render() {
-    const evKey = document.querySelector('input[name="ev"]:checked').value;
-    const pref = document.querySelector('input[name="mode"]:checked').value;
-    const ev = EVENTS[evKey];
-    const trip = planTrip(ev, pref);
-    const chain = $("r-chain");
-    chain.textContent = "";
-
-    $("r-title").textContent = ev.title;
-    $("r-when").textContent = ev.time + " · " + ev.place;
-
-    const readyStart = trip.leave - GET_READY;
-    const prepStart = ev.prep ? readyStart - ev.prep.min : readyStart;
-    const wake = prepStart - WAKE_BUFFER;
-
-    const rows = [row("wake", fmt(wake), "Wake-up alarm", "set on your phone, " + WAKE_BUFFER + " min before you start")];
-    if (ev.prep) rows.push(row("", fmt(prepStart), ev.prep.label, ev.prep.min + " min, on the morning itself"));
-    rows.push(row("", fmt(readyStart), "Get ready", GET_READY + " min, learned from your mornings"));
-    if (trip.mode === "car") {
-      rows.push(row("leave", fmt(trip.leave), "Leave home", trip.detail));
-      rows.push(row("", fmt(trip.arrive), "Park and walk in", ev.early + " min to spare"));
-    } else {
-      rows.push(row("leave", fmt(trip.leave), "Leave home", trip.walk + " min walk to the " + (trip.mode === "train" ? "station" : "stop")));
-      rows.push(row("", fmt(trip.dep), trip.label, "arrives " + fmt(trip.arrive) + ", " + (toMin(ev.time) - trip.arrive) + " min early"));
-    }
-    rows.push(row("event", ev.time, ev.title, ev.place));
-    rows.forEach((r) => chain.appendChild(r));
-
-    const fb = $("r-fallback");
-    if (trip.missed) {
-      $("r-fallback-text").textContent =
-        "You prefer the " + MODE_NAME[trip.missed.mode] + ", but the " + trip.missed.late.dep +
-        " arrives " + trip.missed.late.arr + ", too late for " + ev.time + ". So Meira picked the " +
-        MODE_NAME[trip.mode] + " instead, and tells you why.";
-      fb.hidden = false;
-    } else {
-      fb.hidden = true;
-    }
-    $("r-note-text").textContent = ev.note;
-
-    const res = $("result");
-    res.classList.remove("flash"); void res.offsetWidth; res.classList.add("flash");
-  }
-
-  document.querySelectorAll('input[name="ev"], input[name="mode"]').forEach((i) => i.addEventListener("change", render));
-  render();
-
-  // ---------- waitlist ----------
-  // Success is shown only after the server confirms the write. A failure
-  // says it failed and what to do, never a quiet "thanks".
-  const cfg = window.MEIRA_WAITLIST && /^https:\/\//.test(window.MEIRA_WAITLIST.url) ? window.MEIRA_WAITLIST : null;
-  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-
-  function setStatus(el, kind, text) { el.dataset.kind = kind; el.textContent = text; }
-
-  document.querySelectorAll("form.signup").forEach((form) => {
-    const input = form.querySelector("input");
-    const btn = form.querySelector("button");
-    const status = form.querySelector(".signup-status");
-    form.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const email = input.value.trim().toLowerCase();
-      if (!EMAIL_RE.test(email)) { setStatus(status, "error", "That email doesn't look right. Check it and try again."); input.focus(); return; }
-      if (!cfg) { setStatus(status, "info", "This is a preview link, so sign-up isn't open here. It opens on Meira's website."); return; }
-
-      btn.disabled = true; const label = btn.textContent; btn.textContent = "Saving…";
-      try {
-        const res = await fetch(cfg.url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", apikey: cfg.key, Authorization: "Bearer " + cfg.key, Prefer: "return=minimal" },
-          body: JSON.stringify({ email, source: form.dataset.source || "site" })
-        });
-        if (res.ok) { setStatus(status, "ok", "You're on the list ✓ We'll email you when Meira is ready."); form.reset(); }
-        else if (res.status === 409) { setStatus(status, "ok", "You're already on the list ✓"); }
-        else {
-          const body = await res.text().catch(() => "");
-          console.warn("[waitlist] insert failed", res.status, body.slice(0, 300));
-          setStatus(status, "error", res.status === 404
-            ? "Couldn't save: sign-up isn't open yet. Please try again later."
-            : "Couldn't save (error " + res.status + "). Please try again in a minute.");
-        }
-      } catch (err) {
-        console.warn("[waitlist] network error", err);
-        setStatus(status, "error", "Couldn't reach the server. Check your connection and try again.");
-      } finally {
-        btn.disabled = false; btn.textContent = label;
-      }
-    });
-  });
-})();
-</script>
-<!-- BODY-END -->
+<dialog id="feat-dialog" aria-labelledby="fd-title">
+  <div class="fd">
+    <button type="button" class="fd-close" aria-label="Close">×</button>
+    <span class="fd-ic" id="fd-ic" aria-hidden="true"></span>
+    <h3 id="fd-title"></h3>
+    <p id="fd-detail"></p>
+    <div class="fd-phone"><div class="fd-bar"><span class="fd-dot"></span><b>Meira</b></div><ol class="fd-msgs" id="fd-msgs" aria-live="polite"></ol><button type="button" class="fd-replay" id="fd-replay"></button></div>
+  </div>
+</dialog>
+<script src="app.js"></script>
 </body>
 </html>

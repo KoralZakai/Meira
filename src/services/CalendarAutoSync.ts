@@ -41,8 +41,10 @@
  * Dependencies: GoogleSync (import + travel chain), NotificationService
  * (arming, and the heads-up when something new lands), TaskStorage (settings).
  */
+import { backgroundRun as backgroundQuestions, checkTripOrigin } from './QuestionService';
+import { nudgeAboutChanges } from './ChangeNudgeService';
 import { AppState, AppStateStatus } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from './EncryptedStorage';  // AES-256-GCM at rest (7.10)
 import * as TaskManager from 'expo-task-manager';
 import * as BackgroundTask from 'expo-background-task';
 
@@ -64,7 +66,20 @@ import {
 } from './TaskStorage';
 import { syncDeviceCalendars, type DeviceCalendarResult } from './DeviceCalendarSync';
 import { syncOutlook, type OutlookSyncResult } from './OutlookService';
-import { getTodayString, isExpoGo } from '../utils/timeUtils';
+import { getTodayString, isExpoGo, timeToMinutes } from '../utils/timeUtils';
+import { keepNextTripLive, lateNotifiedRecently, markArrivals, markLateNotified } from './LiveRoute';
+import { stillHereAlert } from '../utils/stillHere';
+import { isHighStakes } from '../utils/travelLadder';
+import { loadProfile } from './UserProfileStorage';
+import { nextTrip } from '../utils/liveRoutePlan';
+import { timeOf } from '../utils/dayPlanning';
+import { upcomingEventBriefs, upcomingInterviewBriefs } from './MeetingBriefService';
+import { focusTick } from './FocusBypassService';
+import { syncGeofences } from './GeofenceService';
+import { historyTick } from './HistoryService';
+import { groupTick } from './GroupService';
+import { transitAlertTick } from './TransitAlertService';
+import { overlapTick } from './OverlapNotifyService';
 import { AppLanguage, Task } from '../types/index';
 
 /** WorkManager job name. Versioned: renaming it orphans the old registration. */
@@ -154,6 +169,15 @@ export async function runCalendarSync(
       device = await syncDeviceCalendars(language);
       outlook = await syncOutlook(language);
       added += (device.added || 0) + (outlook.added || 0);
+      // Two events at one hour (new this run, or booked days ago and never told):
+      // one push naming Meira's pick. Run BEFORE the slow steps below (routes,
+      // briefs, cloud round trips) — on the phone those took minutes and the
+      // check never got its turn. Same every-path trigger; never fails a sync.
+      const overlap = await overlapTick(language, await getAllTasks().catch((e) => {
+        console.warn('[CalendarAutoSync] overlap check could not read tasks', String((e as Error)?.message || e).slice(0, 120));
+        return [] as Task[];
+      }));
+      if (overlap.error) console.warn('[CalendarAutoSync] overlap notify:', overlap.error);
       const today = getTodayString();
       await ensureTravelChain(today, language).catch((e) => {
         console.warn('[CalendarAutoSync] travel chain (today) failed', e);
@@ -161,6 +185,23 @@ export async function runCalendarSync(
       await ensureTravelChainAhead(language).catch((e) => {
         console.warn('[CalendarAutoSync] travel chain (ahead) failed', e);
       });
+      // Tomorrow's route was just (re)built from HOME. If the phone says she is
+      // somewhere else, that is the moment to ask where she will leave from
+      // (kinds/tripOrigin) — foreground, heartbeat, pull-to-refresh, and the
+      // closed-app task (where backgroundQuestions turns it into a nudge).
+      await checkTripOrigin(opts.reason ?? 'calendar-sync');
+      // An interview today or in the next two days: its brief (company, job,
+      // questions reported there) is fetched now, cached and deduped, so it is
+      // ready the evening before without her opening Today (17.10). Every sync
+      // path — launch, foreground, heartbeat, pull-to-refresh, closed-app task.
+      const briefs = await upcomingInterviewBriefs().catch((e) => ({ briefs: [], error: String(e) }));
+      if (briefs.error) console.warn('[CalendarAutoSync] interview brief prefetch:', briefs.error);
+      // EVERY other calendar event of tomorrow (and the rest of today): who the
+      // call is with, and what was covered last time (18.10, Koral: a brief the
+      // day before is mandatory for every event). Same triggers as above; the
+      // server refuses an event with nobody to look up without a model call.
+      const events = await upcomingEventBriefs().catch((e) => ({ briefed: 0, error: String(e) }));
+      if (events.error) console.warn('[CalendarAutoSync] event brief prefetch:', events.error);
     } catch (e) {
       // Rule 2: the throw may be swallowed, the reason may not.
       console.warn('[CalendarAutoSync] sync failed', opts.reason ?? '', e);
@@ -186,6 +227,67 @@ export async function runCalendarSync(
       }
     } catch (e) {
       console.warn('[CalendarAutoSync] arming failed', e);
+    }
+
+    // Study sessions (17.10): the alarms that start "block WhatsApp and Instagram" at each study
+    // task's hour are set here, on EVERY sync path (launch, foreground, heartbeat, pull-to-refresh
+    // and the closed-app WorkManager job) — and a bypass the native side noticed while the app was
+    // closed is collected, and notified when nobody is looking. Never lets a sync fail.
+    try {
+      const focus = await focusTick(language, opts.reason ?? 'calendar-sync');
+      if (focus.error) console.warn('[CalendarAutoSync] focus tick:', focus.error);
+    } catch (e) {
+      console.warn('[CalendarAutoSync] focus tick failed', e);
+    }
+
+    // Location × calendar (28.10): she is still here and the next meeting is
+    // elsewhere. App open: re-plan from where she stands and, if late, ask
+    // (LiveRoute: still going / move / cancel). App closed: decided on the phone
+    // only, no route (utils/stillHere). Before, only Today's screen ran this, so
+    // with the chat as home it rarely ran at all (rule 7).
+    try {
+      const trip = await tripCheck(language);
+      if (trip !== 'ok' && trip !== 'no_trip') console.warn('[CalendarAutoSync] trip check:', trip);
+    } catch (e) {
+      console.warn('[CalendarAutoSync] trip check failed', e);
+    }
+
+    // Nearby errands (28.10): Android drops geofences on reboot and permission changes, so they
+    // are re-set on every sync path, the closed-app job included. Only when she turned them on.
+    try {
+      const fences = await syncGeofences();
+      if (!fences.ok && fences.reason !== 'off') console.warn('[CalendarAutoSync] geofences:', fences.reason);
+    } catch (e) {
+      console.warn('[CalendarAutoSync] geofence sync failed', e);
+    }
+
+    // Her opt-in history (20.10): send what changed, log a running study
+    // session, and say what is due — Sunday's week, Wednesday's nudge, the 3rd
+    // move of one task. Every sync path, including the closed-app job.
+    try {
+      const h = await historyTick(language);
+      if (h.error) console.warn('[CalendarAutoSync] history:', h.error);
+    } catch (e) {
+      console.warn('[CalendarAutoSync] history tick failed', e);
+    }
+
+    // Find time together (20.10): new invites, one 24h reminder, and "everyone
+    // answered" for a group she organizes. Every sync path; never fails a sync.
+    try {
+      const g = await groupTick(language);
+      if (g.error) console.warn('[CalendarAutoSync] groups:', g.error);
+    } catch (e) {
+      console.warn('[CalendarAutoSync] group tick failed', e);
+    }
+
+    // Disruptions on the way (20.10): a trip leaving within the hour gets a news
+    // check — roadworks, closed lines, strikes — and a push if something new
+    // turned up. Same every-path trigger as above; never fails a sync.
+    try {
+      const transit = await transitAlertTick(language);
+      if (transit.error) console.warn('[CalendarAutoSync] transit alerts:', transit.error);
+    } catch (e) {
+      console.warn('[CalendarAutoSync] transit alerts failed', e);
     }
 
     const newTasks = all.filter((t) => !before.has(t.id) && (t as any).source === 'calendar');
@@ -308,6 +410,72 @@ function dayLabel(date: string, he: boolean): string {
  * inside a component or an effect means the handler does not exist yet when
  * Android starts us, and the job silently no-ops.
  */
+/**
+ * The next trip, re-checked from where she is. Never prompts for permission:
+ * in the foreground it needs location, with the app closed "all the time"
+ * (granted when she turned on location alerts). Returns why it did not run.
+ */
+const TRIP_CHECK_KEY = 'tripcheck.lastRun.v1';
+async function tripCheck(language?: AppLanguage): Promise<string> {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const Location = require('expo-location') as typeof import('expo-location');
+  const fg = await Location.getForegroundPermissionsAsync();
+  if (!fg.granted) return 'no_permission';
+  if (AppState.currentState !== 'active') {
+    const bg = await Location.getBackgroundPermissionsAsync();
+    if (!bg.granted) return 'no_background_permission';
+  }
+  const today = getTodayString();
+  const tasks = (await getAllTasks()).filter((t) => t.date === today && t.status === 'pending');
+  // Only a trip that is coming up (a place AND an hour, within 3 h) is worth a GPS fix.
+  const now = new Date();
+  const trip = nextTrip(tasks, now);
+  const at = trip ? timeOf(trip) : null;
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  if (!trip || !at || timeToMinutes(at) - nowMin > 180) return 'no_trip';
+  // Closed app: a fresh JS run every ~15 min forgets LiveRoute's in-memory cooldown,
+  // so the background keeps its own — once per trip per 30 min, or Google is asked every run.
+  const background = AppState.currentState !== 'active';
+  if (background) {
+    const raw = await AsyncStorage.getItem(TRIP_CHECK_KEY).catch(() => null);
+    const last: Record<string, number> = (() => { try { return raw ? JSON.parse(raw) : {}; } catch { return {}; } })();
+    if (last[trip.id] && now.getTime() - last[trip.id] < 30 * 60_000) return 'cooldown';
+    last[trip.id] = now.getTime();
+    for (const [k, t] of Object.entries(last)) if (now.getTime() - t > 24 * 3600_000) delete last[k];
+    await AsyncStorage.setItem(TRIP_CHECK_KEY, JSON.stringify(last))
+      .catch((e) => console.warn('[CalendarAutoSync] trip-check stamp not saved', e));
+  }
+  const fresh = await Location.getLastKnownPositionAsync({ maxAge: 10 * 60_000 }).catch(() => null);
+  const pos = fresh ?? await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+  if (background) {
+    // App closed: decided on the phone, nothing routed — her background position never
+    // leaves the device (the consent she gave in Profile › Alerts). See utils/stillHere.
+    const profile: any = await loadProfile();
+    const home = profile?.homeLatLng ?? null;
+    const he = language === 'he';
+    const alert = stillHereAlert(trip, { lat: pos.coords.latitude, lng: pos.coords.longitude }, home, now, he);
+    if (!alert) return 'ok';
+    if (await lateNotifiedRecently(trip.id, now.getTime())) return 'already_asked';
+    await sendImmediate(alert.title, alert.body, { taskId: trip.id, type: 'running-late' },
+      isHighStakes(trip) ? 'cannot-be-late' : 'running-late');
+    await markLateNotified(trip.id, now.getTime());
+    return 'ok';
+  }
+  const live = await keepNextTripLive(tasks, await loadProfile(), {
+    current: { lat: pos.coords.latitude, lng: pos.coords.longitude }, notify: true, language,
+  });
+  return live.replanned ? 'ok' : live.reason === 'no-trip' ? 'no_trip' : 'ok';
+}
+
+/** Today's tasks she has reached, ticked — the closed-app trigger (rule 7). */
+async function backgroundArrivals(language?: AppLanguage): Promise<void> {
+  const today = getTodayString();
+  const tasks = (await getAllTasks()).filter((t) => t.date === today && t.status === 'pending');
+  if (!tasks.length) return;
+  const { arrived } = await markArrivals(tasks, { language });
+  if (arrived.length) console.warn(`[CalendarAutoSync] background: arrived at ${arrived.length} task(s)`);
+}
+
 if (!isExpoGo()) {
   try {
     if (!TaskManager.isTaskDefined(CALENDAR_BACKGROUND_TASK)) {
@@ -322,6 +490,18 @@ if (!isExpoGo()) {
           if (result.error) {
             console.warn('[CalendarAutoSync] background run: google said', result.error);
           }
+          // Meira's questions while the app is closed: answers that waited for a
+          // connection are sent, and an open question nudges at most once a day.
+          await backgroundQuestions().catch((e) => console.warn('[CalendarAutoSync] questions run failed', e));
+          // The calendar moved something while the app was closed: one knock, never at night,
+          // at most two per change (utils/changeNudge). The card is waiting on Today.
+          await nudgeAboutChanges(settings?.language ?? 'en')
+            .then((r) => { if (r !== 'nothing') console.warn('[CalendarAutoSync] change nudge:', r); })
+            .catch((e) => console.warn('[CalendarAutoSync] change nudge failed', e));
+          // Arrived while the app was closed: it is done (16.10). Best effort —
+          // a background location fix can be refused; that is said, not swallowed.
+          await backgroundArrivals(settings?.language)
+            .catch((e) => console.warn('[CalendarAutoSync] arrival sweep failed', e));
           return BackgroundTask.BackgroundTaskResult.Success;
         } catch (e) {
           console.warn('[CalendarAutoSync] background task threw', e);

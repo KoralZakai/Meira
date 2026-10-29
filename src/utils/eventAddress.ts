@@ -1,3 +1,5 @@
+import { namesACity } from './addressCompletion';
+
 /**
  * Getting a PLACE out of a calendar event that has no `location` field.
  *
@@ -96,5 +98,37 @@ export function addressFromDescription(description?: string | null): string | un
     if (plausible(text) && !/https?:\/\//i.test(text)) return text;
   }
 
+  return undefined;
+}
+
+/**
+ * An address the TITLE spells out — "סרט ברציף רחוב הגליל 6 תל אביב" (18.10, Koral).
+ *
+ * She typed the venue straight into the event's title and left `location` and the
+ * description empty, so every reader above found nothing: no place, no route, no
+ * leave time — and nothing said so. Not a guess: this takes ONLY a street the title
+ * names with its own word (רחוב / רח׳ / Street) and a house number; a title that
+ * merely mentions a place ("ארוחה ברציף") is still no address. The city, when the
+ * title gives one the app knows, rides along so the geocoder does not pick another
+ * town's street of the same name.
+ */
+const HE_STREET_RE =
+  /(?:^|[\s,(])(?:ב)?(?:רחוב|רח['׳])\s+([\u0590-\u05FF'"׳-]+(?:\s[\u0590-\u05FF'"׳-]+)?)\s+(\d{1,3}[א-ת]?)(?![\d])(?:\s*,?\s*(?:ב)?([\u0590-\u05FF-]+(?:\s[\u0590-\u05FF-]+)?))?/;
+const EN_STREET_RE =
+  /\b(\d{1,3})\s+([A-Z][\w'.-]*(?:\s[A-Z][\w'.-]*)?)\s+(?:Street|St|Road|Rd|Avenue|Ave|Blvd|Boulevard)\b\.?(?:,?\s*([A-Z][\w'-]*(?:\s[A-Z][\w'-]*)?))?/;
+
+export function addressFromTitle(title?: string | null): string | undefined {
+  const text = String(title || '');
+  const he = text.match(HE_STREET_RE);
+  if (he) {
+    const [, street, num, tail] = he;
+    // The tail is a city only when the app knows it; a word after the number that is not one
+    // ("... 6 בשבע") is dropped, not sent to the geocoder as part of the address.
+    const words = tail ? tail.trim().split(/\s+/) : [];
+    const city = [words.join(' '), words[0]].find((c) => c && namesACity(c)) ?? '';
+    return `${street.trim()} ${num}${city ? `, ${city}` : ''}`;
+  }
+  const en = text.match(EN_STREET_RE);
+  if (en) return en[0].replace(/\s+/g, ' ').trim();
   return undefined;
 }

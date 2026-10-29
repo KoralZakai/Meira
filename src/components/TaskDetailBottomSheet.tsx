@@ -28,6 +28,13 @@ import RouteMap from './RouteMap';
 import { untilAfterFromChange, rangeMinutes } from '../utils/timeRange';
 import OnYourWayCard from './OnYourWayCard';
 import { TaskPrepSection } from './TaskPrepCard';
+import { sourceLinkOf } from '../utils/sourceLink';
+import EventDetailsSection from './EventDetailsSection';
+import TaskSheetHero from './today/TaskSheetHero';
+import { keepOpen, moveToChosenSlot } from '../services/RunningLate';
+import LineIcon, { LineIconName } from './ui/LineIcon';
+import { originText, shortPlace } from '../utils/tripPlaces';
+import { contactPhoneOf } from '../utils/lateNotice';
 
 const TRANSPORTS: Array<{ key: TransportType; icon: string; en: string; he: string }> = [
   { key: 'bus', icon: '🚌', en: 'Bus', he: 'אוטובוס' },
@@ -135,6 +142,16 @@ export default function TaskDetailBottomSheet({
   };
 
   const [editingCategory, setEditingCategory] = useState(false);
+  // The Google account the source event/email was read from, so its link opens
+  // the exact item rather than the day.
+  const [sourceEmail, setSourceEmail] = useState<string | undefined>();
+  useEffect(() => {
+    let alive = true;
+    GoogleService.listGoogleAccounts()
+      .then((a) => { if (alive) setSourceEmail(a.length === 1 && a[0].email ? a[0].email : undefined); })
+      .catch((e) => console.warn('[TaskDetail] google accounts', String(e?.message || e)));
+    return () => { alive = false; };
+  }, []);
   const [creating, setCreating] = useState(false);
   const [newCatName, setNewCatName] = useState('');
   const [cats, setCats] = useState<CategoryEntry[]>(() => allCategories());
@@ -188,8 +205,27 @@ export default function TaskDetailBottomSheet({
    * alarm would never fire.
    */
   const rescheduleNow = () => {
-    if (task.status === 'complete') commit({ status: 'pending', completedAt: undefined });
-    setTimeField('from');
+    // Koral 28.10: reschedule = a new date and hour NOW, or "later" — then it waits
+    // in the 🔔 ("צריך לקבוע מועד") so she remembers to set it.
+    Alert.alert(isHe ? `${task.text} — מתי?` : `${task.text} — when?`, undefined, [
+      { text: isHe ? 'ביטול' : 'Cancel', style: 'cancel' },
+      {
+        text: isHe ? '⏳ אחר כך — להזכיר לי' : '⏳ Later — remind me',
+        onPress: () => {
+          keepOpen(task, isHe)
+            .then(() => { Alert.alert(isHe ? 'נכנס להתראות 🔔 — אזכיר לך לקבוע מועד ✓' : "In your 🔔 — I'll remind you to set a date ✓"); onClose(); })
+            .catch((e) => Alert.alert(isHe ? 'לא נשמר' : 'Not saved', String(e)));
+        },
+      },
+      {
+        text: isHe ? '📅 תאריך ושעה עכשיו' : '📅 Date and hour now',
+        onPress: () => {
+          if (task.status === 'complete') commit({ status: 'pending', completedAt: undefined });
+          moveToChosenSlot(task, isHe).then((ok) => { if (ok) onClose(); })
+            .catch((e) => Alert.alert(isHe ? 'לא נשמר' : 'Not saved', String(e)));
+        },
+      },
+    ]);
   };
 
   /**
@@ -379,6 +415,23 @@ export default function TaskDetailBottomSheet({
         <View style={styles.sheet}>
           <View style={styles.handleBar} />
 
+          {/* Canvas v4 "עריכת משימה": ✕ · the title · save. Every field below saves as she
+              changes it; "שמירה" also keeps a title still being typed, then closes. */}
+          <View style={[styles.editHead, { flexDirection: isHe ? 'row-reverse' : 'row' }]}>
+            <TouchableOpacity style={styles.editX} onPress={onClose} accessibilityRole="button" accessibilityLabel={isHe ? 'סגירה' : 'Close'}>
+              <Text style={styles.editXText}>×</Text>
+            </TouchableOpacity>
+            <Text style={styles.editTitle} numberOfLines={1}>{isHe ? 'עריכת משימה' : 'Edit task'}</Text>
+            <TouchableOpacity style={styles.editSave} accessibilityRole="button"
+              onPress={() => {
+                const t = titleText.trim();
+                if (editable && t && t !== task.text) commit({ text: t, tags: extractTaskTags(t) });
+                onClose();
+              }}>
+              <Text style={styles.editSaveText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{isHe ? 'שמירה' : 'Save'}</Text>
+            </TouchableOpacity>
+          </View>
+
           <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             {/* Title — editable */}
             {editable ? (
@@ -398,7 +451,143 @@ export default function TaskDetailBottomSheet({
               <Text style={styles.taskTitle}>{task.text}</Text>
             )}
 
+            {/* Canvas v4: when (±5) · from → to · how · the leave reminder · who. */}
+            {editable ? (() => {
+              const dir = isHe ? 'row-reverse' : 'row';
+              const rtl = isHe ? styles.rtlText : null;
+              const shift = (d: number) => {
+                if (!fromTime) { setTimeField('from'); return; }
+                const nf = addMinutesToTime(fromTime, d);
+                const nt = toTime ? addMinutesToTime(toTime, d) : undefined;
+                commit({ fixedTime: nf, scheduledTime: nf, isFixed: true, ...(nt ? { endTime: nt } : {}) });
+              };
+              const place = objLocation ? shortPlace(objLocation.displayName || objLocation.address) : '';
+              const from = originText((objLocation as any)?.transitPlan?.originLabel, isHe);
+              const leave = objLocation?.leaveHomeBy;
+              const phone = contactPhoneOf(task);
+              const who = (task as any).contact?.name || task.contactName || '';
+              const MODES: Array<[TransportType, LineIconName, string]> = [
+                ['walk', 'walk', isHe ? 'הליכה' : 'Walk'], ['bike', 'bike', isHe ? 'אופניים' : 'Bike'],
+                ['bus', 'bus', isHe ? 'אוטובוס' : 'Bus'], ['train', 'train', isHe ? 'רכבת' : 'Train'], ['car', 'car', isHe ? 'רכב' : 'Car'],
+              ];
+              return (
+                <View style={styles.core}>
+                  <View style={styles.coreCard}>
+                    <View style={[styles.coreRow, { flexDirection: dir }]}>
+                      <View style={[styles.coreIcon, { backgroundColor: '#E5F0FF' }]}><LineIcon name="calendar" size={18} color="#2F6FD6" /></View>
+                      <TouchableOpacity style={{ flex: 1, minWidth: 0 }} onPress={() => setShowDatePicker(true)} accessibilityRole="button">
+                        <Text style={[styles.coreLabel, rtl]}>{isHe ? 'מתי' : 'When'}</Text>
+                        <Text style={[styles.coreValue, rtl]} numberOfLines={1}>{formatDeadline(task.date, isHe)}</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <View style={[styles.stepRow, { flexDirection: dir }]}>
+                      <TouchableOpacity style={styles.stepBtn} onPress={() => shift(-5)} accessibilityRole="button" accessibilityLabel={isHe ? '5 דקות מוקדם יותר' : '5 minutes earlier'}>
+                        <Text style={styles.stepText} numberOfLines={1}>−5</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.timeBtn} onPress={() => setTimeField('from')} accessibilityRole="button">
+                        <Text style={styles.timeText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>{fromTime || (isHe ? 'שעה' : 'Time')}</Text>
+                      </TouchableOpacity>
+                      <Text style={styles.stepArrow}>{isHe ? '←' : '→'}</Text>
+                      <TouchableOpacity style={styles.timeBtn} onPress={() => setTimeField('to')} accessibilityRole="button">
+                        <Text style={styles.timeText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>{toTime || (isHe ? 'עד' : 'Until')}</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.stepBtn} onPress={() => shift(5)} accessibilityRole="button" accessibilityLabel={isHe ? '5 דקות מאוחר יותר' : '5 minutes later'}>
+                        <Text style={styles.stepText} numberOfLines={1}>+5</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  {place ? (
+                    <View style={styles.coreCard}>
+                      <View style={[styles.coreRow, { flexDirection: dir }]}>
+                        <View style={[styles.coreIcon, { backgroundColor: '#FFF1C7' }]}><LineIcon name="home" size={18} color="#B87F00" /></View>
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <Text style={[styles.coreLabel, rtl]}>{isHe ? 'מאיפה' : 'From'}</Text>
+                          <Text style={[styles.coreValue, rtl]} numberOfLines={1}>{from}</Text>
+                        </View>
+                      </View>
+                      <View style={[styles.thread, isHe ? { marginRight: 18 } : { marginLeft: 18 }]} />
+                      <View style={[styles.coreRow, { flexDirection: dir }]}>
+                        <View style={[styles.coreIcon, { backgroundColor: '#F1E7FF' }]}><LineIcon name="pin" size={18} color="#7A3FC4" /></View>
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <Text style={[styles.coreLabel, rtl]}>{isHe ? 'לאן' : 'To'}</Text>
+                          <Text style={[styles.coreValue, rtl]} numberOfLines={2}>{place}</Text>
+                        </View>
+                      </View>
+                      <Text style={[styles.coreLabel, rtl, { marginTop: 8 }]}>{isHe ? 'איך' : 'How'}</Text>
+                      <View style={[styles.modeRow, { flexDirection: dir }]}>
+                        {MODES.map(([key, icon, label]) => {
+                          const on = objLocation?.transportType === key;
+                          return (
+                            <TouchableOpacity key={key} style={[styles.modeBtn, on && styles.modeBtnOn]} disabled={transportBusy}
+                              onPress={() => { changeTransport(key).catch((e) => console.warn('[Sheet] transport not changed', e)); }}
+                              accessibilityRole="button" accessibilityState={{ selected: on }} accessibilityLabel={label}>
+                              <LineIcon name={icon} size={18} color={on ? BRAND.white : BRAND.inkSoft} />
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                      {transportBusy ? <ActivityIndicator color={BRAND.sunGold} size="small" /> : null}
+                    </View>
+                  ) : null}
+
+                  {leave ? (
+                    <View style={[styles.coreCard, styles.coreRow, { flexDirection: dir }]}>
+                      <View style={[styles.coreIcon, { backgroundColor: '#FFE3EA' }]}><LineIcon name="bell" size={18} color="#D6335A" /></View>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={[styles.coreLabel, rtl]}>{isHe ? 'תזכורת יציאה' : 'Leave reminder'}</Text>
+                        <Text style={[styles.coreValue, rtl]} numberOfLines={1}>{isHe ? `בשעת היציאה · ${leave}` : `At leave time · ${leave}`}</Text>
+                      </View>
+                    </View>
+                  ) : null}
+
+                  <View style={[styles.coreCard, styles.coreRow, { flexDirection: dir }, !(who || phone) && styles.coreMissing]}>
+                    <View style={[styles.coreIcon, { backgroundColor: 'rgba(20,27,46,0.05)' }]}><LineIcon name="user" size={18} color={BRAND.inkSoft} /></View>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={[styles.coreLabel, rtl]}>{isHe ? 'איש קשר' : 'Contact'}</Text>
+                      <Text style={[styles.coreValue, rtl, !(who || phone) && { color: BRAND.inkSoft }]} numberOfLines={1}>
+                        {who || phone || (isHe ? '+ אפשר להוסיף למטה — כדי לעדכן אם תאחרי' : '+ Add one below — so I can tell them if you are late')}
+                      </Text>
+                    </View>
+                    {phone ? (
+                      <TouchableOpacity style={styles.coreCall} accessibilityRole="button" accessibilityLabel={isHe ? 'להתקשר' : 'Call'}
+                        onPress={() => Linking.openURL(`tel:${phone.replace(/[^\d+]/g, '')}`).catch((e) => console.warn('[Sheet] call failed', e))}>
+                        <LineIcon name="phone" size={18} color={BRAND.goldInk} />
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
+
+                  <Text style={[styles.coreNote, rtl]}>{isHe ? '✨ שינוי שעה או מקום — אחשב מחדש את ההלוך והחזור' : '✨ Change the hour or place — I will re-plan the way there and back'}</Text>
+                  <Text style={[styles.moreCap, rtl]}>{isHe ? 'עוד פרטים' : 'More details'}</Text>
+                </View>
+              );
+            })() : null}
+
             <View style={styles.detailsSection}>
+              {/* Where this came from — the email or calendar event behind it,
+                  derived from ids the task already has (utils/sourceLink). */}
+              {(() => {
+                // A Google event gets the full section below (link, guests, text,
+                // join link, files); this row is for the email / Outlook origins.
+                const googleEventId = String(task.id).startsWith('gcal-') && task.calendarEventId && !String(task.calendarEventId).includes(':')
+                  ? String(task.calendarEventId) : '';
+                if (googleEventId) return <EventDetailsSection eventId={googleEventId} he={isHe} />;
+                const link = sourceLinkOf(task, sourceEmail);
+                if (!link) return null;
+                return (
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailIcon}>{link.kind === 'gmail' ? '📧' : '📅'}</Text>
+                    <TouchableOpacity
+                      style={{ flex: 1 }}
+                      onPress={() => Linking.openURL(link.url).catch((e) => console.warn('[TaskDetail] open source', String(e?.message || e)))}
+                    >
+                      <Text style={[styles.detailLabel, styles.linkLabel]} numberOfLines={1}>
+                        {isHe ? link.labelHe : link.labelEn}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                );
+              })()}
               {/* Join link — a video call had nowhere to live, so it used to be
                   typed into `location` and then planned as a journey. */}
               {/* Editable, not just readable. A Zoom link that arrives by
@@ -508,7 +697,7 @@ export default function TaskDetailBottomSheet({
                 <Text style={styles.detailIcon}>{categoryMeta.icon}</Text>
                 <Text style={styles.detailLabel}>{isHe ? categoryMeta.labelHe : categoryMeta.labelEn}</Text>
                 <View style={[styles.colorBox, { backgroundColor: categoryMeta.color }]} />
-                {editable && <Text style={styles.editHint}>{editingCategory ? '▾' : '✏️'}</Text>}
+                {editable && <Text style={styles.editHint}>{editingCategory ? '▼' : '✏️'}</Text>}
               </TouchableOpacity>
 
               {editingCategory && editable && (
@@ -792,7 +981,7 @@ export default function TaskDetailBottomSheet({
                     </Text>
                     {editable && (
                       <TouchableOpacity onPress={() => removeSubtask(s.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                        <Text style={styles.subtaskRemove}>✕</Text>
+                        <Text style={styles.subtaskRemove}>×</Text>
                       </TouchableOpacity>
                     )}
                   </View>
@@ -928,11 +1117,38 @@ export default function TaskDetailBottomSheet({
 const { height } = Dimensions.get('window');
 
 const styles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.5)', justifyContent: 'flex-end' },
+  editHead: { alignItems: 'center', gap: 10, paddingBottom: 10 },
+  editX: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(20,27,46,0.06)', alignItems: 'center', justifyContent: 'center' },
+  editXText: { fontSize: 22, fontFamily: FONTS.bodyHeavy, color: BRAND.warmInk },
+  editTitle: { flex: 1, minWidth: 0, textAlign: 'center', fontFamily: FONTS.bodyHeavy, fontSize: 18, color: BRAND.warmInk },
+  editSave: { minWidth: 80, minHeight: 44, paddingHorizontal: 16, borderRadius: 22, backgroundColor: BRAND.sunGold, alignItems: 'center', justifyContent: 'center' },
+  editSaveText: { fontFamily: FONTS.bodyHeavy, fontSize: 15, color: BRAND.onGold },
+  rtlText: { textAlign: 'right', writingDirection: 'rtl' },
+  core: { gap: 8, marginBottom: 12 },
+  coreCard: { padding: 10, borderRadius: 16, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: BRAND.line },
+  coreMissing: { borderStyle: 'dashed', backgroundColor: 'rgba(255,255,255,0.6)' },
+  coreRow: { alignItems: 'center', gap: 10, minHeight: 44 },
+  coreIcon: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
+  coreLabel: { fontFamily: FONTS.bodyBold, fontSize: 11.5, color: BRAND.inkSoft },
+  coreValue: { fontFamily: FONTS.bodyHeavy, fontSize: 15, color: BRAND.warmInk },
+  stepRow: { alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 10 },
+  stepBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(20,27,46,0.07)', alignItems: 'center', justifyContent: 'center' },
+  stepText: { fontFamily: FONTS.bodyHeavy, fontSize: 13, color: BRAND.warmInk },
+  timeBtn: { minWidth: 72, minHeight: 44, paddingHorizontal: 10, borderRadius: 14, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: BRAND.line, alignItems: 'center', justifyContent: 'center' },
+  timeText: { fontFamily: FONTS.bodyHeavy, fontSize: 18, color: BRAND.warmInk, fontVariant: ['tabular-nums'] },
+  stepArrow: { fontSize: 16, color: BRAND.inkSoft },
+  thread: { width: 2, height: 10, backgroundColor: 'rgba(90,79,224,0.35)' },
+  modeRow: { gap: 6, marginTop: 4, flexWrap: 'wrap' },
+  modeBtn: { width: 48, height: 42, borderRadius: 14, backgroundColor: 'rgba(20,27,46,0.06)', alignItems: 'center', justifyContent: 'center' },
+  modeBtnOn: { backgroundColor: '#5A4FE0' },
+  coreCall: { width: 44, height: 44, borderRadius: 22, backgroundColor: BRAND.goldSoft, alignItems: 'center', justifyContent: 'center' },
+  coreNote: { fontFamily: FONTS.bodySemi, fontSize: 12, color: '#3B3570' },
+  moreCap: { fontFamily: FONTS.bodyHeavy, fontSize: 12, color: BRAND.goldInk, marginTop: 6 },
+  overlay: { flex: 1, backgroundColor: 'rgba(20, 27, 46, 0.45)', justifyContent: 'flex-end' },
   sheet: {
-    backgroundColor: BRAND.creamCard,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    backgroundColor: '#F7F5FF',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
     maxHeight: height * 0.85,
     paddingHorizontal: 16,
     paddingBottom: 24,
@@ -946,7 +1162,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
     marginBottom: 12,
   },
-  taskTitle: { fontSize: 20, fontFamily: FONTS.bodyBold, color: BRAND.warmInk, marginBottom: 16 },
+  taskTitle: { fontSize: 20, fontFamily: FONTS.bodyHeavy, color: BRAND.warmInk, marginBottom: 12 },
   titleInput: {
     fontSize: 18,
     fontFamily: FONTS.bodyBold,
@@ -954,20 +1170,26 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     borderWidth: 1,
     borderColor: BRAND.line,
-    borderRadius: RADIUS.chip,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    backgroundColor: BRAND.cream,
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: '#FFFFFF',
   },
-  detailsSection: { marginBottom: 16 },
+  // v3: each detail is its own soft white card with the icon in a pastel circle.
+  detailsSection: { marginBottom: 16, gap: 6 },
   detailRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: BRAND.line,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    minHeight: 52,
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
   },
-  detailIcon: { fontSize: 18, marginRight: 12, width: 24 },
+  detailIcon: {
+    fontSize: 16, marginRight: 10, width: 34, height: 34, borderRadius: 17, overflow: 'hidden',
+    textAlign: 'center', textAlignVertical: 'center', lineHeight: 34, backgroundColor: '#EEF0FF',
+  },
   detailLabel: { fontSize: 14, fontFamily: FONTS.bodySemi, color: BRAND.inkSoft, flex: 1 },
   detailValue: { fontSize: 14, fontFamily: FONTS.bodySemi, color: BRAND.warmInk, maxWidth: 180 },
   colorBox: { width: 20, height: 20, borderRadius: RADIUS.chip },
@@ -1082,7 +1304,7 @@ const styles = StyleSheet.create({
   subtaskCheckDone: { backgroundColor: BRAND.success, borderColor: BRAND.success },
   subtaskCheckText: { color: 'white', fontFamily: FONTS.bodyBold, fontSize: 12 },
   subtaskText: { flex: 1, fontSize: 14, color: BRAND.warmInk },
-  subtaskRemove: { color: COLORS.danger, fontSize: 14, fontFamily: FONTS.bodyBold, paddingHorizontal: 4 },
+  subtaskRemove: { color: COLORS.danger, fontSize: 22, lineHeight: 24, fontFamily: FONTS.bodyBold, paddingHorizontal: 4 },
   subtaskAddRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
   notesBlock: { paddingTop: 14 },
   notesInput: {

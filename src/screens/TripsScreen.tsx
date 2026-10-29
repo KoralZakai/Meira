@@ -55,6 +55,7 @@ import {
 import { armTaskAlerts } from '../services/NotificationService';
 import { describePlanOption } from '../utils/transitParse';
 import { loadProfile } from '../services/UserProfileStorage';
+import SkyBackdrop, { useSky } from '../components/ui/SkyBackdrop';
 import { getTodayString, timeToMinutes } from '../utils/timeUtils';
 import { missedPlannedDeparture } from '../utils/liveRoutePlan';
 import { asLocation } from '../utils/buildTravelChain';
@@ -161,6 +162,7 @@ export default function TripsScreen({ navigation }: any) {
   // card can say "working it out" ONLY when something actually is.
   const [planning, setPlanning] = useState(false);
   const he = language === 'he';
+  const sky = useSky();
 
   const load = useCallback(async () => {
     const today = getTodayString();
@@ -467,9 +469,10 @@ export default function TripsScreen({ navigation }: any) {
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
+      <SkyBackdrop sky={sky} />
       <View style={styles.header}>
-        <Text style={styles.title}>{he ? 'נסיעות' : 'Trips'}</Text>
-        <Text style={styles.subtitle}>
+        <Text style={[styles.title, { color: sky.ink }, he && styles.rtlText]}>{he ? 'נסיעות' : 'Trips'}</Text>
+        <Text style={[styles.subtitle, { color: sky.ink, opacity: 0.8 }, he && styles.rtlText]}>
           {trips.length
             ? (he ? `${trips.length} מתוכננות` : `${trips.length} planned`)
             : (he ? 'אין נסיעות' : 'None planned')}
@@ -879,11 +882,12 @@ const styles = StyleSheet.create({
     backgroundColor: BRAND.timeChipBg, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4,
   },
   header: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 14 },
+  rtlText: { textAlign: 'right', writingDirection: 'rtl' },
   title: { fontFamily: FONTS.display, fontSize: 30, color: BRAND.warmInk },
   subtitle: { fontFamily: FONTS.body, fontSize: 13, color: BRAND.inkSoft, marginTop: 2 },
   scroll: { paddingHorizontal: 16 },
 
-  empty: { alignItems: 'center', marginTop: 60, paddingHorizontal: 30, gap: 12 },
+  empty: { alignItems: 'center', marginTop: 60, marginHorizontal: 20, padding: 24, gap: 12, borderRadius: 24, backgroundColor: 'rgba(255,255,255,0.82)' },
   emptyIcon: { fontSize: 40 },
   emptyText: {
     fontFamily: FONTS.body, fontSize: 14, color: BRAND.inkSoft,
@@ -924,7 +928,7 @@ const styles = StyleSheet.create({
     backgroundColor: BRAND.sunGold, borderRadius: 14,
     paddingHorizontal: 16, paddingVertical: 8, alignItems: 'center',
   },
-  leaveLabel: { fontFamily: FONTS.bodyHeavy, fontSize: 9, letterSpacing: 1, color: '#7A5A18' },
+  leaveLabel: { fontFamily: FONTS.bodyHeavy, fontSize: 11, letterSpacing: 1, color: BRAND.onGold },
   leaveTime: { fontFamily: FONTS.display, fontSize: 24, color: '#4A3512', lineHeight: 27 },
   leaveMeta: { flex: 1, gap: 2 },
   leaveRel: { fontFamily: FONTS.bodyHeavy, fontSize: 15, color: BRAND.warmInk },
@@ -945,7 +949,7 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start', backgroundColor: BRAND.honey,
     borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5,
   },
-  wakeText: { fontFamily: FONTS.bodyHeavy, fontSize: 12, color: '#7A5A18' },
+  wakeText: { fontFamily: FONTS.bodyHeavy, fontSize: 12, color: BRAND.goldInk },
 
   legs: { gap: 0 },
   legRow: { flexDirection: 'row', gap: 12 },

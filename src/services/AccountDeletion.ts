@@ -24,9 +24,9 @@
  * Dependencies: serverAuth (bearer token), SupabaseAuthService (sign-out),
  * AsyncStorage. Consumed by ProfileEditScreen.
  */
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authedFetch } from './serverAuth';
 import { signOut } from './SupabaseAuthService';
+import { wipeDevice } from './LocalWipe';
 
 const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL;
 
@@ -73,13 +73,14 @@ export async function deleteAccountEverywhere(): Promise<DeletionOutcome> {
   }
 
   // 2. Only now the device. The cloud is gone; the local copy is the last one.
-  try {
-    await AsyncStorage.clear();
-  } catch {
-    // The account IS deleted server-side. Failing to clear the cache does not
-    // make that untrue, and reporting failure here would be the lie.
-  }
+  // signOut FIRST: it revokes the refresh token server-side, which needs the
+  // session that the wipe is about to erase.
   await signOut().catch(() => {});
+  const wipe = await wipeDevice();
+  if (!wipe.ok) {
+    // The account IS deleted server-side; what is left is on this phone only.
+    console.warn('[AccountDeletion] device not fully wiped', wipe.failed);
+  }
 
   return { status: 'deleted' };
 }

@@ -10,6 +10,7 @@ import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'rea
 import { Task, TransportType, TransitPlan, UserProfile, AppLanguage } from '../types';
 import { rankDepartureOptions } from '../utils/departureOptions';
 import TransitOptionsList from './TransitOptionsList';
+import TransitAlertLine from './TransitAlertLine';
 import { BRAND, FONTS, RADIUS, SHADOWS } from '../constants/theme';
 import { needsLastMileHelp } from '../services/MultiModalPlanner';
 import { getCategoryMeta } from '../constants/categories';
@@ -195,8 +196,11 @@ export default function TravelChainCard({
             </Text>
           </TouchableOpacity>
         ) : null}
-        {hasChain ? <Text style={styles.chevron}>{expanded ? '▾' : '▸'}</Text> : null}
+        {hasChain ? <Text style={styles.chevron}>{expanded ? '▼' : '▶'}</Text> : null}
       </TouchableOpacity>
+
+      {/* Disruptions on the way (20.10): on the collapsed row, not behind ▶. */}
+      <TransitAlertLine state={asLocation(task)?.transitAlerts} he={he} />
 
       {/* expanded chain */}
       {expanded && hasChain ? (
@@ -294,8 +298,8 @@ export default function TravelChainCard({
             >
               <Text style={styles.altsBtnText} numberOfLines={2}>
                 {altsOpen
-                  ? (he ? '▾ דרכים אחרות' : '▾ Other departures')
-                  : (he ? '▸ דרכים אחרות' : '▸ Other departures')}
+                  ? (he ? '▼ דרכים אחרות' : '▼ Other departures')
+                  : (he ? '▶ דרכים אחרות' : '▶ Other departures')}
               </Text>
             </TouchableOpacity>
           ) : null}
@@ -430,7 +434,7 @@ const styles = StyleSheet.create({
   title: { fontFamily: FONTS.bodyHeavy, fontSize: 15, color: BRAND.warmInk },
   titleDone: { color: BRAND.inkSoft, textDecorationLine: 'line-through' },
   sub: { fontFamily: FONTS.bodySemi, fontSize: 12, color: BRAND.inkSoft, marginTop: 1 },
-  chevron: { fontSize: 14, color: BRAND.timeChipText, fontFamily: FONTS.bodyHeavy },
+  chevron: { fontSize: 11, color: BRAND.timeChipText, fontFamily: FONTS.bodyHeavy },
   chain: {
     borderTopWidth: 1, borderColor: BRAND.line, borderStyle: 'dashed',
     paddingHorizontal: 14, paddingTop: 10, paddingBottom: 14, gap: 0,

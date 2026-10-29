@@ -51,13 +51,23 @@ import { addMinutes, getTodayString, timeToMinutes } from '../utils/timeUtils';
 import { normalizeProfile } from '../utils/profileShape';
 import { travelBetween } from './TravelEstimator';
 import {
-  Routine, alreadyPlanned, blockedForGap, habitsFromHistory, parseRoutineNotes,
+  Routine, alreadyPlanned, blockedForGap, habitsFromHistory, parseRoutineNotes, routineConcept,
   routinesForDate, weekdayLabel, weekdayOf,
 } from '../utils/routines';
 import {
   getTasksForDate, getOverdueTasks, getAllTasks, loadGoals, addTask, updateTaskFields, moveTasksToDate,
 } from './TaskStorage';
-import { loadProfile } from './UserProfileStorage';
+import { loadProfile, saveProfile } from './UserProfileStorage';
+import { replaceToldRoutines, serverRoutines } from './LumiServer';
+import AsyncStorage from './EncryptedStorage';
+import { consolidateRoutineLines, threeWayRoutineLines } from '../utils/routineConsolidate';
+import { gymOf, gymQuery, settleGym, streetWithAnyNumber } from '../utils/gymCheck';
+import { placeTextSearch } from './RoutePlanner';
+import { cityOf } from '../utils/addressCompletion';
+import { mergeRoutineSources } from '../utils/routineRows';
+import { applyRoutineRules } from '../utils/routinePolicy';
+import { cachedRules } from './RulesCache';
+import { rankOpenTasks } from '../utils/openTaskRank';
 
 /** Anything closer than this counts as "you're already there". */
 const NEAR_RADIUS_KM = 3;
@@ -363,8 +373,19 @@ export function rankGapIdeas(ctx: GapContext, limit = 4): GapIdea[] {
     }, 'course');
   }
 
+  // Deadline, importance and where she will be decide which open task gets this window
+  // (utils/openTaskRank) — not the order they happen to be stored in.
+  const anchorPoint = typeof place?.lat === 'number' && typeof place?.lng === 'number'
+    ? { lat: place.lat, lng: place.lng } : null;
+  const rankCtx = { today, nowHHMM: gap.start, anchor: anchorPoint };
+  const reasonFor = new Map<string, { en: string; he: string }>();
+  const byRank = (tasks: Task[]): Task[] => rankOpenTasks(tasks, rankCtx).map((r) => {
+    reasonFor.set(r.task.id, { en: r.reason, he: r.reasonHe });
+    return r.task;
+  });
+
   // 3. Unfinished from an earlier day.
-  for (const task of overdue.slice(0, 3)) {
+  for (const task of byRank(overdue).slice(0, 3)) {
     if ((task.durationMinutes || 30) > slot && slot < 30) continue;
     add({
       id: `finish-${task.id}`,
@@ -389,10 +410,7 @@ export function rankGapIdeas(ctx: GapContext, limit = 4): GapIdea[] {
   );
   // Today's own unplaced work first, then anything parked on a later date —
   // both are things she meant to do, and a free hour can take either.
-  const openHere = [
-    ...stillOpen.filter((task) => task.date === today),
-    ...stillOpen.filter((task) => task.date !== today),
-  ];
+  const openHere = byRank(stillOpen);
   for (const task of openHere.slice(0, 3)) {
     if ((task.durationMinutes || 30) > slot && slot < 30) continue;
     const later = task.date !== today;
@@ -402,8 +420,12 @@ export function rankGapIdeas(ctx: GapContext, limit = 4): GapIdea[] {
       icon: '📋',
       title: task.text,
       titleHe: task.text,
-      reason: later ? 'On your list — you could do it now' : "Still open on today's list",
-      reasonHe: later ? 'ברשימה שלך — אפשר לעשות את זה עכשיו' : 'עדיין פתוח ברשימה של היום',
+      reason: reasonFor.get(task.id)?.en && reasonFor.get(task.id)!.en !== 'Still open'
+        ? reasonFor.get(task.id)!.en
+        : (later ? 'On your list — you could do it now' : "Still open on today's list"),
+      reasonHe: reasonFor.get(task.id)?.he && reasonFor.get(task.id)!.he !== 'עדיין פתוח'
+        ? reasonFor.get(task.id)!.he
+        : (later ? 'ברשימה שלך — אפשר לעשות את זה עכשיו' : 'עדיין פתוח ברשימה של היום'),
       minutes: fitMinutes(task, slot),
       taskId: task.id,
       place: taskPlace(task),
@@ -492,16 +514,171 @@ export function ideaReason(idea: GapIdea, language: AppLanguage): string {
  * once — and the screens use them to cut the hours she does not have out of
  * the timeline before a single suggestion is made.
  */
+/**
+ * What she told Meira in the chat, fetched at most every 10 minutes — the
+ * Today screen loads routines on every focus. A failed fetch keeps the last
+ * answer and says why (rule 2); it never blanks her week.
+ */
+let serverNotesCache: { at: number; routinesNotes: string; hobbies: string } | null = null;
+
+// Who to tell when her routines changed (an answer, an edit, a fact saved in
+// the chat): Today reloads its rows instead of waiting out the cache.
+const routineListeners = new Set<() => void>();
+
+/** Call when her routines changed anywhere: drops the cached copy, tells listeners. */
+export function invalidateRoutines(): void {
+  serverNotesCache = null;
+  routineListeners.forEach((fn) => {
+    try { fn(); } catch (e) { console.warn('[GapFill] routines listener failed', e); }
+  });
+}
+
+/** Subscribe to invalidateRoutines; returns the unsubscribe. */
+export function onRoutinesChanged(fn: () => void): () => void {
+  routineListeners.add(fn);
+  return () => { routineListeners.delete(fn); };
+}
+async function serverRoutineNotes(): Promise<{ routinesNotes: string; hobbies: string } | null> {
+  if (serverNotesCache && Date.now() - serverNotesCache.at < 10 * 60_000) return serverNotesCache;
+  const got = await serverRoutines().catch((e) => {
+    console.warn('[GapFill] routines told to Meira could not be read', e);
+    return null;
+  });
+  if (got) serverNotesCache = { at: Date.now(), ...got };
+  return serverNotesCache;
+}
+
 export async function loadRoutines(): Promise<Routine[]> {
-  const [profile, tasks] = await Promise.all([
+  const [profile, tasks, told, taught] = await Promise.all([
     loadProfile().catch(() => null),
     getAllTasks().catch(() => [] as Task[]),
+    serverRoutineNotes(),
+    cachedRules(),
   ]);
-  const notes = parseRoutineNotes(
-    (profile as any)?.routinesNotes,
-    (profile as any)?.hobbies,
-  );
-  return [...habitsFromHistory(tasks), ...notes];
+  // One line per routine, in BOTH stores (13.10, Koral: "no reduplications").
+  // Only when the server answered — consolidating half the picture would
+  // throw away the half we did not see.
+  if (profile && told) {
+    const fixed = await consolidateStores(profile, told.routinesNotes).catch((e) => {
+      console.warn('[Routines] consolidation skipped', e);
+      return null;
+    });
+    if (fixed) {
+      (profile as any).routinesNotes = fixed;
+      told.routinesNotes = fixed;
+    }
+    const checked = await checkGymOnMap(profile).catch((e) => {
+      console.warn('[Routines] gym address not checked', e);
+      return null;
+    });
+    if (checked) {
+      (profile as any).routinesNotes = checked;
+      told.routinesNotes = checked;
+    }
+  }
+  // Her Routines box AND what she told Meira in the chat (6.10: the kickboxing
+  // she said in WhatsApp never reached Today), each line knowing which text it
+  // came from — an answer has to be written back where the line lives.
+  const box = parseRoutineNotes((profile as any)?.routinesNotes, (profile as any)?.hobbies)
+    .map((r) => ({ ...r, origin: ['box' as const] }));
+  const said = parseRoutineNotes(told?.routinesNotes, told?.hobbies)
+    .map((r) => ({ ...r, id: `told-${r.id}`, origin: ['told' as const] }));
+  // A rule she taught Meira fills in the days she did not write (routinePolicy).
+  return [...habitsFromHistory(tasks), ...applyRoutineRules(mergeRoutineSources([...box, ...said]), taught.rules)];
+}
+
+const lineSet = (text?: string) => [...new Set(String(text || '').split(/\n+/).map((x) => x.trim()).filter(Boolean))].sort().join('\n');
+let consolidating: Promise<string | null> | null = null;
+
+/**
+ * Her gym's number, from the map (13.10, Koral: "Meira should search and check
+ * where the gym is!"). Once per gym address — the address that was checked is
+ * stored on the profile, so this is one Places call per change, not per load.
+ *
+ * When the map disagrees, the routines in BOTH stores and the workouts already
+ * on the next week's days take its number. When it cannot tell (nothing on
+ * that street, two gyms there), nothing is changed and the reason is logged.
+ */
+async function checkGymOnMap(profile: object): Promise<string | null> {
+  const lines = String((profile as any).routinesNotes || '').split(/\n+/).map((l) => l.trim()).filter(Boolean);
+  const g = gymOf(lines);
+  if (!g || (profile as any).gymCheckedFor === g.address) return null;
+  const hits = await placeTextSearch(gymQuery(g, cityOf((profile as any).homeAddress) ?? undefined), { type: 'gym' });
+  const v = settleGym(lines, g, hits);
+  console.warn(`[Routines] gym ${g.address} on the map: ${v.reason ?? 'changed'}${v.found ? ` → ${v.found}` : ''}`);
+  if (!v.changed) {
+    await saveProfile({ ...(profile as any), gymCheckedFor: g.address });
+    return null;
+  }
+  const clean = v.lines.join('\n');
+  const settled = gymOf(v.lines)?.address ?? g.address;
+  await saveProfile({ ...(profile as any), routinesNotes: clean, gymCheckedFor: settled });
+  const sent = await replaceToldRoutines(v.lines);
+  if (!sent.ok) console.warn('[Routines] gym fixed on the phone; Meira still has the old number:', sent.reason);
+  // The workouts already planned on the old number.
+  const wrong = streetWithAnyNumber(g.street);
+  for (let d = 0; d < 8; d += 1) {
+    const day = new Date(); day.setDate(day.getDate() + d);
+    const key = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+    for (const t of await getTasksForDate(key).catch(() => [] as Task[])) {
+      const loc: any = t.location && typeof t.location === 'object' ? t.location : null;
+      // Workouts only: the meetup at Palo Alto, Yigal Alon 94, is at 94.
+      const workout = t.category === 'gym' || routineConcept(t.text || '') === 'fitness';
+      if (!workout || !loc?.address || t.status === 'complete' || !wrong.test(loc.address) || loc.address.includes(v.found!)) continue;
+      const address = loc.address.replace(wrong, v.found!);
+      // New address, so the old coordinates and route are wrong too: the chain re-plans it.
+      await updateTaskFields(t.id, { location: { ...loc, address, displayName: address, lat: undefined, lng: undefined, transitPlan: undefined, leaveHomeBy: undefined, confirmed: false } } as any)
+        .catch((e) => console.warn('[Routines] workout not moved to the gym\'s real address', t.id, e));
+    }
+  }
+  return clean;
+}
+
+/**
+ * Write the consolidated list to the phone's box and to Meira, when either
+ * still holds something else (a duplicate, a misspelling, a missing gym).
+ * Returns the list now stored, or null when nothing needed changing. Once
+ * both stores hold the same clean list this is a comparison and nothing more.
+ */
+const ROUTINES_SNAPSHOT_KEY = 'lumi.routinesSnapshot.v1';
+/** null = never agreed yet (first run) — and a read that failed says so and also reads as "never". */
+async function readRoutinesSnapshot(): Promise<string[] | null> {
+  try {
+    const raw = await AsyncStorage.getItem(ROUTINES_SNAPSHOT_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return Array.isArray(parsed) ? parsed.map(String) : null;
+  } catch (e) {
+    console.warn('[Routines] snapshot unreadable; joining the two lists as before', e);
+    return null;
+  }
+}
+async function writeRoutinesSnapshot(lines: string[]): Promise<void> {
+  await AsyncStorage.setItem(ROUTINES_SNAPSHOT_KEY, JSON.stringify(lines))
+    .catch((e) => console.warn('[Routines] snapshot not saved', e));
+}
+
+async function consolidateStores(profile: object, toldNotes: string): Promise<string | null> {
+  if (consolidating) return consolidating;
+  consolidating = (async () => {
+    const boxNotes = String((profile as any).routinesNotes || '');
+    // The list both sides held when they last agreed: a line gone from ONE side was removed there
+    // on purpose and must not come back from the other (utils/routineConsolidate.threeWayRoutineLines).
+    const snapshot = await readRoutinesSnapshot();
+    const split = (t: string) => String(t || '').split(/\n+/);
+    const { lines, merged } = consolidateRoutineLines(threeWayRoutineLines(split(boxNotes), split(toldNotes), snapshot).join('\n'));
+    const clean = lines.join('\n');
+    if (!lines.length || (lineSet(boxNotes) === lineSet(clean) && lineSet(toldNotes) === lineSet(clean))) {
+      if (lines.length) await writeRoutinesSnapshot(lines);
+      return null;
+    }
+    await saveProfile({ ...(profile as any), routinesNotes: clean });
+    const sent = await replaceToldRoutines(lines);
+    if (!sent.ok) console.warn('[Routines] the phone is clean; Meira still has the old list:', sent.reason);
+    else await writeRoutinesSnapshot(lines);   // both sides agree now: the next comparison starts here
+    console.warn(`[Routines] consolidated: ${merged} duplicate line(s) folded — ${lines.length} kept`);
+    return clean;
+  })().finally(() => { consolidating = null; });
+  return consolidating;
 }
 
 /**
@@ -680,8 +857,22 @@ export async function applyGapIdea(
     if (!isOnToday) await moveTasksToDate([idea.taskId], today);
     // startAt, not gap.start: the window opens at 21:30 but an errand twenty
     // minutes away starts at 21:50, and the task must say so.
+    const at = idea.startAt || gap.start;
+    // The hour she picked wins. A left-over that carried an old fixedTime
+    // (22:00) kept it, and fixedTime outranks scheduledTime everywhere — so
+    // "Add" in the 08:40 window put it at night (5.10: "the add button does
+    // nothing — I can't add anything in the morning").
+    const placed = (await getTasksForDate(today).catch(() => [] as Task[]))
+      .find((t) => t.id === idea.taskId);
     await updateTaskFields(idea.taskId, {
-      scheduledTime: idea.startAt || gap.start,
+      scheduledTime: at,
+      ...(placed?.fixedTime ? { fixedTime: at } : {}),
+      // Its hours are the slot's: the idea's length is already cut to the
+      // window, and a 620-min left-over put at 08:40 otherwise ran to 19:00
+      // over everything after it (6.10: "update the task's hours and show it").
+      ...(idea.minutes > 0 ? { durationMinutes: idea.minutes } : {}),
+      // Placed by her hand: hers now, never swept as a stale prep block.
+      pickedAt: Date.now(),
       status: 'pending',
     });
     return;

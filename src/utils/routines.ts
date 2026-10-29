@@ -31,8 +31,10 @@
  * Tested by tests/run-gap-slots.ts.
  */
 import { Task, TaskCategory } from '../types/index';
+import { correctPlaceName } from './fuzzyMatch';
 import { DayGap } from './findGaps';
 import { addMinutes, timeToMinutes, minutesToTime } from './timeUtils';
+import { inferFromText } from './categorize';
 
 export type RoutineKind = 'habit' | 'constraint';
 
@@ -50,6 +52,16 @@ export interface Routine {
   source: 'notes' | 'history' | 'repeat';
   /** How many times it has actually happened (history only). */
   occurrences?: number;
+  /**
+   * Where `weekdays` came from (notes only). 'unsaid' keeps the old reading —
+   * empty = every day — but it is a QUESTION for her, not a fact (6.10).
+   * Absent = said (history, older callers).
+   */
+  daysFrom?: DaysFrom;
+  /** "twice a week" with no days named. */
+  perWeek?: number;
+  /** Which text the line came from: her Routines box, what she told Meira, or both. */
+  origin?: ('box' | 'told')[];
 }
 
 /** Words that make a line an obligation rather than a habit. */
@@ -71,13 +83,57 @@ const SOCIAL_SHADOW_MINUTES = 90;
 const DEFAULT_CONSTRAINT_MINUTES = 60;
 const DEFAULT_HABIT_MINUTES = 60;
 
+// ── Which days a line names (6.10) ────────────────────────────────────────────
+// ONE spec with server/routine_match.read_days, pinned by the hand-written
+// tests/fixtures/weekday-lines.json. The phone and the server used to read
+// "בשלישי", "שני ורביעי", ranges and "Tuesdays" differently, and an empty list
+// meant both "she never said" and "every day" (CLAUDE.md silent-state rule 1).
+// `from` now says which: 'unsaid' is a question for her, not a fact.
+
+/** Where a routine's days come from. 'rule' = a rule she confirmed filled them in. */
+export type DaysFrom = 'said' | 'unsaid' | 'rule' | 'varies';
+
+export interface DaysRead {
+  /** 0=Sun … 6=Sat. Empty when no day was named, or when they vary. */
+  days: number[];
+  from: Exclude<DaysFrom, 'rule'>;
+  /** "twice a week" with no days named. */
+  perWeek?: number;
+}
+
 const WEEKDAYS_EN = [
-  ['sunday', 'sun'], ['monday', 'mon'], ['tuesday', 'tue', 'tues'], ['wednesday', 'wed'],
-  ['thursday', 'thu', 'thur', 'thurs'], ['friday', 'fri'], ['saturday', 'sat'],
+  ['sunday', 'sundays', 'sun'], ['monday', 'mondays', 'mon'], ['tuesday', 'tuesdays', 'tue', 'tues'],
+  ['wednesday', 'wednesdays', 'wed'], ['thursday', 'thursdays', 'thu', 'thur', 'thurs'],
+  ['friday', 'fridays', 'fri'], ['saturday', 'saturdays', 'sat'],
 ];
 const WEEKDAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
+/** א׳ = Sunday … ו׳ = Friday, ש׳ = Saturday. */
+const DAY_LETTERS = ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש'];
+const EN_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const GERESH = "['׳’]";
+// No \b around Hebrew: it is ASCII-only in JS. A day word must not touch
+// another Hebrew letter ("שנייה" is not Monday, "ג׳ים" is not Tuesday).
+const NOT_HE = '(?:^|[^א-ת])';
 
-const EVERY_DAY_RE = /every ?day|daily|each day|כל יום|כל יומ|יומיומי/i;
+const EVERY_DAY_RE = /\b(?:every ?day|daily|each day|every (?:morning|evening|night))\b|כל יום|כל יומ|יומיומי|כל בוקר|כל ערב|כל לילה/i;
+const VARIES_RE = /ימים משתנים|משתנה כל שבוע|\bdays vary\b|\bvaries (?:each|every) week\b/i;
+/** Israel's working week: Sunday–Thursday. */
+const WORKWEEK_RE = /\bweekdays\b|ימי חול|באמצע השבוע/i;
+const WEEKEND_RE = /\bweekends?\b|סוף ה?שבוע|סופ["״]ש/i;
+const HE_PER_WEEK = /(?:(\d+)\s*פעמים|(פעמיים)|(פעם אחת|פעם))\s*ב?שבוע/;
+const EN_PER_WEEK = /\b(?:(\d+)\s*(?:x|times)|(twice)|(once))\s*(?:a|per|each|\/)?\s*week\b/i;
+
+const EN_DAY = '(sun|mon|tue|wed|thu|fri|sat)[a-z]*';
+const EN_RANGE = new RegExp(`\\b${EN_DAY}\\s*(?:-|–|to|until|through|thru)\\s*${EN_DAY}\\b`, 'gi');
+const HE_NAMES = WEEKDAYS_HE.join('|');
+const HE_RANGE = new RegExp(`${NOT_HE}[מב]?(${HE_NAMES})\\s*(?:-|–|עד)\\s*[הל]?(${HE_NAMES})(?![א-ת])`, 'g');
+// "א-ה" and "א׳–ה׳" are ranges; "ו-ד׳" is "and Wednesday" — so both letters
+// carry a geresh or neither does.
+const LETTER_RANGE = new RegExp(`${NOT_HE}([אבגדהוש])(${GERESH})?\\s*(?:-|–|עד)\\s*([אבגדהוש])(${GERESH})?(?![א-ת])`, 'g');
+// A single letter is a day only WITH its geresh: "ב 8 וחצי" is not Monday.
+const LETTER_DAY = new RegExp(`${NOT_HE}(?:ו-?)?([אבגדהוש])${GERESH}(?![א-ת])`, 'g');
+const HE_DAY_RES = WEEKDAYS_HE.map((name) => new RegExp(`${NOT_HE}(?:וב|ומ|ול|[ובמל])?${name}(?![א-ת])`));
+const EN_DAY_RES = WEEKDAYS_EN.map((names) => new RegExp(`\\b(?:${names.join('|')})\\b`, 'i'));
 
 /** Weekday number of a YYYY-MM-DD on the local calendar. */
 export function weekdayOf(date: string): number {
@@ -85,46 +141,86 @@ export function weekdayOf(date: string): number {
   return new Date(y, m - 1, d).getDay();
 }
 
+function addRange(found: Set<number>, from: number, to: number): void {
+  if (from < 0 || to < 0) return;
+  for (let i = 0; i < 7; i += 1) {
+    const day = (from + i) % 7;
+    found.add(day);
+    if (day === to) break;
+  }
+}
+
+const enIndex = (word: string) =>
+  WEEKDAYS_EN.findIndex((names) => names.some((n) => word.toLowerCase().startsWith(n)));
+
+/** Which days a line names, and whether it named any. See DaysRead. */
+export function readDays(text: string): DaysRead {
+  if (VARIES_RE.test(text)) return { days: [], from: 'varies' };
+  const found = new Set<number>();
+  for (const m of text.matchAll(EN_RANGE)) addRange(found, enIndex(m[1]), enIndex(m[2]));
+  for (const m of text.matchAll(HE_RANGE)) addRange(found, WEEKDAYS_HE.indexOf(m[1]), WEEKDAYS_HE.indexOf(m[2]));
+  for (const m of text.matchAll(LETTER_RANGE)) {
+    if (Boolean(m[2]) === Boolean(m[4])) addRange(found, DAY_LETTERS.indexOf(m[1]), DAY_LETTERS.indexOf(m[3]));
+  }
+  for (const m of text.matchAll(LETTER_DAY)) found.add(DAY_LETTERS.indexOf(m[1]));
+  HE_DAY_RES.forEach((re, i) => { if (re.test(text)) found.add(i); });
+  EN_DAY_RES.forEach((re, i) => { if (re.test(text)) found.add(i); });
+  if (WORKWEEK_RE.test(text)) [0, 1, 2, 3, 4].forEach((d) => found.add(d));
+  if (WEEKEND_RE.test(text)) [5, 6].forEach((d) => found.add(d));
+  // Named days first: "כל יום שלישי" is every TUESDAY, not every day.
+  if (found.size) return { days: [...found].sort((a, b) => a - b), from: 'said' };
+  if (EVERY_DAY_RE.test(text)) return { days: [0, 1, 2, 3, 4, 5, 6], from: 'said' };
+  const he = text.match(HE_PER_WEEK);
+  const en = text.match(EN_PER_WEEK);
+  const perWeek = he ? (he[1] ? Number(he[1]) : he[2] ? 2 : 1)
+    : en ? (en[1] ? Number(en[1]) : en[2] ? 2 : 1) : undefined;
+  return perWeek ? { days: [], from: 'unsaid', perWeek } : { days: [], from: 'unsaid' };
+}
+
 /** Which days a fragment names. Empty array = it named none. */
 function weekdaysIn(text: string): number[] {
-  if (EVERY_DAY_RE.test(text)) return [0, 1, 2, 3, 4, 5, 6];
+  return readDays(text).days;
+}
 
-  const found = new Set<number>();
+// ── Writing her answer back into her line ─────────────────────────────────────
+// "Every day or which days?" → "קיקבוקס 20:30-21:30 יגאל אלון 94 · ימי ג׳".
+// The phrase is written in the line's own script, parses back to exactly the
+// days chosen (all 127 combinations, in the fixture test), and never contains a
+// comma — commas split one line into two routines.
 
-  // Ranges first: "Mon-Fri", "ראשון עד חמישי", "א-ה".
-  const enRange = text.match(/\b(sun|mon|tue|wed|thu|fri|sat)[a-z]*\s*(?:-|–|to|until)\s*(sun|mon|tue|wed|thu|fri|sat)[a-z]*/i);
-  const heRange = text.match(/(ראשון|שני|שלישי|רביעי|חמישי|שישי|שבת)\s*(?:-|–|עד)\s*(ראשון|שני|שלישי|רביעי|חמישי|שישי|שבת)/);
-  const shortHeRange = text.match(/(?:^|[^א-ת])([אבגדהו])['׳]?\s*(?:-|–|עד)\s*([אבגדהו])['׳]?(?:[^א-ת]|$)/);
-  const HE_LETTERS = ['א', 'ב', 'ג', 'ד', 'ה', 'ו'];
+const DAYS_PHRASE_RE = /\s*·\s*(?:ימי\s[^·]+|כל יום|ימים משתנים|every day|days vary|(?:Sun|Mon|Tue|Wed|Thu|Fri|Sat)(?:\s*[&/–-]\s*(?:Sun|Mon|Tue|Wed|Thu|Fri|Sat))*)\s*$/;
 
-  const range = (from: number, to: number) => {
-    for (let i = 0; i < 7; i += 1) {
-      const day = (from + i) % 7;
-      found.add(day);
-      if (day === to) break;
-    }
-  };
-  if (enRange) {
-    range(
-      WEEKDAYS_EN.findIndex((names) => names.some((n) => enRange[1].toLowerCase().startsWith(n))),
-      WEEKDAYS_EN.findIndex((names) => names.some((n) => enRange[2].toLowerCase().startsWith(n))),
-    );
-  } else if (heRange) {
-    range(WEEKDAYS_HE.indexOf(heRange[1]), WEEKDAYS_HE.indexOf(heRange[2]));
-  } else if (shortHeRange) {
-    range(HE_LETTERS.indexOf(shortHeRange[1]), HE_LETTERS.indexOf(shortHeRange[2]));
+function isRun(days: number[]): boolean {
+  return days.length >= 3 && days.every((d, i) => i === 0 || d === days[i - 1] + 1);
+}
+
+/** The days as a short phrase in her script ('he' | 'en'), or 'varies'. */
+export function daysPhrase(days: number[] | 'varies', script: 'he' | 'en'): string {
+  if (days === 'varies') return script === 'he' ? '· ימים משתנים' : '· days vary';
+  const sorted = [...new Set(days)].filter((d) => d >= 0 && d <= 6).sort((a, b) => a - b);
+  if (!sorted.length) return '';
+  if (sorted.length === 7) return script === 'he' ? '· כל יום' : '· every day';
+  if (script === 'he') {
+    const L = (d: number) => `${DAY_LETTERS[d]}׳`;
+    if (isRun(sorted)) return `· ימי ${L(sorted[0])}–${L(sorted[sorted.length - 1])}`;
+    if (sorted.length === 1) return `· ימי ${L(sorted[0])}`;
+    return `· ימי ${sorted.slice(0, -1).map(L).join(' ')} ו-${L(sorted[sorted.length - 1])}`;
   }
+  if (isRun(sorted)) return `· ${EN_ABBR[sorted[0]]}–${EN_ABBR[sorted[sorted.length - 1]]}`;
+  if (sorted.length === 2) return `· ${EN_ABBR[sorted[0]]} & ${EN_ABBR[sorted[1]]}`;
+  return `· ${sorted.map((d) => EN_ABBR[d]).join('/')}`;
+}
 
-  // …then individual days, so "gym Mon/Wed" keeps both.
-  WEEKDAYS_EN.forEach((names, index) => {
-    if (names.some((n) => new RegExp(`\\b${n}\\b`, 'i').test(text))) found.add(index);
-  });
-  WEEKDAYS_HE.forEach((name, index) => {
-    // No \b — it is ASCII-only and never matches Hebrew (see scheduleQuestion).
-    if (new RegExp(`(?:^|[^א-ת])${name}(?:[^א-ת]|$)`).test(text)) found.add(index);
-  });
+/** Her line without a days phrase Meira appended (her own words are kept). */
+export function stripDaysPhrase(text: string): string {
+  return text.replace(DAYS_PHRASE_RE, '').trim();
+}
 
-  return [...found].sort();
+/** Her line with these days written into it, in the line's own script. */
+export function withDays(line: string, days: number[] | 'varies'): string {
+  const base = stripDaysPhrase(line);
+  const phrase = daysPhrase(days, /[֐-׿]/.test(base) ? 'he' : 'en');
+  return phrase ? `${base} ${phrase}` : base;
 }
 
 /** A clock time and, if it is written as a range, how long it lasts. */
@@ -143,16 +239,44 @@ function timeIn(text: string): { time?: string; minutes?: number } {
     if (loose[2]?.toLowerCase() === 'pm' && hour < 12) hour += 12;
     if (hour <= 23) return { time: `${String(hour).padStart(2, '0')}:00` };
   }
+  // "יוגה ב 11 ימי שישי", "ב-8 בערב" (13.10): \b never matches before a Hebrew
+  // letter, so the line above missed every Hebrew hour without a colon. A bare
+  // number counts only right after ב / בשעה, so "יגאל אלון 94" is never 94:00.
+  const he = text.match(/(?:^|[^\u0590-\u05FF\w])(?:בשעה|ו?ב)-?\s*(\d{1,2})(?![\d:])\s*(בבוקר|בערב|בלילה|בצהריים|אחה"צ)?/);
+  if (he) {
+    let hour = parseInt(he[1], 10);
+    if (he[2] && he[2] !== 'בבוקר' && hour < 12) hour += 12;
+    if (hour >= 1 && hour <= 23) return { time: `${String(hour).padStart(2, '0')}:00` };
+  }
   return {};
 }
 
-/** A rough category for a routine, so a habit can become a real task. */
-function categoryFor(text: string): TaskCategory {
-  if (/gym|workout|training|run|yoga|pilates|אימון|כושר|יוגה|ריצה/i.test(text)) return 'gym';
-  if (/class|course|lesson|study|שיעור|קורס|ללמוד|חוג/i.test(text)) return 'hobby_class';
-  if (/work|office|shift|עבודה|משמרת/i.test(text)) return 'work';
-  if (/kids?|school|pick ?up|ילדים|גן|בית ספר|לאסוף|להסיע/i.test(text)) return 'general';
-  return 'general';
+/**
+ * A category for a routine, so a habit can become a real task.
+ *
+ * ONE table, not a fifth copy (15.10): this used to be three regexes of its
+ * own, and `workout` was written without the optional space — so "work out"
+ * missed the gym line, hit /work|office|shift/ on the next one, and her
+ * workout was filed under 💼 Work. A workout is a workout in every spelling
+ * `routineConcept` already knows (FITNESS_RE: "work out", אימון, מתאמן…);
+ * everything else is `categorize.inferFromText`, the same table the server
+ * and the calendar import read.
+ */
+export function categoryFor(text: string): TaskCategory {
+  return routineConcept(text) === 'fitness' ? 'gym' : inferFromText(text).category;
+}
+
+/**
+ * A workout that was filed as work (the bug above) is a gym task again.
+ *
+ * Pure. Returns the SAME object when there is nothing to heal, so a caller can
+ * tell by identity whether anything changed. Used by TaskStorage's read path
+ * and by the routine card.
+ */
+export function healWorkoutCategory<T extends { text: string; category?: TaskCategory | string }>(task: T): T {
+  if (task.category !== 'work') return task;
+  if (routineConcept(task.text || '') !== 'fitness') return task;
+  return { ...task, category: 'gym' };
 }
 
 /**
@@ -165,9 +289,11 @@ function categoryFor(text: string): TaskCategory {
 export function parseRoutineNotes(notes?: string, hobbies?: string): Routine[] {
   const out: Routine[] = [];
   const push = (fragment: string, index: number) => {
-    const text = fragment.trim();
+    // "עיגל אלון 96" is how speech heard יגאל אלון — read it as she meant it.
+    const text = correctPlaceName(fragment.trim());
     if (text.length < 3) return;
-    const weekdays = weekdaysIn(text);
+    const read = readDays(text);
+    const weekdays = read.days;
     const { time, minutes } = timeIn(text);
     const isConstraint = CONSTRAINT_RE.test(text);
     // A fragment that names neither a day nor an hour is context, not a
@@ -182,10 +308,15 @@ export function parseRoutineNotes(notes?: string, hobbies?: string): Routine[] {
       durationMinutes: minutes ?? (isConstraint ? DEFAULT_CONSTRAINT_MINUTES : DEFAULT_HABIT_MINUTES),
       category: categoryFor(text),
       source: 'notes',
+      daysFrom: read.from,
+      ...(read.perWeek ? { perWeek: read.perWeek } : {}),
     });
   };
 
-  (notes || '').split(/[,;\n•]/).forEach(push);
+  // One routine per LINE, not per comma (11.10, Koral: "אימון · ראשון, שני,
+  // שלישי · 20:00 · יגאל אלון 94" showed tomorrow THREE times — the days list
+  // was cut into three routines, and only the last one kept the address).
+  routineLines(notes).forEach(push);
   // Hobbies are habits with no day of their own — kept only when she wrote a
   // day or an hour next to one ("climbing Tuesdays").
   (hobbies || '').split(/[,;\n•]/).forEach((f, i) => push(f, 1000 + i));
@@ -310,7 +441,8 @@ export function alreadyPlanned(routine: Routine, tasks: Task[]): boolean {
  */
 export function constrainGaps(gaps: DayGap[], routines: Routine[], date: string): DayGap[] {
   const blocks = routinesForDate(routines, date)
-    .filter((r) => r.kind === 'constraint' && r.time)
+    // An obligation whose days change week to week cannot block every day.
+    .filter((r) => r.kind === 'constraint' && r.time && r.daysFrom !== 'varies')
     .map((r) => ({ start: r.time!, end: addMinutes(r.time!, r.durationMinutes) }));
   if (!blocks.length) return gaps;
 
@@ -411,7 +543,43 @@ const ROUTINE_STOP = new Set([
   'של', 'עם', 'את', 'אל', 'לי', 'לה', 'לו', 'היום', 'מחר',
 ]);
 /** Kinds of activity — the same table as utils/knownPlaces, fitness only matters here. */
-const FITNESS_RE = /gym|workout|training|fitness|yoga|pilates|kickbox|boxing|crossfit|חדר כושר|כושר|אימון|יוגה|פילאטיס|קיקבוקס|קיק בוקס|איגרוף|אגרוף|קרוספיט/i;
+const FITNESS_RE = /gym|work ?out|training|\btrain\b|fitness|yoga|pilates|kickbox|boxing|crossfit|חדר כושר|כושר|אימו[נן]|להתאמן|מתאמ[נן]|יוגה|פילאטיס|קיקבוקס|קיק בוקס|איגרוף|אגרוף|קרוספיט/i;
+
+/** A workout with a name of its own: Pilates on Sunday is not "a workout" on Sunday. */
+const NAMED_FITNESS: Array<[string, RegExp]> = [
+  ['yoga', /yoga|יוגה/i], ['pilates', /pilates|פילאטיס/i], ['kickbox', /kickbox|קיקבוקס|קיק בוקס/i],
+  ['boxing', /boxing|איגרוף|אגרוף/i], ['crossfit', /crossfit|קרוספיט/i],
+];
+
+/** What a routine IS, across languages and spellings: 'fitness' for any workout. */
+export function routineConcept(text: string): string {
+  if (FITNESS_RE.test(text)) return 'fitness';
+  return significant(stripDaysPhrase(text)).sort().join(' ');
+}
+
+const namedKind = (text: string) => NAMED_FITNESS.find(([, re]) => re.test(text))?.[0] ?? null;
+
+/**
+ * Two lines that are ONE routine (11.10, Koral: the same workout, told to
+ * Meira five ways, was five cards on "Tomorrow"): the same kind of thing, on
+ * a shared day (or one has no day), at the same hour (or one has none).
+ * Two named workouts must be the same kind; a named one and a plain "workout"
+ * are one only on the same day at the same hour ("yoga at 11 on Friday" and
+ * "morning workout Friday 11:00").
+ */
+export function sameRoutine(a: Routine, b: Routine): boolean {
+  if (routineConcept(a.text) !== routineConcept(b.text) || !routineConcept(a.text)) return false;
+  const ka = namedKind(a.text);
+  const kb = namedKind(b.text);
+  if (ka && kb && ka !== kb) return false;
+  const strict = Boolean(ka) !== Boolean(kb);
+  if (strict && !(a.time && a.time === b.time)) return false;
+  if (a.time && b.time && a.time !== b.time) return false;
+  const shared = a.weekdays.some((d) => b.weekdays.includes(d));
+  if (strict && !shared) return false;
+  if (a.weekdays.length && b.weekdays.length && !shared) return false;
+  return true;
+}
 
 const cleanWord = (t: string) => t.replace(/^[.,;:!?()"[\]]+|[.,;:!?()"[\]]+$/g, '');
 const scriptOf = (w: string) => (/[֐-׿]/.test(w) ? 'he' : 'latin');
@@ -494,15 +662,63 @@ export interface RoutineMatch {
 }
 
 /** Split her notes into lines; a comma piece that is only a city stays with its line. */
+/**
+ * Her Routines box WITHOUT one routine — the delete (×) in You (21.10, Koral: "I can't delete a
+ * routine that is already written in the profile").
+ *
+ * The old delete cut every line at its commas and kept the pieces that were not equal to the
+ * routine's text. A routine is a whole LINE ("אימון · יום ראשון, שני ושלישי · 20:00 · יגאל אלון 76,
+ * תל אביב" has two commas inside it), so no piece ever equalled it: nothing was removed, and
+ * "removed" was still reported. And the text it compared with had been through correctPlaceName
+ * on its way to the screen, so a line stored as "עיגל אלון 96" never matched at all.
+ *
+ * Same unit as routineLines: a line with " · " is ONE routine; any other line is a list of comma
+ * pieces. `removed` = how many routines went; 0 means it was not there, and the caller says so.
+ */
+export function removeRoutineFromNotes(notes: string, routineText: string): { notes: string; removed: number } {
+  const norm = (t: string) => correctPlaceName(String(t || '')).trim().replace(/\s+/g, ' ').toLowerCase();
+  const target = norm(routineText);
+  if (!target) return { notes: String(notes || ''), removed: 0 };
+  let removed = 0;
+  const rows: string[] = [];
+  for (const row of String(notes || '').split('\n')) {
+    if (row.includes(' · ')) {
+      if (row.split(/[;•]+/).some((p) => norm(p) === target)) {
+        const keep = row.split(/[;•]+/).filter((p) => norm(p) !== target);
+        removed += row.split(/[;•]+/).length - keep.length;
+        if (keep.join('').trim()) rows.push(keep.join('; ').trim());
+      } else rows.push(row);
+      continue;
+    }
+    const pieces = row.split(/[;•]+/).flatMap((chunk) => chunk.split(','));
+    const keep = pieces.filter((p) => norm(p) !== target);
+    removed += pieces.length - keep.length;
+    const text = keep.map((p) => p.trim()).filter(Boolean).join(', ');
+    if (text) rows.push(text);
+    else if (!pieces.some((p) => p.trim())) rows.push(row);   // a blank line stays a blank line
+  }
+  return { notes: rows.join('\n'), removed };
+}
+
 function routineLines(notes?: string): string[] {
   const out: string[] = [];
   for (const line of String(notes || '').split(/[;\n•]+/)) {
     const pieces: string[] = [];
+    // A line Meira wrote ("what · days · time · place") is ONE routine.
+    if (line.includes(' · ')) {
+      if (line.trim()) pieces.push(line.trim());
+      out.push(...pieces.filter((p) => p.length >= 3));
+      continue;
+    }
     for (const raw of line.split(',')) {
       const piece = raw.trim();
       if (!piece) continue;
       const onlyCity = ROUTINE_CITIES.some((c) => c.toLowerCase() === piece.toLowerCase());
-      if (pieces.length && (onlyCity || !significant(piece).length)) pieces[pieces.length - 1] += `, ${piece}`;
+      // "Sunday, Monday, Tuesday at 8": a piece that starts with a day after a
+      // piece that ended with one continues the same list of days.
+      const prev = pieces.length ? pieces[pieces.length - 1].split(/\s+/).pop() || '' : '';
+      const daysGoOn = weekdaysIn(cleanWord(prev)).length > 0 && weekdaysIn(cleanWord(piece.split(/\s+/)[0])).length > 0;
+      if (pieces.length && (onlyCity || daysGoOn || !significant(piece).length)) pieces[pieces.length - 1] += `, ${piece}`;
       else pieces.push(piece);
     }
     out.push(...pieces.filter((p) => p.length >= 3));

@@ -40,6 +40,7 @@ import re
 import time
 from typing import Any, Optional
 
+import ai_gate
 import config
 import llm_usage
 import model_router
@@ -83,10 +84,9 @@ Return JSON only:
 
 
 async def _llm_json(source: str, system: str, user: str, max_tokens: int) -> Optional[dict]:
-    from openai import AsyncOpenAI
 
     model = model_router.pick(source, prompt_chars=len(system) + len(user))
-    client = AsyncOpenAI(api_key=config.LLM_API_KEY, base_url=config.LLM_ENDPOINT)
+    client = ai_gate.client()
     try:
         resp = await client.chat.completions.create(
             model=model,

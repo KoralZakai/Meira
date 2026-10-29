@@ -12,7 +12,7 @@
  * Never throws. A place we cannot read is a place we do not know, and asking
  * is the correct behaviour for that.
  */
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from './EncryptedStorage';  // AES-256-GCM at rest (7.10)
 import {
   KnownPlaces, rememberPlace, resolvePlace, ResolvedPlace,
 } from '../utils/knownPlaces';

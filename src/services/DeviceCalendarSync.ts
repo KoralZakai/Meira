@@ -26,11 +26,13 @@
  * Rule 1: `syncDeviceCalendars` returns WHY it read nothing — "off",
  * "permission denied" and "a free month" are three different results.
  */
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from './EncryptedStorage';  // AES-256-GCM at rest (7.10)
+import { readByGoogleApi, GoogleLink, GoogleSkip } from '../utils/googleCalendarSkip';
 import * as Calendar from 'expo-calendar/legacy';
 
 import { GoogleService } from './GoogleService';
-import { importCalendarTasks } from './GoogleSync';
+import { importCalendarTasks, noteCancellationsFor } from './GoogleSync';
+import { datesAhead } from '../utils/cancelledEvents';
 import { calendarEventToTask } from '../utils/calendarEventTask';
 import { deviceEventToCalendarEvent } from '../utils/deviceEvent';
 import { getTodayString, isExpoGo } from '../utils/timeUtils';
@@ -58,6 +60,8 @@ export interface DeviceCalendarInfo {
   included: boolean;
   /** Skipped because GoogleSync already reads it by API. */
   readByGoogle: boolean;
+  /** Skipped, but only because the connected Google account's email is unknown. */
+  googleUnsure?: boolean;
 }
 
 export type DeviceCalendarFailure =
@@ -117,11 +121,22 @@ function accountOf(c: Calendar.Calendar): { account: string; accountType: string
   };
 }
 
-/** Google's primary calendar, when GoogleSync is already reading it by API. */
-function isReadByGoogle(c: Calendar.Calendar, googleConnected: boolean): boolean {
-  if (!googleConnected) return false;
-  const { accountType } = accountOf(c);
-  return accountType === 'com.google' && Boolean(c.isPrimary);
+/** Is this the primary calendar of the Google account GoogleSync reads by API?
+ *  Only THAT account's — see utils/googleCalendarSkip for the 6.10 bug. */
+function googleSkip(c: Calendar.Calendar, link: GoogleLink): GoogleSkip {
+  return readByGoogleApi({ ...accountOf(c), isPrimary: Boolean(c.isPrimary) }, link);
+}
+
+async function googleLink(): Promise<GoogleLink> {
+  try {
+    // Only the accounts whose calendar is read by API are skipped here; an
+    // account she connected for its mail alone is read through the phone.
+    const { emails, unknown } = await GoogleService.googleCalendarEmails();
+    return { connected: emails.length > 0 || unknown, emails, unknown };
+  } catch (e) {
+    console.warn('[DeviceCalendar] Google account unknown:', String((e as Error)?.message || e).slice(0, 120));
+    return { connected: false };
+  }
 }
 
 async function eventCalendars(): Promise<Calendar.Calendar[]> {
@@ -136,18 +151,18 @@ export async function listDeviceCalendars(): Promise<{ calendars: DeviceCalendar
   try {
     const perm = await Calendar.getCalendarPermissionsAsync();
     if (perm.status !== 'granted') return { calendars: [], error: 'permission_denied' };
-    const [settings, googleConnected, cals] = await Promise.all([
-      loadSettings(), GoogleService.isGoogleConnected().catch(() => false), eventCalendars(),
-    ]);
+    const [settings, link, cals] = await Promise.all([loadSettings(), googleLink(), eventCalendars()]);
     return {
       calendars: cals.map((c) => {
-        const readByGoogle = isReadByGoogle(c, googleConnected);
+        const skip = googleSkip(c, link);
+        const readByGoogle = skip !== 'no';
         return {
           id: c.id,
           title: c.title || c.name || 'Calendar',
           ...accountOf(c),
           color: c.color,
           readByGoogle,
+          googleUnsure: skip === 'unsure',
           included: !readByGoogle && !settings.excluded.includes(c.id),
         };
       }),
@@ -217,10 +232,10 @@ export async function syncDeviceCalendars(lang: AppLanguage, days = SYNC_DAYS): 
     if (perm.status !== 'granted') {
       return finish({ ok: false, added: 0, events: 0, calendarsRead: 0, error: 'permission_denied' });
     }
-    const googleConnected = await GoogleService.isGoogleConnected().catch(() => false);
+    const link = await googleLink();
     const cals = await eventCalendars();
     if (!cals.length) return finish({ ok: false, added: 0, events: 0, calendarsRead: 0, error: 'no_calendars' });
-    const chosen = cals.filter((c) => !isReadByGoogle(c, googleConnected) && !settings.excluded.includes(c.id));
+    const chosen = cals.filter((c) => googleSkip(c, link) === 'no' && !settings.excluded.includes(c.id));
     if (!chosen.length) return finish({ ok: false, added: 0, events: 0, calendarsRead: 0, error: 'all_excluded' });
     const byId = new Map(chosen.map((c) => [c.id, c]));
 
@@ -240,6 +255,10 @@ export async function syncDeviceCalendars(lang: AppLanguage, days = SYNC_DAYS): 
         calendarName: cal ? `${cal.title}` : undefined,
       }));
     }
+    // The read SUCCEEDED for every chosen calendar: what it no longer lists was cancelled (strictly —
+    // two syncs, and a card that asks). Before the early return: a month with nothing left is news.
+    await noteCancellationsFor('dcal-', datesAhead(today, days), new Set(tasks.map((t) => t.id)),
+      chosen.map((c) => c.id).sort().join('|'), tasks);
     const added = tasks.length ? await importCalendarTasks(tasks, lang, 'device') : 0;
     console.warn(`[DeviceCalendar] read ${chosen.length} calendar(s), ${raw.length} event(s) → ${added} added/corrected`);
     return finish({ ok: true, added, events: raw.length, calendarsRead: chosen.length });

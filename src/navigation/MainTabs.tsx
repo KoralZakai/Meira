@@ -4,6 +4,7 @@ import CustomTabBar from '../components/CustomTabBar';
 import TodaySchedule from '../screens/TodaySchedule';
 import MyTasks from '../screens/MyTasks';
 import TripsScreen from '../screens/TripsScreen';
+import CoachChatScreen from '../screens/CoachChatScreen';
 import { MainTabsParamList } from '../types/navigation';
 
 const Tab = createBottomTabNavigator<MainTabsParamList>();
@@ -13,10 +14,15 @@ export default function MainTabs() {
     <Tab.Navigator
       tabBar={(props) => <CustomTabBar {...props} />}
       screenOptions={{ headerShown: false }}
+      initialRouteName="Meira"
     >
+      {/* v3 (Koral, 27.10): "the main screen will be the chat" — Meira greets,
+          offers, and does what she is asked. Today and the rest are a tile or a tab away. */}
+      <Tab.Screen name="Meira" component={CoachChatScreen} options={{ tabBarLabel: 'Meira', tabBarIcon: '💬' } as any} />
       {/* Today IS the timeline. It owns the day chips (today / tomorrow / any
           date) that were the Timeline tab's only unique capability. */}
-      <Tab.Screen name="Today" component={TodaySchedule} options={{ tabBarLabel: 'Today', tabBarIcon: '☀️' } as any} />
+      {/* Not lazy: Today counts the 🔔 (waitingList) that the home screen's bell shows too. */}
+      <Tab.Screen name="Today" component={TodaySchedule} options={{ tabBarLabel: 'Today', tabBarIcon: '☀️', lazy: false } as any} />
       <Tab.Screen name="Trips" component={TripsScreen} options={{ tabBarLabel: 'Trips', tabBarIcon: '🗺️' } as any} />
       <Tab.Screen name="Tasks" component={MyTasks} options={{ tabBarLabel: 'Tasks', tabBarIcon: '☑️' } as any} />
       {/* Profile is not a tab any more: ☰ Menu in the tab bar opens it as a

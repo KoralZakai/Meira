@@ -15,7 +15,7 @@
  * Created through addTask, like anything she types; the ids are remembered so
  * "Clear demo day" removes exactly these and nothing of hers.
  */
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from './EncryptedStorage';  // AES-256-GCM at rest (7.10)
 import { addTask, deleteTasks } from './TaskStorage';
 import { ensureTravelChain, dateOffset } from './GoogleSync';
 import { Task, AppLanguage } from '../types/index';

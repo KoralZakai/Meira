@@ -35,20 +35,23 @@ def test_times_are_normalised_and_nonsense_is_refused():
     assert "sleepTime" not in merged
 
 
+REST = {"wakeTime": "07:00", "morningConfirmed": True, "routines": "none",
+        "workAddress": "none", "homeAddress": "a", "hasCar": False}
+
+
 def test_completeness_is_computed_not_asserted():
     # The model used to be able to end onboarding by claiming isComplete.
     still_missing = profile_extract.missing_fields({"name": "קורל"})
-    assert "transportMode" in still_missing
+    assert "wakeTime" in still_missing
     assert "morningHabitsOrTotal" in still_missing
     assert profile_extract.missing_fields({
-        "name": "קורל", "transportMode": "bus", "workStartTime": "09:00",
-        "sleepTime": "23:30", "totalMorningMinutesEstimate": 45,
+        "name": "קורל", "sleepTime": "23:30", "totalMorningMinutesEstimate": 45, **REST,
     }) == []
 
 
 def test_two_habits_count_as_a_morning_routine():
     assert profile_extract.missing_fields({
-        "name": "x", "transportMode": "car", "workStartTime": "09:00", "sleepTime": "23:00",
+        "name": "x", "sleepTime": "23:00", **REST,
         "morningHabits": [{"habit": "shower", "estimatedMinutes": 15},
                           {"habit": "coffee", "estimatedMinutes": 10}],
     }) == []

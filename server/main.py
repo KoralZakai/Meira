@@ -28,6 +28,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from contextlib import asynccontextmanager
 
 import asyncio
+import public_pages
 
 import config
 import user_store
@@ -37,13 +38,16 @@ from lumi_agent import (handle_whatsapp_message, get_graph_diagram,
                         _location_from_departure)
 # One turn of the brain, shared by every channel (see server/agent_turn.py).
 import agent_turn
+import url_safety
 import app_auth
 import rate_limit
 import importlib
 
 import account_deletion
+import identity_keys
 import secure_store
 import user_memory
+import phone_links
 import supabase_tasks
 import task_store
 import travel_prefs
@@ -63,6 +67,7 @@ import conversation
 import judge_service
 import personality_handoff
 import bug_reports
+import chat_feedback
 import stt
 import dedup_service
 import routes_app
@@ -71,10 +76,11 @@ import secret_guard
 import tz as _tz
 
 logging.basicConfig(level=logging.INFO)
+import log_redact  # noqa: E402 — must wrap the handler basicConfig just made
+log_redact.install()
 logger = logging.getLogger(__name__)
 
 
-@asynccontextmanager
 def _encrypt_legacy_stores() -> None:
     """Encrypt any store still sitting in plaintext, once, at boot.
 
@@ -139,8 +145,10 @@ def _warn_about_open_doors() -> None:
         )
 
 
+@asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup/shutdown: ready the local user store and run the reminder poller."""
+    log_redact.install()   # again: uvicorn attached its handlers after import
     await init_pool()
     _warn_about_open_doors()
     _encrypt_legacy_stores()
@@ -149,18 +157,32 @@ async def lifespan(app: FastAPI):
     logger.info("reminder poller started")
     # User-created agents (agents_store/agent_runner): fired by their own poller.
     agent_task = asyncio.create_task(agent_runner.run_agent_loop())
+    # Daily: old conversation/provenance rows out of Supabase, stale pins wiped.
+    import privacy
+    retention_task = asyncio.create_task(privacy.run_retention_loop())
+    # Once: adopt the phone links made before proof was required (phone_links).
+    try:
+        await phone_links.grandfather()
+    except Exception as exc:  # noqa: BLE001 — retried next boot; nobody is linked meanwhile
+        logger.error("phone_links grandfather failed: %s", exc)
     yield
     reminder_task.cancel()
     agent_task.cancel()
+    retention_task.cancel()
     await close_pool()
 
 
-app = FastAPI(title="Lumi-App", version="1.0", lifespan=lifespan)
+# No /docs, /redoc or /openapi.json (8.10): they handed anyone with a browser
+# the full map of every door, admin and diag included. The app and MCP clients
+# never read them.
+app = FastAPI(title="Lumi-App", version="1.0", lifespan=lifespan,
+              docs_url=None, redoc_url=None, openapi_url=None)
 
 # The app's own doors (thin client: capture + schedule). First router in this
 # file — everything above it predates the split and moves out gradually.
 app.include_router(routes_app.router)
 app.include_router(mcp_server.router)
+app.include_router(public_pages.router)
 
 # In-memory dedup: WhatsApp retries the same msg_id up to 4× if it thinks we're slow.
 # Keep the last 200 processed IDs (tiny memory footprint, clears on restart which is fine).
@@ -170,23 +192,15 @@ _seen_msg_ids_order: list[str] = []
 
 @app.get("/health")
 async def health():
-    """Liveness, and which models actually answer.
+    """Liveness, and nothing else.
 
-    This used to print config.LLM_MODEL — a legacy single-model setting that no
-    chat call reads any more — so anyone checking the live server was told
-    "Qwen" while every turn ran on Nemotron through model_router. The tiers
-    below are the ones `model_router.pick` chooses from.
-
-    `extraction_override` is NEBIUS_MODEL_CHEAP: when set, task / profile /
-    email extraction use it INSTEAD of the small tier. Named here so a
-    non-Nemotron override cannot hide behind the tier list.
+    Until 19.10 this also printed the model tiers and the extraction override to
+    anyone who asked. Nothing reads them here — Fly's check, the ship skill and
+    the web pinger only look at the status — and an open door is the wrong place
+    to publish the server's configuration. Which model each tier points at, and
+    whether Nebius serves it, is GET /diag/models (admin token).
     """
-    return {
-        "status": "ok",
-        "provider": "Nebius Token Factory",
-        "models": dict(model_router.MODELS),
-        "extraction_override": config.LLM_MODEL_CHEAP,
-    }
+    return {"status": "ok"}
 
 
 def _jwt_role(token: str) -> str:
@@ -524,9 +538,24 @@ async def debug_graph(request: Request):
     return {"mermaid": get_graph_diagram()}
 
 
+def _client_ip(request: Request) -> str:
+    """The caller's address: Fly's proxy puts it in Fly-Client-IP."""
+    return (request.headers.get("fly-client-ip")
+            or (request.client.host if request.client else "")
+            or "unknown")
+
+
 @app.get("/personality/resolve")
-async def resolve_personality_handoff(token: str):
-    """The app calls this right after opening a lumi://personality?token=... link."""
+async def resolve_personality_handoff(token: str, request: Request):
+    """The app calls this right after opening a lumi://personality?token=... link.
+
+    Open on purpose (the token is the credential), so it is counted per client
+    IP: guessing a 256-bit token is hopeless, but each try is a database read.
+    """
+    if not rate_limit.allow(f"resolve:{_client_ip(request)}", rate_limit.RESOLVE_LIMIT,
+                            rate_limit.RESOLVE_WINDOW_S):
+        return JSONResponse({"error": "rate_limited"}, status_code=429,
+                            headers={"Retry-After": str(int(rate_limit.RESOLVE_WINDOW_S))})
     user_id = await personality_handoff.resolve_handoff(token)
     if not user_id:
         return JSONResponse({"error": "invalid_or_expired"}, status_code=410)
@@ -714,12 +743,48 @@ async def agent_chat(request: Request):
             # What she set on the Profile screen (transport, home, routines).
             # See agent_turn.sync_app_profile for what is accepted.
             profile=body.get("profile") if isinstance(body.get("profile"), dict) else None,
+            # The Meira message she is answering (WhatsApp-style reply). Kept
+            # out of `message`, so her own words stay hers to parse.
+            reply_to=str(body.get("reply_to") or "").strip()[:1200] or None,
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("agent_chat failed: %s", exc)
         return JSONResponse({"error": "agent failed"}, status_code=502)
 
     return result
+
+
+@app.post("/agent/feedback")
+async def agent_feedback(request: Request):
+    """👍 / 👎 on one Meira reply (27.10). Who comes from the verified token,
+    never the body; texts are capped and location-stripped (chat_feedback)."""
+    try:
+        caller = await app_auth.identify(request.headers.get("authorization"))
+    except app_auth.AuthError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=401)
+    if not rate_limit.allow(f"feedback:{caller['key']}", 60, 3600):
+        return JSONResponse({"error": "too many requests"}, status_code=429)
+    try:
+        body = await request.json()
+    except ValueError:
+        body = None
+    if not isinstance(body, dict):
+        return JSONResponse({"error": "a JSON object is required"}, status_code=400)
+    reaction = body.get("reaction")
+    if reaction not in chat_feedback.REACTIONS:
+        return JSONResponse({"error": "reaction must be up, down or none"}, status_code=400)
+    ok = chat_feedback.record(caller["key"], reaction, str(body.get("reply") or ""),
+                              str(body.get("question") or ""), str(body.get("message_id") or ""))
+    return {"ok": ok} if ok else JSONResponse({"ok": False, "error": "not stored"}, status_code=503)
+
+
+@app.get("/admin/chat-feedback")
+async def admin_chat_feedback(request: Request, reaction: Optional[str] = None):
+    """The reactions, newest first — 👎 ones become golden cases."""
+    denied = _require_admin(request)
+    if denied:
+        return denied
+    return {"feedback": chat_feedback.list_all(reaction=reaction)}
 
 
 @app.get("/usage")
@@ -729,7 +794,15 @@ async def get_usage(request: Request):
     # SECURITY: discloses spend and usage volume.
     if (denied := _require_admin(request)) is not None:
         return denied
-    return llm_usage.summary()
+    report = llm_usage.summary()
+    import user_quota
+    import ai_gate
+    report["balance"] = ai_gate.balance(fresh=True)
+    report["per_person"] = {"daily_requests": user_quota.daily_requests(),
+                            "daily_limit_usd": user_quota.daily_limit(),
+                            "monthly_limit_usd": user_quota.monthly_limit(),
+                            "top": user_quota.top(10)}
+    return report
 
 
 @app.get("/diag/models")
@@ -799,6 +872,28 @@ async def patch_agent(phone: str, agent_id: str, request: Request,
     if not agent:
         return JSONResponse({"error": "not_found"}, status_code=404)
     return {"agent": agent}
+
+
+@app.post("/agents/{phone}/{agent_id}/run")
+async def run_agent_now(phone: str, agent_id: str,
+                        caller: dict = Depends(app_auth.require_caller)):
+    """Run one agent NOW, so she sees what it writes without waiting for its
+    hour. Does not move its schedule. {ok} or {error: not_found | empty |
+    whatsapp_failed | crashed}.
+
+    AUTH: Supabase bearer token required; scoped to the caller's own agents."""
+    key = app_auth.storage_key_for(caller, phone)
+    agent = agents_store.get_agent(key, agent_id)
+    if not agent:
+        return JSONResponse({"error": "not_found"}, status_code=404)
+    try:
+        reason = await agent_runner._run_agent(agent)
+    except Exception as exc:  # noqa: BLE001 — say it failed, never 500 silently
+        logger.error("agent %s run-now crashed: %s", agent_id, exc)
+        return JSONResponse({"error": "crashed"}, status_code=502)
+    if reason:
+        return JSONResponse({"error": reason}, status_code=502)
+    return {"ok": True}
 
 
 @app.delete("/agents/{phone}/{agent_id}")
@@ -921,13 +1016,24 @@ async def delete_account(caller: dict = Depends(app_auth.require_caller)):
     failure is visible instead of being reported as success.
     """
     key = caller["key"]
-    result = await account_deletion.erase_account(key, caller.get("userId"))
+    # Every key her data may sit under — the account id the agent uses, her
+    # phone the app routes used, and the pre-link id — not just one of three.
+    result = await account_deletion.erase_account(
+        key, caller.get("userId"), extra_keys=identity_keys.all_keys(caller))
     logger.warning("account deletion requested and %s",
                    "completed" if result["ok"] else "INCOMPLETE")
     if not result["ok"]:
         # 207: some of it went. The app must NOT tell the user they are gone.
         return JSONResponse(result, status_code=207)
     return result
+
+
+@app.get("/admin/links")
+async def admin_links(request: Request):
+    """Proved WhatsApp ↔ account links, and grandfathered pairs left for review."""
+    if (denied := _require_admin(request)) is not None:
+        return denied
+    return phone_links.summary()
 
 
 @app.get("/link/verify/{phone}")
@@ -1921,15 +2027,24 @@ async def _strip_dead_links(text: str, lang: str) -> str:
         import httpx
 
         async def _alive(u: str) -> bool:
+            # Redirects by hand: each hop must be public too (url_safety), or a
+            # public link could bounce the request into the machine's network.
             try:
                 async with httpx.AsyncClient(
-                    timeout=6, follow_redirects=True,
+                    timeout=6, follow_redirects=False,
                     headers={"User-Agent": "Mozilla/5.0 (compatible; LumiBot)"},
                 ) as c:
-                    r = await c.head(u)
-                    if r.status_code >= 400 or r.status_code == 405:
-                        r = await c.get(u)  # some sites reject HEAD
-                    return r.status_code < 400
+                    for _hop in range(4):
+                        if not await url_safety.is_public_url(u):
+                            return False
+                        r = await c.head(u)
+                        if r.status_code >= 400 or r.status_code == 405:
+                            r = await c.get(u)  # some sites reject HEAD
+                        if r.is_redirect and r.headers.get("location"):
+                            u = str(r.url.join(r.headers["location"]))
+                            continue
+                        return r.status_code < 400
+                    return False
             except Exception:  # noqa: BLE001 — unreachable = dead
                 return False
 
@@ -1959,7 +2074,8 @@ def _signature_ok(raw: bytes, header: str | None) -> bool:
 
     Setting the secret (`fly secrets set WHATSAPP_APP_SECRET=...`) turns
     enforcement on with no code change — which is the whole point of writing it
-    now rather than when the account exists.
+    now rather than when the account exists. Phone LINKING never accepts an
+    unsigned webhook (_link_proof_trusted).
     """
     if not config.WHATSAPP_APP_SECRET:
         return True
@@ -1967,6 +2083,40 @@ def _signature_ok(raw: bytes, header: str | None) -> bool:
         return False
     expected = hmac.new(config.WHATSAPP_APP_SECRET.encode(), raw, hashlib.sha256).hexdigest()
     return hmac.compare_digest(header[7:], expected)
+
+
+
+def _link_proof_trusted() -> bool:
+    """A phone-link code proves the number only if `from` is signed by Meta.
+
+    _signature_ok accepts unsigned webhooks when the secret is unset, which is
+    tolerable for chat but not for linking: the link is what grants an account a
+    number's tasks and memory. So linking needs the secret, always.
+    """
+    return bool(config.WHATSAPP_APP_SECRET)
+
+
+@app.post("/app/profile/routines")
+async def app_profile_routines(request: Request):
+    """What she told Meira about her week, for the phone's schedule.
+
+    6.10, "why doesn't Meira take my routines into account?": the kickboxing she
+    told Meira in the chat lives in the server's routinesNotes, and no phone
+    code could read it — the Today screen planned around the app's Routines box
+    alone. Read-only; the verified caller's own profile, never another's.
+    Header: Authorization: Bearer <supabase token>. Returns {routinesNotes, hobbies}.
+    """
+    try:
+        caller = await app_auth.identify(request.headers.get("authorization"))
+    except app_auth.AuthError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=401)
+    # The brain key, not the caller's phone: the agent saves under the account
+    # id, and the routes reading the phone's record returned an empty week.
+    prof = user_profile.get_profile(identity_keys.brain_key(caller)) or {}
+    return {
+        "routinesNotes": str(prof.get("routinesNotes") or "")[:4000],
+        "hobbies": str(prof.get("hobbies") or "")[:2000],
+    }
 
 
 @app.post("/webhook/whatsapp")
@@ -2027,6 +2177,32 @@ async def whatsapp_webhook(request: Request):
     _seen_msg_ids_order.append(msg_id)
     if len(_seen_msg_ids_order) > 200:
         _seen_msg_ids.discard(_seen_msg_ids_order.pop(0))
+
+    # "קוד חיבור למאירה: 123456" — the app's WhatsApp-link proof (phone_links).
+    # `phone` is Meta's signed `from`, so the number is proved by the transport.
+    if msg.get("type") == "text" and phone_links.looks_like_code(content):
+        await WhatsAppService.mark_as_read(msg_id)
+        if not _link_proof_trusted():
+            # Unsigned, `from` is whatever the sender wrote — linking on it would
+            # hand any account any number's tasks and memory. Fail closed.
+            logger.warning("SECURITY: phone link refused — WHATSAPP_APP_SECRET is not set")
+            await WhatsAppService.send_message(
+                phone, "חיבור הוואטסאפ לא זמין כרגע. נסי שוב מאוחר יותר 🙏")
+            return JSONResponse({"status": "ok"})
+        res = phone_links.confirm(phone, content)
+        if res["ok"]:
+            await phone_links.write_display_phone(res["userId"], supabase_tasks._digits(phone))  # noqa: SLF001
+            try:
+                await supabase_tasks.flush_pending(supabase_tasks._digits(phone))  # noqa: SLF001
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("flush after link failed: %s", exc)
+            text = "חובר ✓ מעכשיו מאירה בוואטסאפ ובאפליקציה זוכרת אותך כאחת."
+        elif res["reason"] == "too_many_attempts":
+            text = "יותר מדי ניסיונות היום. אפשר לנסות שוב מחר 🙏"
+        else:
+            text = "הקוד לא נכון או שפג תוקפו (10 דקות). אפשר לבקש קוד חדש באפליקציה 🙏"
+        await WhatsAppService.send_message(phone, text)
+        return JSONResponse({"status": "ok"})
 
     # A tapped button / list row. The reply carries the id WE set, so a ride
     # pick needs no parsing at all — this is the path that makes choosing an
@@ -2104,8 +2280,11 @@ async def whatsapp_webhook(request: Request):
         loc = msg["location"]
         geo_loc = await geo.reverse_geocode(loc.get("latitude"), loc.get("longitude"))
         addr = (geo_loc or {}).get("formatted") or loc.get("name") or "the pin you sent"
+        # Kept for privacy.CURRENT_TTL_S (30 min) only — then it reads as unknown
+        # and the daily retention pass wipes it.
         user_profile.update_profile(phone, currentAddress=addr,
-                                    currentLat=loc.get("latitude"), currentLng=loc.get("longitude"))
+                                    currentLat=loc.get("latitude"), currentLng=loc.get("longitude"),
+                                    currentAt=_tz.now_il().timestamp())
         content = f"(I'm sharing my current location: {addr}) {content}".strip()
 
 
@@ -2224,6 +2403,13 @@ async def whatsapp_webhook(request: Request):
         user = user or {"id": phone, "name": "User", "language": "en"}
 
     lang = (user or {}).get("language", "en")
+
+    # Her yes / no to a message Meira drafted for someone else — code, first.
+    confirmed = agent_turn.confirm_outgoing(
+        str(user.get("id") or user.get("whatsapp_phone") or phone), content)
+    if confirmed:
+        await WhatsAppService.send_message(phone, confirmed)
+        return JSONResponse({"status": "ok"})
 
     # ── Deterministic fast-paths (no LLM) for the things it got wrong ──
     # "When is X due?" — answered from stored data, never by the model.

@@ -25,8 +25,11 @@
  * Dependencies: constants/theme, constants/categories, resolveClashes (types).
  * Consumed by screens/TodaySchedule.
  */
-import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { GoogleService } from '../services/GoogleService';
+import { sourceLinkOf } from '../utils/sourceLink';
+import { briefFor } from '../utils/clashTradeoffs';
 import { BRAND, FONTS, RADIUS, SHADOWS } from '../constants/theme';
 import { getCategoryMeta } from '../constants/categories';
 import { AppLanguage, Task } from '../types/index';
@@ -60,6 +63,15 @@ const placeText = (task: Task): string => {
 
 export default function ClashCard({ clash, language, onApply, onOpenTask }: Props) {
   const he = language === 'he';
+  // The account the events were read from, so the link opens THE event.
+  const [googleEmail, setGoogleEmail] = useState<string | undefined>();
+  useEffect(() => {
+    let alive = true;
+    GoogleService.listGoogleAccounts()
+      .then((a) => { if (alive) setGoogleEmail(a.length === 1 && a[0].email ? a[0].email : undefined); })
+      .catch((e) => console.warn('[ClashCard] google accounts', String(e?.message || e)));
+    return () => { alive = false; };
+  }, []);
   // A journey that does not fit is a different problem from two things booked
   // at the same hour — and a different colour, so the day can be read at a
   // glance instead of item by item.
@@ -74,8 +86,10 @@ export default function ClashCard({ clash, language, onApply, onOpenTask }: Prop
   const decisions = clash.options.filter((o) => o.kind === 'choose');
   const fixes = clash.options.filter((o) => o.kind !== 'choose');
 
-  const side = (task: Task) => {
+  const side = (task: Task, other: Task) => {
     const meta = getCategoryMeta(task.category);
+    const brief = briefFor(task, other);
+    const link = sourceLinkOf(task, googleEmail);
     const locked = THEIRS.includes(String(task.category));
     return (
       <TouchableOpacity
@@ -97,6 +111,18 @@ export default function ClashCard({ clash, language, onApply, onOpenTask }: Prop
               ? (he ? 'לא בשליטתך — מישהו אחר מחזיק בשעה' : "not yours to move — someone else holds it")
               : (he ? 'שלך — אפשר להזיז או לקצר' : 'yours — can move or shorten')}
           </Text>
+          <Text style={styles.briefLine}>{he ? brief.summary.he : brief.summary.en}</Text>
+          <Text style={styles.briefHead}>{he ? 'אם בוחרים בזה, מוותרים על:' : 'Pick this and you give up:'}</Text>
+          {brief.costs.map((c, i) => (
+            <Text key={i} style={styles.briefCost}>• {he ? c.he : c.en}</Text>
+          ))}
+          {link ? (
+            <TouchableOpacity
+              onPress={() => Linking.openURL(link.url).catch((e) => console.warn('[ClashCard] open link', String(e?.message || e)))}
+            >
+              <Text style={styles.briefLink}>↗ {he ? link.labelHe : link.labelEn}</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
       </TouchableOpacity>
     );
@@ -110,9 +136,9 @@ export default function ClashCard({ clash, language, onApply, onOpenTask }: Prop
       </View>
 
       <View style={styles.sides}>
-        {side(clash.a)}
+        {side(clash.a, clash.b)}
         <Text style={styles.vs}>{he ? 'מול' : 'vs'}</Text>
-        {side(clash.b)}
+        {side(clash.b, clash.a)}
       </View>
 
       <Text style={styles.question}>{he ? clash.questionHe : clash.questionEn}</Text>
@@ -179,6 +205,10 @@ const styles = StyleSheet.create({
   sideText: { fontFamily: FONTS.bodyBold, fontSize: 12, color: BRAND.warmInk, marginTop: 1 },
   sidePlace: { fontFamily: FONTS.body, fontSize: 11, color: BRAND.inkFaint, marginTop: 2 },
   sideWho: { fontFamily: FONTS.body, fontSize: 10, color: BRAND.inkFaint, marginTop: 4 },
+  briefLine: { fontFamily: FONTS.body, fontSize: 11, color: BRAND.inkSoft, marginTop: 6 },
+  briefHead: { fontFamily: FONTS.bodyBold, fontSize: 10, color: BRAND.inkFaint, marginTop: 6 },
+  briefCost: { fontFamily: FONTS.body, fontSize: 11, color: BRAND.warmInk, marginTop: 2 },
+  briefLink: { fontFamily: FONTS.bodyHeavy, fontSize: 11, color: BRAND.danger, marginTop: 6 },
   vs: { alignSelf: 'center', fontFamily: FONTS.bodyBold, fontSize: 11, color: BRAND.inkFaint },
   question: {
     fontFamily: FONTS.body, fontSize: 12, color: BRAND.inkSoft,

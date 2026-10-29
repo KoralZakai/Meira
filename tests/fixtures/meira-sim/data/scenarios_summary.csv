@@ -1,0 +1,16 @@
+case_id,kind,user_id,date,subject,result,detail
+INS-01,insert,101,2026-10-12,11:00 Site survey — Netanya Poleg Park,OK,cost 20.8
+INS-02,insert,101,2026-10-12,10:30 Site survey — Port of Ashdod,INFEASIBLE_TRAVEL,1st alt 2026-10-15 19:30
+INS-03,insert,101,2026-10-08,11:00 Contract review (online),OK,cost 80.8
+INS-04,insert,101,2026-10-12,15:00 Lunch demo — Azrieli Center,TIGHT,cost 73.8
+INS-05,insert,102,2026-10-13,09:30 Dentist — Dizengoff Center,OVERLAP,1st alt 2026-10-14 11:30
+INS-06,insert,102,2026-10-07,12:00 Coffee with recruiter — Cafe Xoho,OK,cost 44.0
+INS-07,insert,103,2026-10-12,12:15 Library session — TAU,OK,cost 88.6
+INS-08,insert,103,2026-10-12,12:00 Interview — NVIDIA Yokneam,INFEASIBLE_TRAVEL,no slot in 7 days
+CAN-01,cancel,101,2026-10-06,Commissioning — Intel Haifa,freed 370m,"1 conflict(s) resolved, 2 candidate(s) placed"
+CAN-02,cancel,102,2026-10-13,"Office — afternoon block, WeWork Sarona",freed 285m,"1 conflict(s) resolved, 2 candidate(s) placed"
+CAN-03,cancel,103,2026-10-12,Gym — Holmes Place,freed 600m,"0 conflict(s) resolved, 1 candidate(s) placed"
+INT-01,interview,102,2026-10-07,Interview — Google Tel Aviv,2/3 offered workable,"top pick 2026-10-07 12:00 (cost 42.0, user_offered); 1 of 3 from Meira"
+INT-02,interview,101,2026-10-12,Interview — Microsoft Herzliya,0/3 offered workable,"top pick 2026-10-11 16:45 (cost 64.0, meira_suggested); 3 of 3 from Meira"
+INT-03,interview,103,2026-10-14,Interview — Wix,3/3 offered workable,"top pick 2026-10-14 13:00 (cost 60.0, user_offered); 0 of 3 from Meira"
+INT-04,interview,102,2026-10-07,Interview — NVIDIA Yokneam,0/3 offered workable,"top pick 2026-10-07 16:30 (cost 114.0, meira_suggested); 3 of 3 from Meira"

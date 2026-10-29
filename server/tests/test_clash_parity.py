@@ -52,6 +52,9 @@ def test_python_matches_the_typescript(day, expected):
         pair = f'{want["a"]}×{want["b"]}'
         assert got["a"]["id"] == want["a"] and got["b"]["id"] == want["b"], \
             f"{pair}: different pair, or a different order"
+        # The verdict the screen and Meira act on. 30.9: the server reported the
+        # 18:30 overlap and the phone hid it — this line is what stops that.
+        assert got["kind"] == want["kind"], f"{pair}: kind {got['kind']} vs {want['kind']}"
         assert got["overlapMinutes"] == want["overlapMinutes"], f"{pair}: overlap"
         assert got["travelShortfall"] == want["travelShortfall"], f"{pair}: travel shortfall"
         assert got["questionEn"] == want["questionEn"], f"{pair}: English question"

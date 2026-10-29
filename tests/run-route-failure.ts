@@ -172,9 +172,10 @@ const line = failureLogLine(
   { kind: 'denied', status: 'REQUEST_DENIED', detail: 'not authorized', mode: 'rail' },
   'Ceva, Ra\'anana',
 );
-for (const needle of ['denied', 'REQUEST_DENIED', 'rail', 'not authorized', 'Ceva']) {
+for (const needle of ['denied', 'REQUEST_DENIED', 'rail', 'not authorized']) {
   ok(line.includes(needle), `the log line contains "${needle}"`);
 }
+ok(!line.includes('Ceva'), 'the log line does not name where she is going (7.10)');
 
 // ── 7. End to end: the row renders the REASON, not the guess ───────────────
 section('7. the row on her screen');

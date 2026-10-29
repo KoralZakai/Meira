@@ -8,7 +8,8 @@
  * Nearly every screen and service depends on this module — extend it
  * additively; do not change existing function signatures.
  */
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { heldByHerMove, MOVE_HELD_FIELDS } from '../utils/moveHeld';
+import AsyncStorage from './EncryptedStorage';  // AES-256-GCM at rest (7.10)
 import { AppSettings, DailyLog, Task } from '../types/models';
 import { UserProfile, UserStats, DailySchedule, RewardEvent, Goal } from '../types/index';
 import { isSupabaseConfigured } from './supabaseClient';
@@ -17,6 +18,7 @@ import * as repo from './supabaseRepo';
 import { textSimilarity } from '../utils/fuzzyMatch';
 import { addMinutes } from '../utils/timeUtils';
 import { isStandingTask } from '../utils/taskShape';
+import { healWorkoutCategory } from '../utils/routines';
 
 // Storage model (Step 3): AsyncStorage is an offline/read cache; Supabase is the
 // source of truth when a session exists. Every public function below keeps its
@@ -74,7 +76,43 @@ async function readJSON<T>(key: string, fallback: T): Promise<T> {
 }
 
 async function writeJSON<T>(key: string, value: T): Promise<void> {
+  // The list as it was, only when someone wants the difference (her opt-in
+  // history, HistoryService) — every save path ends here, so none can skip it.
+  let before: Task[] | null = null;
+  if (key === TASKS_KEY && taskChangeListeners.size) {
+    before = await readJSON<Task[]>(TASKS_KEY, []).catch(() => null);
+  }
   await AsyncStorage.setItem(key, JSON.stringify(value));
+  if (key === TASKS_KEY) {
+    if (before) {
+      for (const fn of taskChangeListeners) {
+        try { fn(before, value as unknown as Task[]); } catch (e) { console.warn('[TaskStorage] task-change listener failed', e); }
+      }
+    }
+    invalidateTaskCache();
+    for (const fn of taskWriteListeners) {
+      try { fn(); } catch (e) { console.warn('[TaskStorage] task-write listener failed', e); }
+    }
+  }
+}
+
+/**
+ * Called after EVERY write of the task list, whoever wrote it — chat, mic, the
+ * (+) sheet, a calendar import, a move. 20.10: "I added 'call Dotan at 9:30',
+ * the ⏰ showed on the card and I still had to set the alarm by hand." The
+ * alarm was decided for the card and armed only on the next app start; a
+ * write-level hook is the one trigger no save path can skip (rule 7).
+ */
+const taskWriteListeners = new Set<() => void>();
+/** Same trigger, with the list before and after — for the opt-in history diff. */
+const taskChangeListeners = new Set<(before: Task[], after: Task[]) => void>();
+export function onTaskListChanged(fn: (before: Task[], after: Task[]) => void): () => void {
+  taskChangeListeners.add(fn);
+  return () => { taskChangeListeners.delete(fn); };
+}
+export function onTasksWritten(fn: () => void): () => void {
+  taskWriteListeners.add(fn);
+  return () => { taskWriteListeners.delete(fn); };
 }
 
 // ── Server task sync (Phase 1: app→server shared store) ──
@@ -82,6 +120,7 @@ async function writeJSON<T>(key: string, value: T): Promise<void> {
 // (user_memory) so Lumi's nudges, agents and reminders see app-made tasks —
 // the link that was missing. Fire-and-forget: never blocks the local write.
 import { authedFetch } from './serverAuth';
+import { forCloud } from '../utils/cloudPrivacy';
 
 const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL || '';
 
@@ -97,7 +136,7 @@ async function pushTaskToServer(task: Task): Promise<void> {
     await authedFetch(`${SERVER_URL}/tasks/${phone}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(task),
+      body: JSON.stringify(forCloud(task)),
     });
   } catch (e) {
     console.warn('[TaskStorage] server push failed', e);
@@ -274,6 +313,7 @@ async function markCloudBehind(taskId: string): Promise<void> {
     ids.add(taskId);
     // Bounded: this is a repair hint, not a queue. The newest failures matter.
     await AsyncStorage.setItem(CLOUD_BEHIND_KEY, JSON.stringify([...ids].slice(-200)));
+    invalidateTaskCache();
   } catch { /* a hint we could not store is not worth failing a write over */ }
 }
 
@@ -282,6 +322,7 @@ async function clearCloudBehind(taskId: string): Promise<void> {
     const ids = await readCloudBehind();
     if (!ids.delete(taskId)) return;
     await AsyncStorage.setItem(CLOUD_BEHIND_KEY, JSON.stringify([...ids]));
+    invalidateTaskCache();
   } catch { /* ignore */ }
 }
 
@@ -317,7 +358,7 @@ export async function flushPendingCloudWrites(): Promise<number> {
     // Gone locally: nothing left to send, so stop carrying the flag.
     if (!task) { await clearCloudBehind(id); continue; }
     try {
-      await repo.upsertTask(userId, task);
+      await taskCloud.upsertTask(userId, task);
       await clearCloudBehind(id);
       flushed += 1;
     } catch {
@@ -329,15 +370,142 @@ export async function flushPendingCloudWrites(): Promise<number> {
   return flushed;
 }
 
+/** How many full cloud downloads this run has made — the [Perf] log reads it. */
+let _cloudFetches = 0;
+
+// ── One download, shared (19.10) ──
+//
+// getAllTasks has ~57 callers and every one of them downloaded EVERY task row
+// from Supabase: one Today focus made four full downloads, the voice turn two
+// more. Callers that arrive while a download is running now join it, and its
+// answer is reused for TASKS_READ_TTL_MS.
+//
+// Any write ends that reuse at once — the local list (writeJSON), the
+// local-ahead flag (mark/clearCloudBehind) and every cloud task write when it
+// settles (taskCloud). A read that started before a write never fills the
+// cache after it: the generation it started under is gone. So a cached answer
+// is never older than the last write this phone made; what it can miss is a
+// change made ELSEWHERE (WhatsApp, the server) in the last 3 s — the same as
+// a download that started 3 s ago.
+//
+// Nothing about the cloud-over-local rule changes: this caches a READ. Its
+// output must still never be saved back wholesale (run-untick-sticks.ts,
+// run-delete-sticks.ts) — and each caller gets its own copy, so one caller
+// editing its rows in place cannot leak into another's.
+const TASKS_READ_TTL_MS = 3000;
+
+export interface TasksRead {
+  tasks: Task[];
+  /** Why the cloud could not be read; the tasks are then the phone's own copy. Null = cloud read fine (or not signed in). */
+  cloudError: string | null;
+}
+
+let _readGen = 0;
+let _inflight: { gen: number; promise: Promise<TasksRead> } | null = null;
+let _cached: { gen: number; at: number; read: TasksRead } | null = null;
+
+/** Drop the shared read. Called by every task write; exported for tests and for writers outside this module. */
+export function invalidateTaskCache(): void {
+  _readGen += 1;
+  _inflight = null;
+  _cached = null;
+}
+
+const copyRead = (read: TasksRead): TasksRead => ({
+  tasks: JSON.parse(JSON.stringify(read.tasks)) as Task[],
+  cloudError: read.cloudError,
+});
+
+/** The cloud task writers. Each ends the shared read when it settles, success or not. */
+const taskCloud = {
+  upsertTask: (...a: Parameters<typeof repo.upsertTask>) =>
+    repo.upsertTask(...a).finally(invalidateTaskCache),
+  upsertTasks: (...a: Parameters<typeof repo.upsertTasks>) =>
+    repo.upsertTasks(...a).finally(invalidateTaskCache),
+  upsertTaskChanges: (...a: Parameters<typeof repo.upsertTaskChanges>) =>
+    repo.upsertTaskChanges(...a).finally(invalidateTaskCache),
+  syncAllTasks: (...a: Parameters<typeof repo.syncAllTasks>) =>
+    repo.syncAllTasks(...a).finally(invalidateTaskCache),
+  deleteTaskRow: (...a: Parameters<typeof repo.deleteTaskRow>) =>
+    repo.deleteTaskRow(...a).finally(invalidateTaskCache),
+};
+
+/**
+ * Every task, AND whether the cloud could be read. Use this where a failed
+ * refresh has to be said (rule 1) — getAllTasks() alone cannot tell "the cloud
+ * agrees" from "the cloud was unreachable, this is the phone's copy".
+ */
+export async function getAllTasksChecked(): Promise<TasksRead> {
+  const gen = _readGen;
+  if (_cached && _cached.gen === gen && Date.now() - _cached.at < TASKS_READ_TTL_MS) {
+    return copyRead(_cached.read);
+  }
+  if (!_inflight || _inflight.gen !== gen) {
+    const promise = readAllTasks();
+    _inflight = { gen, promise };
+    // Settled → leave the in-flight slot in the SAME tick. Clearing it in a
+    // later .finally() let a caller arriving right after join a download that
+    // had already finished — an expired answer served as a live one.
+    const done = () => { if (_inflight?.promise === promise) _inflight = null; };
+    promise.then(
+      (read) => { done(); if (_readGen === gen) _cached = { gen, at: Date.now(), read }; },
+      () => { done(); /* the caller below sees the rejection */ },
+    );
+  }
+  return copyRead(await _inflight.promise);
+}
+
 export async function getAllTasks(): Promise<Task[]> {
+  return (await getAllTasksChecked()).tasks;
+}
+
+/**
+ * Only the phone's own copy — no network. For drawing a screen BEFORE the
+ * cloud answers; the cloud read must still follow, and its failure be said.
+ * Deduped and healed exactly like getAllTasks, never written back.
+ */
+export async function getLocalTasks(): Promise<Task[]> {
+  const { kept } = dedupeTasks(await readJSON<Task[]>(TASKS_KEY, []));
+  return kept.map(healWorkoutCategory);
+}
+
+/**
+ * Send the cloud what only this phone has — for the moment someone signs in.
+ *
+ * Pushes the local rows the cloud does not hold, plus the ones flagged
+ * local-ahead. Writes nothing locally and deletes nothing anywhere. It
+ * replaces `saveAllTasks(await getAllTasks())`, which wrote a cloud-merged
+ * READ back over local storage (the cloud-over-local rule, run-untick-sticks)
+ * — dropping the very rows she wrote while signed out, the ones this push
+ * exists for — and then upserted every row and deleted cloud rows it had not
+ * seen. Throws when the cloud cannot be read or refuses the write.
+ */
+export async function pushLocalTasksToCloud(): Promise<{ pushed: number; local: number }> {
+  const userId = await cloudUserId();
+  if (!userId) throw new Error('not signed in');
+  const [local, cloud, behind] = await Promise.all([
+    getLocalTasks(), repo.fetchTasks(userId), readCloudBehind(),
+  ]);
+  const inCloud = new Set(cloud.map((t) => t.id));
+  const missing = local.filter((t) => !inCloud.has(t.id) || behind.has(t.id));
+  if (missing.length) await taskCloud.upsertTasks(userId, missing);
+  for (const t of missing) if (behind.has(t.id)) await clearCloudBehind(t.id);
+  return { pushed: missing.length, local: local.length };
+}
+
+async function readAllTasks(): Promise<TasksRead> {
   let raw: Task[];
+  let cloudError: string | null = null;
   const userId = await cloudUserId();
   if (userId) {
     const local = await readJSON<Task[]>(TASKS_KEY, []);
     try {
+      const fetchT0 = Date.now();
       const cloud = await repo.fetchTasks(userId);
+      _cloudFetches += 1;
+      console.warn(`[Perf] tasks cloud download #${_cloudFetches} ${Date.now() - fetchT0}ms (${cloud.length} rows)`);
       const merged = await adoptLocalIfCloudEmpty(
-        cloud, local, (rows) => repo.syncAllTasks(userId, rows), 'tasks');
+        cloud, local, (rows) => taskCloud.syncAllTasks(userId, rows), 'tasks');
       // Anything whose push failed is newer HERE than there. Take the local
       // copy back, or the cloud's stale row silently undoes the user's edit.
       const behind = await readCloudBehind();
@@ -382,6 +550,7 @@ export async function getAllTasks(): Promise<Task[]> {
       });
     } catch (err) {
       console.warn('[TaskStorage] cloud fetchTasks failed; using cache', err);
+      cloudError = String((err as any)?.message ?? err).slice(0, 160);
       raw = local;
     }
   } else {
@@ -393,7 +562,9 @@ export async function getAllTasks(): Promise<Task[]> {
   // read, both write, and the second would erase the first. Healing the stored
   // list is now an explicit, locked, once-per-launch job: healTaskStore().
   const { kept } = dedupeTasks(raw);
-  return kept;
+  // A workout filed under 💼 Work (15.10) is read as 💪 Gym. Normalise only:
+  // nothing is written here — healTaskStore persists it, one task at a time.
+  return { tasks: kept.map(healWorkoutCategory), cloudError };
 }
 
 /**
@@ -404,12 +575,48 @@ export async function getAllTasks(): Promise<Task[]> {
  * and the cache stays tidy) without turning reads into a source of lost writes.
  */
 export async function healTaskStore(): Promise<number> {
-  return withTaskLock(async () => {
+  const removed = await withTaskLock(async () => {
     const raw = await readJSON<Task[]>(TASKS_KEY, []);
     const { kept, removedIds } = dedupeTasks(raw);
     if (removedIds.length) await writeJSON(TASKS_KEY, kept);
     return removedIds.length;
   });
+  await healWorkoutCategories();
+  return removed;
+}
+
+/**
+ * Persist, once, the workouts that were filed under 💼 Work (15.10).
+ *
+ * getAllTasks already READS them as gym; this makes the stored row agree, so
+ * the cloud, the server and the notification lead time stop disagreeing with
+ * the card. It goes through updateTask — the locked, cloud-behind-flagged
+ * update path — for just the rows that need it. It never writes
+ * getAllTasks()'s output back wholesale (see purgeDuplicateTasks: that is how
+ * stale cloud rows used to overwrite local edits). Once healed, a row no
+ * longer matches, so the next launch finds nothing to do.
+ */
+export async function healWorkoutCategories(): Promise<number> {
+  let stuck: string[];
+  try {
+    const local = await readJSON<Task[]>(TASKS_KEY, []);
+    stuck = local.filter((t) => healWorkoutCategory(t) !== t).map((t) => t.id);
+  } catch (err) {
+    console.warn('[TaskStorage] could not read tasks to heal workout categories', err);
+    return 0;
+  }
+  let healed = 0;
+  for (const id of stuck) {
+    try {
+      await updateTask(id, healWorkoutCategory);
+      healed += 1;
+    } catch (err) {
+      // The read path still shows it as gym; the next launch tries again.
+      console.warn('[TaskStorage] could not persist a healed workout category', id, err);
+    }
+  }
+  if (healed) console.log('[TaskStorage] workouts moved from work to gym', { healed });
+  return healed;
 }
 
 /**
@@ -441,7 +648,7 @@ export async function purgeDuplicateTasks(): Promise<number> {
   const { removedIds } = dedupeTasks(raw);
   if (!removedIds.length) return 0;
   for (const id of removedIds) {
-    if (userId) { try { await repo.deleteTaskRow(userId, id); } catch { /* best effort */ } }
+    if (userId) { try { await taskCloud.deleteTaskRow(userId, id); } catch { /* best effort */ } }
     void deleteTaskOnServer(id);
   }
   // Whatever duplicates the LOCAL list has are healed here, from the local
@@ -458,7 +665,7 @@ async function saveAllTasksUnlocked(tasks: Task[]): Promise<void> {
   const userId = await cloudUserId();
   if (userId) {
     try {
-      await repo.syncAllTasks(userId, kept);
+      await taskCloud.syncAllTasks(userId, kept);
     } catch (err) {
       console.warn('[TaskStorage] cloud syncAllTasks failed', err);
     }
@@ -610,10 +817,15 @@ export async function reconcileExternalTask(
 
     const changed: string[] = [];
     const next: Task = { ...current };
+    // She moved it (Meira, by voice or chat) and Google still says the old day:
+    // her move stands. Google saying something NEW wins again (utils/moveHeld).
+    const held = heldByHerMove(current, incoming);
+    const locOfTask = (t: Task) => (t.location && typeof t.location === 'object' ? (t.location as any) : undefined);
     for (const key of owned) {
       const k = key as keyof Task;
       const value = (incoming as any)[k];
       if (value === undefined || value === null || value === '') continue;
+      if (held && MOVE_HELD_FIELDS.includes(String(k))) continue;
       if (sameValue((current as any)[k], value)) continue;
       (next as any)[k] = value;
       changed.push(String(k));
@@ -627,6 +839,13 @@ export async function reconcileExternalTask(
       if (!blank || currentBlank) continue;   // 'owned' above handles the set case
       (next as any)[k] = undefined;
       changed.push(String(k));
+    }
+    // A place the row never had (the address was in the TITLE, which nothing read
+    // until 18.10): filled in, never replaced — a place she corrected stands.
+    if (!locOfTask(current)?.address && typeof current.location !== 'string'
+      && incoming.location && typeof incoming.location === 'object' && (incoming.location as any).address) {
+      (next as any).location = incoming.location;
+      changed.push('location');
     }
     // Provenance, always. A row that lost its stamp is how it became
     // unreachable in the first place.
@@ -650,7 +869,7 @@ export async function reconcileExternalTask(
   const userId = await cloudUserId();
   if (userId && (result.outcome === 'inserted' || result.outcome === 'updated')) {
     try {
-      await repo.upsertTask(userId, result.row as Task);
+      await taskCloud.upsertTask(userId, result.row as Task);
       await clearCloudBehind((result.row as Task).id);
     } catch (err) {
       // Local is saved and flagged local-ahead; the cloud can catch up.
@@ -726,7 +945,7 @@ async function mergeExternalTasksUnlocked(
       // one line is the difference between "Google has nothing" and "we are
       // refusing to import something Google handed us", which were the same
       // observable state for as long as this tombstone list has existed.
-      console.warn('[TaskStorage] import blocked by tombstone', t.id, t.date, t.text);
+      console.warn('[TaskStorage] import blocked by tombstone', t.id, t.date);
       blocked += 1;
       continue;
     }
@@ -794,13 +1013,13 @@ async function mergeExternalTasksUnlocked(
   if (userId) {
     try {
       const rekeyed = existing.filter((e) => incoming.some((t) => t.id === e.id));
-      await repo.upsertTasks(userId, kept.filter((task) =>
+      await taskCloud.upsertTasks(userId, kept.filter((task) =>
         toAdd.some((incomingTask) => incomingTask.id === task.id)
         || rekeyed.some((incomingTask) => incomingTask.id === task.id)
         || enriched.some((incomingTask) => incomingTask.id === task.id),
       ));
       for (const oldId of rekeyedOldIds) {
-        await repo.deleteTaskRow(userId, oldId).catch(() => {});
+        await taskCloud.deleteTaskRow(userId, oldId).catch(() => {});
       }
     } catch (err) {
       console.warn('[TaskStorage] cloud upsert of external tasks failed', err);
@@ -880,7 +1099,7 @@ export async function deleteTasks(ids: string[]): Promise<number> {
   const userId = await cloudUserId();
   for (const id of ids) {
     if (userId) {
-      try { await repo.deleteTaskRow(userId, id); } catch (err) {
+      try { await taskCloud.deleteTaskRow(userId, id); } catch (err) {
         console.warn('[TaskStorage] cloud deleteTasks failed', err);
       }
     }
@@ -912,7 +1131,7 @@ export async function addTask(task: Omit<Task, 'id' | 'createdAt' | 'completedAt
   const userId = await cloudUserId();
   if (userId && saved.id === created.id) {
     try {
-      await repo.upsertTask(userId, created);
+      await taskCloud.upsertTask(userId, created);
     } catch (err) {
       console.warn('[TaskStorage] cloud upsertTask failed', err);
     }
@@ -1010,7 +1229,7 @@ export async function addTasksForDate(
   const userId = await cloudUserId();
   if (userId) {
     try {
-      await repo.upsertTasks(userId, savedTasks);
+      await taskCloud.upsertTasks(userId, savedTasks);
     } catch (err) {
       console.warn('[TaskStorage] cloud upsertTasks failed', err);
     }
@@ -1024,21 +1243,37 @@ export async function addTasksForDate(
 }
 
 /** Load-modify-save one task via an updater function. */
-export async function updateTask(taskId: string, updater: (task: Task) => Task): Promise<void> {
+export async function updateTask(
+  taskId: string,
+  updater: (task: Task) => Task,
+  /** awaitCloud: false → return once it is saved on the phone; the push follows behind (the row is flagged local-ahead meanwhile). */
+  opts: { awaitCloud?: boolean } = {},
+): Promise<void> {
   // The read and the write are one critical section. Previously they were not,
   // so a concurrent updateTask could read the array, be overtaken, and then
   // write its now-stale copy over the winner — the reason a computed
   // transitPlan could vanish moments after being saved.
+  let before: Task | undefined;
   const updatedTask = await withTaskLock(async () => {
     const tasks = await readJSON<Task[]>(TASKS_KEY, []);
     let touched: Task | undefined;
+    let unchanged = false;
     const updated = tasks.map((task) => {
       if (task.id === taskId) {
+        before = task;
+        const wasJson = JSON.stringify(task);     // the updater may mutate in place
         touched = updater(task);
+        unchanged = JSON.stringify(touched) === wasJson;
         return touched;
       }
       return task;
     });
+    // A re-plan touches every task, most of them with the value they already
+    // had. Each used to write the list, flag the row, upsert it and POST it to
+    // the server — 25 round trips in 25 s after one edit (18.10), which is why
+    // everything felt slow. Nothing changed, so nothing is written or sent, and
+    // the row is NOT flagged local-ahead (nothing here is ahead of the cloud).
+    if (unchanged) return undefined;
     await writeJSON(TASKS_KEY, updated);
     // Mark it local-ahead HERE, inside the lock, the instant the local write
     // lands — not later, and not only when the push fails.
@@ -1055,20 +1290,30 @@ export async function updateTask(taskId: string, updater: (task: Task) => Task):
     return touched;
   });
 
-  const userId = await cloudUserId();
-  if (userId && updatedTask) {
-    try {
-      await repo.upsertTask(userId, updatedTask);
-      // Cleared only once the server has actually accepted it, so the local
-      // copy stays authoritative for the whole in-flight period.
-      await clearCloudBehind(updatedTask.id);
-    } catch (err) {
-      // The edit IS saved locally; what failed is telling the server. The flag
-      // is already set, so the next read still prefers the local copy.
-      console.warn('[TaskStorage] cloud upsertTask (update) failed — keeping local copy', err);
+  const pushCloud = async () => {
+    const userId = await cloudUserId();
+    if (userId && updatedTask) {
+      try {
+        // Only the columns this edit changed. The whole row used to go up, and a
+        // phone whose cache was older than the cloud (the server had retitled the
+        // task) wrote its stale title back with a route refresh — 24/10, 06:08.
+        await taskCloud.upsertTaskChanges(userId, before, updatedTask);
+        // Cleared only once the server has actually accepted it, so the local
+        // copy stays authoritative for the whole in-flight period.
+        await clearCloudBehind(updatedTask.id);
+      } catch (err) {
+        // The edit IS saved locally; what failed is telling the server. The flag
+        // is already set, so the next read still prefers the local copy.
+        console.warn('[TaskStorage] cloud upsertTask (update) failed — keeping local copy', err);
+      }
     }
+    if (updatedTask) void pushTaskToServer(updatedTask);  // sync edit to server store
+  };
+  if (opts.awaitCloud === false) {
+    void pushCloud();
+  } else {
+    await pushCloud();
   }
-  if (updatedTask) void pushTaskToServer(updatedTask);  // sync edit to server store
 }
 
 /** Remove a task locally and from Supabase. External (WhatsApp/Google) tasks
@@ -1090,7 +1335,7 @@ export async function deleteTask(taskId: string): Promise<void> {
   const userId = await cloudUserId();
   if (userId) {
     try {
-      await repo.deleteTaskRow(userId, taskId);
+      await taskCloud.deleteTaskRow(userId, taskId);
     } catch (err) {
       console.warn('[TaskStorage] cloud deleteTask failed', err);
     }
@@ -1132,7 +1377,10 @@ async function recordLeadLearning(task: Task): Promise<void> {
   const leaveHomeBy = typeof task.location === 'object' ? task.location?.leaveHomeBy : undefined;
   if (!leaveHomeBy || typeof task.lastDepartureDetectedAt !== 'number') return;
   try {
-    const [{ loadProfile, saveProfile }, { normalizeProfile }, { resolveLeadMinutes, DAY }, { learnLead }] =
+    const [
+      { loadProfile, saveProfile }, { normalizeProfile }, { resolveLeadMinutes, DAY },
+      { learnLead, departureSlipMinutes, nextDepartDelay },
+    ] =
       await Promise.all([
         import('./UserProfileStorage'),
         import('../utils/profileShape'),
@@ -1156,8 +1404,21 @@ async function recordLeadLearning(task: Task): Promise<void> {
       leaveHomeBy,
       departedAt: task.lastDepartureDetectedAt,
     });
-    if (!learned) return;
-    await saveProfile({ ...(stored as any), learnedLeadMinutes: learned });
+    // The same slip, averaged: how late she usually leaves. It sets the margin
+    // a gap between two places needs (utils/dayFeasibility — "tight").
+    const slip = departureSlipMinutes({
+      date: task.date, leaveHomeBy, departedAt: task.lastDepartureDetectedAt,
+    });
+    const delay = slip === undefined
+      ? undefined
+      : nextDepartDelay((stored as any).departDelayMinutes, slip);
+    const delayChanged = delay !== undefined && delay !== (stored as any).departDelayMinutes;
+    if (!learned && !delayChanged) return;
+    await saveProfile({
+      ...(stored as any),
+      ...(learned ? { learnedLeadMinutes: learned } : {}),
+      ...(delayChanged ? { departDelayMinutes: delay } : {}),
+    });
   } catch (err) {
     console.warn('[TaskStorage] lead learning failed', err);
   }
@@ -1192,7 +1453,11 @@ async function recordCompletionLearning(task: Task): Promise<void> {
 }
 
 /** Toggle completion (sets completedAt) and persist. */
-export async function markTaskComplete(taskId: string, complete: boolean): Promise<void> {
+export async function markTaskComplete(
+  taskId: string,
+  complete: boolean,
+  opts: { byArrival?: boolean } = {},
+): Promise<void> {
   // The single funnel every completion path goes through (TodaySchedule,
   // MyTasks, FocusNow, DayReview, useTasks) — so it is the one place the
   // duration learning and the reward engine need to be wired.
@@ -1205,9 +1470,13 @@ export async function markTaskComplete(taskId: string, complete: boolean): Promi
       completedAt,
       // Stamp the correction so a completed duplicate cannot outvote it.
       uncompletedAt: complete ? task.uncompletedAt ?? null : Date.now(),
+      // Ticked by arriving, not by her: kept so the card and an undo can say so.
+      completedBy: complete && opts.byArrival ? 'arrival' : undefined,
     } as Task;
+    // Arriving is the START of the thing, not its end: learning "the gym took
+    // 5 minutes" from a tick at the door would poison every later estimate.
     if (complete && completedAt) {
-      const actual = derivedDurationMinutes(task, completedAt);
+      const actual = opts.byArrival ? undefined : derivedDurationMinutes(task, completedAt);
       if (actual !== undefined) {
         next.actualDurationMinutes = actual;
         next.historicalDurations = [...(task.historicalDurations ?? []), actual].slice(-10);
@@ -1216,6 +1485,8 @@ export async function markTaskComplete(taskId: string, complete: boolean): Promi
     }
     return next;
   });
+  // By arrival: points count, no duration is learned (recordCompletionLearning
+  // only learns from an actualDurationMinutes, which an arrival never sets).
   if (completed) void recordCompletionLearning(completed);
 }
 
@@ -1229,11 +1500,15 @@ export async function editTaskText(taskId: string, text: string, tags: string[])
 }
 
 /** Shallow-merge a partial patch into a task (e.g. location/transit plan). */
-export async function updateTaskFields(taskId: string, patch: Partial<Task>): Promise<void> {
+export async function updateTaskFields(
+  taskId: string,
+  patch: Partial<Task>,
+  opts: { awaitCloud?: boolean } = {},
+): Promise<void> {
   await updateTask(taskId, (task) => ({
     ...task,
     ...patch,
-  }));
+  }), opts);
 }
 
 /** All daily check-in logs. */
@@ -1304,6 +1579,15 @@ export async function getSettings(): Promise<AppSettings> {
     ...DEFAULT_SETTINGS,
     ...(stored ?? {}),
   };
+}
+
+/**
+ * Settings from the phone only — no network. For drawing a screen before the
+ * cloud answers (Today's first paint); getSettings() still follows it.
+ */
+export async function getLocalSettings(): Promise<AppSettings> {
+  const stored = await readJSON<AppSettings | null>(SETTINGS_KEY, null);
+  return { ...DEFAULT_SETTINGS, ...(stored ?? {}) };
 }
 
 /** Persist settings and mirror to cloud. */

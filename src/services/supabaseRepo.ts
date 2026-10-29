@@ -19,6 +19,7 @@
 // We do not coerce strings to objects here, to avoid regressing the ~10 call
 // sites that still read a string. The jsonb column is the single storage home;
 // full normalization to TaskLocation is a follow-up.
+import { changedColumns } from '../utils/changedColumns';
 import { supabase } from './supabaseClient';
 import type {
   Task,
@@ -33,6 +34,9 @@ import type {
 import type { AppSettings } from '../types/models';
 import type { CustomCategory } from './TaskStorage';
 import { normalizeProfile } from '../utils/profileShape';
+import { forCloud } from '../utils/cloudPrivacy';
+import { sealWith, openWith } from './EncryptedStorage';
+import { getDataKey } from './DataKey';
 
 /**
  * Upsert a row, dropping columns this database does not have yet.
@@ -103,6 +107,9 @@ async function upsertTolerant(
     }
     const missing = missingColumnOf(error);
     if (!missing || !(missing in payload[0])) throw error;
+    // Dropping `sealed` would write the emptied columns with nothing behind
+    // them — her task text replaced by a lock. Refuse instead (migration 0014).
+    if (missing === 'sealed') throw new Error('[supabaseRepo] tasks.sealed is missing — run migration 0014 before SEAL_APP_ROWS=1');
     console.warn(
       `[supabaseRepo] ${table}.${missing} does not exist in this database — `
       + 'syncing the rest of the row without it. Run the pending migration in supabase/migrations.',
@@ -180,6 +187,7 @@ function safeSource(value: unknown): string | null {
 }
 
 function taskToRow(userId: string, t: Task): Record<string, unknown> {
+  t = forCloud(t); // no live position leaves the phone (utils/cloudPrivacy)
   return {
     id: t.id,
     userId,
@@ -293,6 +301,68 @@ function rowToTask(r: any): Task {
   };
 }
 
+// ── sealed rows (7.10) ──────────────────────────────────────────────────────
+// What she will do, where and with whom leaves the phone as ONE AES-256-GCM
+// blob in `sealed` (migration 0014), under her account's key (DataKey); the
+// plaintext columns are emptied and `text` reads PLACEHOLDER. The server reads
+// and writes the same format (server/supabase_tasks.py). A row whose `text`
+// is not the placeholder came from an older build in plaintext — it wins.
+export const SEALED_PLACEHOLDER = '🔒';
+const TASK_SEALED = ['text', 'location', 'contact', 'contactName', 'contactPhone', 'attendees',
+  'meetingUrl', 'progress', 'subtasks', 'how', 'why', 'locationLat', 'locationLng'] as const;
+const PROFILE_SEALED = ['name', 'homeAddress', 'homeLat', 'homeLng', 'routinesNotes', 'hobbies'] as const;
+const PROFILE_EMPTY: Record<string, unknown> = {
+  name: SEALED_PLACEHOLDER, homeAddress: '', homeLat: 0, homeLng: 0, routinesNotes: null, hobbies: null,
+};
+
+export function sealTaskRow(row: Record<string, unknown>, key: Uint8Array): Record<string, unknown> {
+  const blob: Record<string, unknown> = {};
+  for (const k of TASK_SEALED) if (row[k] !== null && row[k] !== undefined) blob[k] = row[k];
+  const out: Record<string, unknown> = { ...row };
+  for (const k of TASK_SEALED) out[k] = null;
+  out.text = SEALED_PLACEHOLDER;
+  out.sealed = sealWith(key, `tasks:${row.id}`, JSON.stringify(blob));
+  return out;
+}
+
+export function openTaskRow(r: any, key: Uint8Array | null | undefined): any {
+  if (!r?.sealed || r.text !== SEALED_PLACEHOLDER) return r;
+  if (!key) throw new Error('[supabaseRepo] a sealed task arrived and this phone has no key for it');
+  return { ...r, ...JSON.parse(openWith(key, `tasks:${r.id}`, r.sealed)) };
+}
+
+export function sealProfileRow(row: Record<string, unknown>, key: Uint8Array): Record<string, unknown> {
+  const blob: Record<string, unknown> = {};
+  for (const k of PROFILE_SEALED) if (row[k] !== null && row[k] !== undefined) blob[k] = row[k];
+  return {
+    ...row, ...PROFILE_EMPTY,
+    sealed: sealWith(key, `user_profiles:${row.userId}`, JSON.stringify(blob)),
+  };
+}
+
+export function openProfileRow(r: any, key: Uint8Array | null | undefined): any {
+  if (!r?.sealed || r.name !== SEALED_PLACEHOLDER) return r;
+  if (!key) throw new Error('[supabaseRepo] a sealed profile arrived and this phone has no key for it');
+  return { ...r, ...JSON.parse(openWith(key, `user_profiles:${r.userId}`, r.sealed)) };
+}
+
+/** The key for writing: null = sealing is off (write as before). Throws when it
+ *  cannot be known — the write then fails and is retried, never sent plaintext. */
+async function writeKey(userId: string): Promise<Uint8Array | null> {
+  return getDataKey(userId);
+}
+
+/** The key for reading: undefined when unknown. Only a SEALED row needs it, and
+ *  openTaskRow throws then — so a list it cannot read is never taken as truth. */
+async function readKey(userId: string): Promise<Uint8Array | null | undefined> {
+  try {
+    return await getDataKey(userId);
+  } catch (e) {
+    console.warn('[supabaseRepo] data key unknown for this read', String(e));
+    return undefined;
+  }
+}
+
 /** All task rows for a user, mapped to the app Task shape. */
 export async function fetchTasks(userId: string): Promise<Task[]> {
   const { data, error } = await supabase
@@ -300,18 +370,52 @@ export async function fetchTasks(userId: string): Promise<Task[]> {
     .select('*')
     .eq('userId', userId);
   if (error) throw error;
-  return (data ?? []).map(rowToTask);
+  const key = await readKey(userId);
+  return (data ?? []).map((r) => rowToTask(openTaskRow(r, key)));
 }
 
 /** Insert/update one task row keyed by (user_id, id). */
 export async function upsertTask(userId: string, task: Task): Promise<void> {
-  await upsertTolerant('tasks', taskToRow(userId, task), 'userId,id');
+  const key = await writeKey(userId);
+  const row = taskToRow(userId, task);
+  await upsertTolerant('tasks', key ? sealTaskRow(row, key) : row, 'userId,id');
+}
+
+/**
+ * Write ONLY the columns an edit changed.
+ *
+ * `upsertTask` sends the whole row, so any edit made from a local copy that is
+ * older than the cloud's (the server retitled it, moved it, added a place)
+ * silently put the stale columns back. A column the edit did not touch is not
+ * ours to write. Falls back to the whole row when there is nothing to compare
+ * against, when rows are sealed (one blob, cannot be patched per column), or
+ * when the row does not exist in the cloud yet.
+ */
+export async function upsertTaskChanges(userId: string, before: Task | undefined, after: Task): Promise<void> {
+  const key = await writeKey(userId);
+  if (!before || key) return upsertTask(userId, after);
+  const changed = changedColumns(
+    taskToRow(userId, before) as Record<string, unknown>,
+    taskToRow(userId, after) as Record<string, unknown>,
+  );
+  if (!Object.keys(changed).length) return;
+  const { data, error } = await supabase
+    .from('tasks').update(changed).eq('userId', userId).eq('id', after.id).select();
+  if (error) {
+    console.warn('[supabaseRepo] column patch refused, writing the whole row', error.message);
+    return upsertTask(userId, after);
+  }
+  if (!data || !data.length) return upsertTask(userId, after);   // not in the cloud yet
 }
 
 /** Batch upsert of task rows. */
 export async function upsertTasks(userId: string, tasks: Task[]): Promise<void> {
   if (!tasks.length) return;
-  await upsertTolerant('tasks', tasks.map((t) => taskToRow(userId, t)), 'userId,id');
+  const key = await writeKey(userId);
+  await upsertTolerant('tasks', tasks.map((t) => {
+    const row = taskToRow(userId, t);
+    return key ? sealTaskRow(row, key) : row;
+  }), 'userId,id');
 }
 
 /**
@@ -414,7 +518,8 @@ export async function fetchProfile(userId: string): Promise<UserProfile | null> 
     .maybeSingle();
   if (error) throw error;
   if (!data) return null;
-  const { userId: _u, updatedAt: _up, ...rest } = data as any;
+  const opened = openProfileRow(data, await readKey(userId));
+  const { userId: _u, updatedAt: _up, sealed: _s, ...rest } = opened as any;
   return rest as UserProfile;
 }
 
@@ -433,7 +538,8 @@ export async function upsertProfile(userId: string, profile: any): Promise<void>
   const p: any = normalizeProfile(profile) ?? profile;
   const epoch = (v: any): number =>
     typeof v === 'number' ? v : (Date.parse(v ?? '') || Date.now());
-  await upsertTolerant('user_profiles', {
+  const key = await writeKey(userId);
+  const row: Record<string, unknown> = {
     userId,
     name: p.name ?? '',
     language: p.language ?? 'en',
@@ -457,7 +563,8 @@ export async function upsertProfile(userId: string, profile: any): Promise<void>
     hobbies: p.hobbies ?? null,
     googleConnected: Boolean(p.googleConnected),
     createdAt: epoch(p.createdAt),
-  }, 'userId');
+  };
+  await upsertTolerant('user_profiles', key ? sealProfileRow(row, key) : row, 'userId');
 }
 
 // ─── personality_quiz (singleton per user) ───────────────────────────────────
@@ -556,7 +663,8 @@ export async function fetchSchedule(userId: string, date: string): Promise<Daily
 export async function upsertSchedule(userId: string, schedule: DailySchedule): Promise<void> {
   const { error } = await supabase
     .from('schedules')
-    .upsert({ ...schedule, userId }, { onConflict: 'userId,date' });
+    .upsert({ ...schedule, tasks: (schedule.tasks ?? []).map(forCloud), userId },
+      { onConflict: 'userId,date' });
   if (error) throw error;
 }
 

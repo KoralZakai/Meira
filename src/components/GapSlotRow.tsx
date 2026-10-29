@@ -36,9 +36,15 @@ interface Props {
   onPick: (idea: GapIdea, gap: DayGap) => void | Promise<void>;
   /** Open Add Task with the slot's time already filled in. */
   onAddOwn: (gap: DayGap) => void;
+  /**
+   * Draw this instead of the dashed "free" line — the same ideas open under
+   * it. Today's "Free now, until …" row uses it (6.10: "the + opens a new
+   * task — I want it to open the suggestions").
+   */
+  trigger?: (open: boolean, toggle: () => void) => React.ReactNode;
 }
 
-export default function GapSlotRow({ gap, language, onRequestIdeas, onPick, onAddOwn }: Props) {
+export default function GapSlotRow({ gap, language, onRequestIdeas, onPick, onAddOwn, trigger }: Props) {
   const he = language === 'he';
   const [open, setOpen] = useState(false);
   const [ideas, setIdeas] = useState<GapIdea[] | null>(null);
@@ -51,7 +57,8 @@ export default function GapSlotRow({ gap, language, onRequestIdeas, onPick, onAd
     setLoading(true);
     try {
       setIdeas(await onRequestIdeas(gap));
-    } catch {
+    } catch (e) {
+      console.warn('[GapSlotRow] ideas could not be fetched', e);
       setIdeas([]);
     } finally {
       setLoading(false);
@@ -60,6 +67,7 @@ export default function GapSlotRow({ gap, language, onRequestIdeas, onPick, onAd
 
   return (
     <View style={styles.wrap}>
+      {trigger ? trigger(open, expand) : (
       <TouchableOpacity style={styles.row} onPress={expand} activeOpacity={0.8}>
         <View style={styles.dashes} />
         <Text style={styles.label}>
@@ -69,8 +77,9 @@ export default function GapSlotRow({ gap, language, onRequestIdeas, onPick, onAd
             ? (he ? ' · אחרי שתגיעי הביתה' : " · once you're home")
             : ''}
         </Text>
-        <Text style={styles.plus}>{open ? '×' : '＋'}</Text>
+        <Text style={styles.plus}>{open ? '×' : '+'}</Text>
       </TouchableOpacity>
+      )}
 
       {open && (
         <View style={styles.body}>
@@ -107,7 +116,7 @@ export default function GapSlotRow({ gap, language, onRequestIdeas, onPick, onAd
 
           <TouchableOpacity style={styles.own} onPress={() => onAddOwn(gap)} activeOpacity={0.85}>
             <Text style={styles.ownText}>
-              {he ? `＋ משהו אחר ב-${gap.start}` : `＋ Something else at ${gap.start}`}
+              {he ? `+ משהו אחר ב-${gap.start}` : `+ Something else at ${gap.start}`}
             </Text>
           </TouchableOpacity>
         </View>

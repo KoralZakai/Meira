@@ -101,7 +101,7 @@ def _digits(phone: str) -> str:
 
 def _key(phone: str) -> str:
     """Last 9 digits — same rule as supabase_tasks and travel_prefs, so a place
-    learned from '0500000009' is found under '972500000009'."""
+    learned from '0542902729' is found under '972542902729'."""
     d = _digits(phone)
     return d[-9:] if len(d) >= 9 else d
 
@@ -211,7 +211,8 @@ def remember(phone: str, activity: str, address: str,
     entry["words"] = sorted(words)[:24]
     _save(data)
     database_service.shadow_write(
-        database_service.remember_place(key, akey, address, lat, lng))
+        database_service.remember_place(key, akey, address, lat, lng,
+                                        uses=entry["count"]))
 
 
 def _overlap(a: set, b: set) -> float:
@@ -261,3 +262,17 @@ def recall_line(address: str, lang: str) -> str:
     return (f"📍 מניחה {address} כמו בפעם הקודמת — תגידי אם לא."
             if lang == "he" else
             f"📍 Assuming {address}, like last time — tell me if not.")
+
+
+def forget(phone: str, activity: str) -> bool:
+    """Drop one remembered place ("עבודה" when she says she no longer works
+    there, 9.10). True when something was removed. The cloud row is left for
+    the next remember() of that activity to overwrite: reads come from here."""
+    key, akey = _key(phone), activity_key(activity)
+    data = _load()
+    mine = data.get(key) or {}
+    if not akey or akey not in mine:
+        return False
+    del mine[akey]
+    _save(data)
+    return True

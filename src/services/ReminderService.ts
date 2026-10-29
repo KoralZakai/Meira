@@ -17,7 +17,7 @@
  * Dependencies: NotificationService (scheduling), TaskStorage (lead times).
  * Consumed by LumiCoachEngine's reminder branch and App bootstrap.
  */
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from './EncryptedStorage';  // AES-256-GCM at rest (7.10)
 import { Task } from '../types/index';
 import { scheduleReminderAt, cancelScheduled } from './NotificationService';
 import { getAllTasks, updateTaskFields } from './TaskStorage';

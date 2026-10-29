@@ -56,6 +56,10 @@ async def embed_texts(texts: list[str]) -> Optional[list[list[float]]]:
     if not config.EMBED_MODEL or not config.LLM_API_KEY:
         return None
     wanted = [t for t in texts if t not in _EMBED_CACHE]
+    import ai_gate
+    if wanted and ai_gate.closed():
+        logger.warning("embeddings skipped: AI balance stop is closed")
+        return None
     if wanted:
         base = (config.EMBED_BASE_URL or config.LLM_ENDPOINT or "").rstrip("/")
         try:

@@ -3,6 +3,34 @@
 
 ---
 
+## Git & Deploy Rules
+- Only stage and commit the files I name, or the files you changed for this task. Never `git add -A` / `git add .`.
+- Do not push to master unless I explicitly say so. **A push to master IS the deploy** (Fly), so no push = no deploy. Before any merge or push, run `git fetch` and rebase — parallel sessions often push to origin.
+- Never edit `fly.toml`, deploy config, or secrets unless I ask. One exception: updating `TOKEN_FACTORY_BALANCE_USD` / `TOKEN_FACTORY_BALANCE_DATE` in `fly.toml` `[env]` after I tell you I topped up.
+- Commit as soon as each fix is working. Don't leave fixes uncommitted — sessions hit usage limits.
+
+## Definition of Done (Lumi/Meira)
+A user-facing fix is not done until all of these are true (this is rule 12 of WHAT CLAUDE CODE MUST ALWAYS DO, spelled out):
+1. JS and Python test suites are green, and the TypeScript error count has not increased.
+2. Any new regression test fails on the old code.
+3. The change is on `master` and Fly's `/health` check passes. The push is mine: until I run it, say "committed, not deployed" — never "deployed".
+4. The APK is built and installed with `adb install`, and the fix is verified on the phone.
+
+If the phone is disconnected, say so explicitly instead of claiming the fix is done.
+When you change ranking or planning rules, bump `ROUTE_RULES_VERSION` (`src/services/GoogleSync.ts`) so stale plans are regenerated.
+
+## Environment Gotchas
+- Admin endpoints (`/admin/*`, `/diag/*`) use the `X-Admin-Token` header, not `Authorization: Bearer`.
+- Android builds need `JAVA_HOME` and `ANDROID_HOME` set. Gradle can be killed for running out of memory, so prefer EAS builds or limit Gradle workers.
+- If the Fly deploy fails on the flaky ciphertext test, rerun it once before investigating.
+
+## Communication
+- When I write in Hebrew, explain briefly in Hebrew.
+- Write resume, CV, marketing, and submission text in English, keep it concise, and check every claim against the code.
+- For deploy or setup steps I must do myself, give numbered, copy-pasteable commands. Don't give me fly/Xcode jargon without explaining it.
+
+---
+
 ## ROLES
 You are acting as:
 - Senior Mobile Engineer (React Native / Expo / TypeScript)
@@ -108,6 +136,15 @@ is inlined into the APK and ships to every user, so it is protected by
 restriction (Maps key → package + SHA-1; Supabase anon key → RLS), never by
 hiding.
 
+**The EAS `preview` environment still holds server secrets.** Seen 2026-09-28:
+ANTHROPIC_API_KEY, DATABASE_URL, HF_TOKEN, LANGSMITH_API_KEY and the WHATSAPP_*
+tokens sit there beside the public values. A bare `eas env:pull` writes all of
+them into `.env.local` in plaintext, so never run one. Use `npm run build:env`
+instead: `scripts/prepare-build-env.mjs` pulls into a temp file that it deletes
+even when the pull fails. It keeps only `EXPO_PUBLIC_*` + `APP_ENV`, and it
+strips anything else from an existing `.env.local`. Removing those variables
+from EAS (`eas env:delete`) is **the owner's decision**. An agent does not do it.
+
 Server secrets, all Fly-only:
 ```
 NEBIUS_API_KEY            the model key
@@ -118,6 +155,24 @@ NEBIUS_MODEL_LARGE        nvidia/Nemotron-3-Ultra-550b-a55b  (long context)
 LLM_MONTHLY_BUDGET_USD    0 = no limit. Past 80% the large tier is withdrawn,
                           past 100% everything runs on nano. Lumi degrades,
                           it never goes dark.
+USER_LLM_DAILY_USD        per-PERSON allowance, default 0.15 (~15 chat turns).
+USER_LLM_MONTHLY_USD      default 1.50. Past 80% that person runs on nano; past
+                          100% the chat turn is not run and she is told so in one
+                          line — plans, routes and alerts are code and keep
+                          working. 0 = no limit. server/user_quota.py
+USER_LLM_EXEMPT           comma-separated person keys with no allowance (the owner)
+USER_AI_DAILY_REQUESTS    default 10, fly.toml 15 (7.10: $130 lasts a month even if all 20 max out): per person per day, for
+                          EVERYONE incl. free seats (7.10). One chat message /
+                          mic command / brief = one, however many model calls.
+TOKEN_FACTORY_BALANCE_USD + TOKEN_FACTORY_BALANCE_DATE + LLM_RESERVE_USD (10):
+                          the prepaid balance on a date, minus what llm_usage
+                          counted since. At the reserve NO model call leaves the
+                          server — "never below $0". In fly.toml [env]; update
+                          them after every top-up. server/ai_gate.py — every
+                          Nebius client is built by ai_gate.client(), tested.
+USER_LLM_FREE_SEATS       default 20: the first 20 people to use Meira have NO
+                          allowance and never drop to nano (7.10, tester month:
+                          "don't try to save"). #21 on gets the limits above.
 ```
 `GET /diag/models` asks Nebius which models it actually serves and names any
 tier pointing at one it does not — check it after any model rename.
@@ -372,8 +427,13 @@ location is not a place (`isOnlineOnlyPlace`) — rule 8 again.
 
 Think → call tool → see result → think → call next tool → answer.
 Recursion limit 15, four transient retries, one silent retry on degenerate output.
+One tool gets 20 s (`LUMI_TOOL_TIMEOUT_S`; the route tools 35 s). A tool that raises or
+hangs reaches the model AND the anti-fabrication guards as `{"ok": false, "error": …}` —
+never as bare "Error: …" text, which the guard would have read as a success. A save claim
+("נשמר", "הוספתי ליומן", "Saved!") needs an action tool that SUCCEEDED, ticked or not;
+a route line needs a route tool that succeeded (`lumi_agent.strip_unbacked_*`).
 
-### The 21 tools (server/lumi_agent.py `_make_tools`)
+### The agent's tools (server/lumi_agent.py `_make_tools`)
 
 | Tool | What it does |
 |---|---|
@@ -385,14 +445,20 @@ Recursion limit 15, four transient retries, one silent retry on degenerate outpu
 | `get_my_tasks` | Saved tasks for a date range |
 | `find_task` | Find EXISTING tasks by words (Hebrew or English) |
 | `update_task` | Change an existing task by id — only the fields that change |
-| `check_availability` | Does something of N minutes fit on this date? |
+| `check_availability` | Does something of N minutes fit on this date? Verdict `past` when the hour or day has gone; free windows never start before now |
 | `calculate_date` | A relative expression → the exact calendar date, Israel time |
 | `schedule_message` | A WhatsApp message Lumi sends TO SOMEONE ELSE later |
 | `set_reminder` | A WhatsApp reminder to the USER at HH:MM |
 | `list_reminders` | Reminders already scheduled, upcoming only |
 | `save_memory` | Remember a distilled fact for future conversations |
 | `web_search` | Live web search — **Tavily first**, Google Custom Search as fallback |
+| `ask_my_history` | HER past, opt-in only (`profile.historyOptIn`): workouts, learning minutes, road minutes, reschedules, tasks done — counted in code (`server/history_stats.py`) for a period, vs the one before, vs her target. Open questions ("the thesis") = vector search over `lumi_history` (`history_store.search`), counted in code. A failed lookup is a reason, never 0 |
+| `set_weekly_target` | Her weekly goal (`workouts` count / `learning_minutes`), stored in `profile.weeklyTargets`; the coach pushes against it |
+| `transit_disruptions` | NEWS of disruptions on her route — roadworks, closed train lines, strikes (Tavily news, last 3 days, Israeli sources). `server/transit_alerts.py` keeps a result only if it has a disruption word AND names her city/station/line; `checked:false` = couldn't look, never "clear". Also in the morning/evening brief and `POST /app/transit/alerts` |
+| `find_time_together` | A group poll for ONE slot (party, meeting): members from her shared contacts, 1–6 slots (dates via calculate_date). `server/group_time.py`: auto free/busy from each JOINED member's own tasks (✓/✗, never what the busy thing is), manual answers win, unreadable = ?, never ✗. Every member gets a `/g/{token}` link, so nobody learns who is on Meira. App: `/app/groups/*`, lock adds the slot to the yeses |
 | `find_place` | Where a named place or business actually is |
+| `find_best_place` | CHOOSES for her: the quickest place of a kind ("closest beach by car", "nearest post office", car vs bike vs bus), door to door — drive + parking estimate + walk, wait for the bus. `server/place_ranker.py`, read-only |
+| `route_now` | How to get to ONE known place leaving now ("how do I get home from here?"). Same ranker, no reminder |
 | `create_agent` | Create a personal agent that runs on a schedule |
 | `list_my_agents` | The user's personal agents |
 | `update_my_agent` | Change one by id |
@@ -422,8 +488,10 @@ check-in intents are all arithmetic or lookups. They live in code:
 | Build the day | `server/day_schedule.py` (~1 ms, no call) |
 | Relative dates | `server/tz.py` — `resolve_date`, and `agent_turn.override_task_date` overrules the model when the message carries exactly one date expression |
 | Category / priority / duration | `server/categorize.py` — a keyword table, Hebrew first-class |
-| Clash resolution | `server/clashes.py`, parity-tested against `src/utils/resolveClashes.ts` |
+| Clash resolution | `server/clashes.py`, parity-tested against `src/utils/resolveClashes.ts` — including each clash's `kind` (travel / overlap / double / spatial / parallel) |
+| A day's leave times, ONE wake time, its problems | `server/day_plan.py` — routes any leg the phone has not, so Meira can answer the evening before; the phone's live plan wins. Used by MCP `get_my_day` and the agent's single-day `get_my_tasks` |
 | Check-in intent | `server/task_intent.py` — the Python port of `src/services/TaskIntent.ts`. **No model call** |
+| "How do I get home?" / "the closest X" | `understand` names the lookup; `agent_turn.answer_lookup` runs `place_ranker.lookup` and `place_ranker.say` writes the reply — **no agent loop** (58 s → seconds). The app draws `answer` as `components/AnswerCard` in the chat |
 
 The model is used for language only: open-ended chat and tool selection,
 `task_extract` (which words are the tasks), `profile_extract`, `email_events`,
@@ -806,6 +874,43 @@ const PLACE_NAME_CORRECTIONS = {
 
 ---
 
+## LEARNING SESSIONS — `modules/focus-guard` (17.10, Koral)
+
+"Cannot enter WhatsApp, Instagram or any app she blocks while learning." A **local Expo module**
+(autolinked from `/modules`; Kotlin in `modules/focus-guard/android`, JS wrapper `index.ts`).
+EAS / dev-client builds only — in Expo Go and in node every call returns
+`{ ok:false, reason:'native_unavailable' }`, never a quiet no-op.
+
+| Piece | Where |
+|---|---|
+| Rules, apps, strings, what to schedule | `src/utils/focusSession.ts` (pure, `tests/run-focus-session.ts`) |
+| Bypass → short lecture, offers, weekly count | `src/utils/focusBypass.ts` (pure, `tests/run-focus-bypass.ts`) |
+| Start / schedule / permissions | `src/services/FocusSessionService.ts` |
+| Collect bypasses, answer the lecture | `src/services/FocusBypassService.ts` |
+| UI | `FocusSessionPanel` (inline on FocusNow) · `FocusSessionSheet` (Menu › Helpers) · `FocusLectureHost` (root) |
+
+- **Blocking** = a foreground service (`specialUse`) polls `UsageStatsManager` every ~700 ms and puts
+  `FocusBlockActivity` over a blocked app. Needs **Usage access** and **Display over other apps** —
+  special accesses with no runtime dialog; the panel re-checks them whenever the app returns.
+- **`app.json` must NOT list `SYSTEM_ALERT_WINDOW` in `blockedPermissions`** — a blocked permission
+  is stripped from the merged manifest, which silently turns the whole feature into a no-op
+  (`tests/run-release-config.ts` pins it).
+- **"End early"** only after a visible 10-second countdown (`END_EARLY_SECONDS` in JS,
+  `END_EARLY_COUNTDOWN_SECONDS` in `FocusBlockActivity.kt`; the test compares them). WhatsApp is blocked
+  completely (calls included); the dialer / emergency / Settings / Meira are never blocked
+  (`NEVER_BLOCK`, Kotlin and TS, compared by the test).
+- **Triggers (rule 7):** an AlarmManager alarm per study task (`isStudyTask` / `isPrepBlock`), set by
+  `scheduleStudySessions` from `focusTick`, which `CalendarAutoSync.runCalendarSync` calls on EVERY
+  sync path (launch, foreground, heartbeat, pull-to-refresh, the closed-app WorkManager job) and
+  `FocusLectureHost` calls on every `AppState` active; by hand from FocusNow and the Menu sheet.
+- **Bypasses** ("You said you were studying!!"), typed, native incidents drained by JS:
+  `permission_revoked`, `service_killed`, `slipped` (a blocked app > 1 min, measured from usage events;
+  browsers reported neutrally), `ended_early` (gentle). `block_failed` is ours and is not counted.
+  Offers: back to learning (re-arms), 5-minute break then auto-resume, move the rest, done.
+- Play: declare the `specialUse` foreground-service subtype and the Usage-access use in the Console.
+
+---
+
 ## THE SILENT-STATE RULE — the bug this project keeps shipping
 
 Four bugs, one fault. Lumi **knew** and did not **say**.
@@ -958,6 +1063,27 @@ bug, already on the known-open list.
 
 Pattern: `src/utils/transitFallback.ts` — `modeLadder`, `bestPlanInTime`,
 `fallbackNote`.
+
+**2026-09-27 — the whole ladder, and whether she has a car.** Koral: "צריך
+להבין אם למשתמש יש אוטו או אין אוטו". `src/utils/travelLadder.ts` decides the
+vehicle for BOTH the route chain and the "does it fit?" answer: has a car and
+drives → car; otherwise walk a hop ≤ 1 km, public transport (direct train ›
+fastest bus, in time first), a bike/scooter if the ride is short, and last her
+own car or a taxi/ride (a taxi is proposed as THE plan only for something that
+matters; otherwise "or move it?"). `profile.hasCar` is asked in Profile. Her
+choice on the card is never second-guessed (`transportTypeBy: 'her'`). Every
+plan stores its reasoning (`location.routeWhy`, both languages) and the card
+shows it under "Why this way?" — and `modeNote`, which was stored and shown
+NOWHERE, is now on the collapsed trip row.
+
+The day is judged by ONE rule, `src/utils/dayFeasibility.ts` (checked against
+an independent scheduler, tests/fixtures/meira-sim): OVERLAP › INFEASIBLE_TRAVEL
+› WAKE_CONFLICT › TIGHT › OK, where TIGHT = the gap holds the trip but not her
+margin (buffer + learned departure delay) and WAKE_CONFLICT = the first trip
+needs her up before `profile.earliestWakeTime`. Nothing is offered before
+"now", and every alternative hour offered is re-checked before it is said.
+Opening hours: `POST /app/place/hours` (`server/place_hours.py`, Google
+Places) — unknown hours say "I couldn't check the opening hours", never "yes".
 
 ### 10. The platform already counted the failures. Go and read the number.
 

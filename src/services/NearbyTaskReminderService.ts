@@ -122,7 +122,7 @@ export async function geocodeTaskLocation(location: string): Promise<{ lat: numb
     const profile: any = await loadProfileForGeocode();
     query = completeAddress(raw, profile?.homeAddress);
     if (query !== raw) {
-      console.warn('[LOCATION] completed', raw, '→', query, '(from her home city)');
+      console.warn('[LOCATION] completed a place name from her home city');
     }
     home = profile?.homeLatLng || null;
   } catch {

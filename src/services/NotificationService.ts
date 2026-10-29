@@ -8,14 +8,14 @@
  * Consumed by LumiCoachEngine.persistAndSchedule, task CRUD flows, and App
  * bootstrap. Cancel via cancelTaskNotifications before rescheduling a task.
  */
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from './EncryptedStorage';  // AES-256-GCM at rest (7.10)
 import { isExpoGo } from '../utils/isExpoGo';
 import { AppSettings, CheckInType } from '../types/models';
 import { Task, AppLanguage, TaskCategory } from '../types/index';
 // Alert times, wording and tap-target live in one pure module (also used by
 // tests/run-week-schedule.ts to verify the schedule without a device).
 import { planTransitAlerts, planFixedTimeAlerts, taskNeedsAlerts } from '../utils/alertPlan';
-import { identifiersToCancel } from '../utils/alertCancellation';
+import { identifiersToCancel, checkInIdentifiers } from '../utils/alertCancellation';
 import { getDaysUntilDeadline, calculateLatestStartTime } from '../utils/timeUtils';
 import { needsRearm, wakeAlarmMarker } from '../utils/alarmPlan';
 import { normalizeProfile } from '../utils/profileShape';
@@ -94,6 +94,7 @@ async function scheduleDailyCheckIn(type: CheckInType, hour: number, minute: num
  * repair block in initNotifications for why a delete is the only way.
  */
 const WAKE_CHANNEL_REPAIRED_KEY = 'lumi.wakeChannelRepaired.v1';
+const PRIVATE_CHANNELS_KEY = 'meira.channels.private.v1';
 
 /** Request permission + Android channel setup. Call once at app start; no-op in Expo Go. */
 export async function initNotifications() {
@@ -127,6 +128,22 @@ export async function initNotifications() {
     // A failed repair must never stop notifications initialising.
   }
 
+  /**
+   * 7.10 privacy: both channels become lockscreenVisibility PRIVATE, so a
+   * locked phone whose owner chose "hide sensitive content" shows "Meira"
+   * instead of where she is going and when. Channels are immutable once made
+   * (see above), so the old ones are deleted once and recreated below.
+   */
+  try {
+    if ((await AsyncStorage.getItem(PRIVATE_CHANNELS_KEY)) !== '1') {
+      await Notifications.deleteNotificationChannelAsync('default').catch(() => {});
+      await Notifications.deleteNotificationChannelAsync('wake-alarm').catch(() => {});
+      await AsyncStorage.setItem(PRIVATE_CHANNELS_KEY, '1');
+    }
+  } catch {
+    // Never stop notifications initialising.
+  }
+
   const permissions = await Notifications.getPermissionsAsync();
   if (!permissions.granted) {
     await Notifications.requestPermissionsAsync();
@@ -137,6 +154,7 @@ export async function initNotifications() {
     importance: Notifications.AndroidImportance.DEFAULT,
     vibrationPattern: [0, 200, 200, 200],
     lightColor: '#FFD166',
+    lockscreenVisibility: Notifications.AndroidNotificationVisibility.PRIVATE,
   });
 
   /**
@@ -164,6 +182,7 @@ export async function initNotifications() {
     vibrationPattern: [0, 400, 250, 400],
     lightColor: '#FFD166',
     bypassDnd: false,
+    lockscreenVisibility: Notifications.AndroidNotificationVisibility.PRIVATE,
   });
 
   // "Did you go?" leave-home nags carry an "I left ✓" action button that
@@ -179,6 +198,24 @@ export async function initNotifications() {
       buttonTitle: heUi ? 'יצאתי ✓' : 'I left ✓',
       options: { opensAppToForeground: false },
     },
+  ]);
+
+  // Running late, still where she was (13.10, Koral: "ask me — still going?
+  // reschedule? cancel? keep options!"). "Still going" stays in the background;
+  // the other two open the task, where moving or cancelling it is one tap.
+  await Notifications.setNotificationCategoryAsync('running-late', [
+    { identifier: 'late_going', buttonTitle: heUi ? '✓ עדיין הולכת' : '✓ Still going', options: { opensAppToForeground: false } },
+    { identifier: 'late_reschedule', buttonTitle: heUi ? '🔁 לדחות' : '🔁 Reschedule', options: { opensAppToForeground: true } },
+    { identifier: 'late_cancel', buttonTitle: heUi ? '✕ לבטל' : '✕ Cancel', options: { opensAppToForeground: true } },
+  ]);
+
+  // An interview / doctor / must she will not reach in time: not "still
+  // going?" — what happened (13.10). Moved and "don't know yet" both leave an
+  // open task to set the new time; cancelled closes it.
+  await Notifications.setNotificationCategoryAsync('cannot-be-late', [
+    { identifier: 'late_moved', buttonTitle: heUi ? '🔁 הוזז' : '🔁 Moved', options: { opensAppToForeground: true } },
+    { identifier: 'late_cancel', buttonTitle: heUi ? '✕ בוטל' : '✕ Cancelled', options: { opensAppToForeground: true } },
+    { identifier: 'late_unknown', buttonTitle: heUi ? '⏳ עוד לא יודעת' : "⏳ Don't know yet", options: { opensAppToForeground: true } },
   ]);
 
   // The 20:00 evening check-in carries a "Plan tomorrow" action that opens
@@ -302,15 +339,30 @@ export async function rescheduleDailyNotifications(settings: AppSettings) {
     return;
   }
 
-  // Cancel only the previous check-ins — never the task alerts.
+  // One run at a time: App boot and the Settings screen both call this, and
+  // two overlapping runs each scheduled their own three DAILY check-ins.
+  const run = checkInChain.then(() => replaceCheckIns(settings));
+  checkInChain = run.catch(() => {});
+  return run;
+}
+
+let checkInChain: Promise<void> = Promise.resolve();
+
+async function replaceCheckIns(settings: AppSettings) {
+  if (!Notifications) return;
+  // Cancel EVERY scheduled check-in, found by its payload — not only the ids we
+  // remembered. A DAILY trigger whose id was never saved (an older build, a
+  // lost write, a parallel run) repeats forever, and that is how "what did you
+  // do so far?" arrived three times a day.
   try {
-    const raw = await AsyncStorage.getItem(CHECKIN_IDS_KEY);
-    if (raw) {
-      for (const id of JSON.parse(raw) as string[]) {
-        await Notifications.cancelScheduledNotificationAsync(id).catch(() => {});
-      }
+    const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+    for (const id of checkInIdentifiers(scheduled as any)) {
+      await Notifications.cancelScheduledNotificationAsync(id)
+        .catch((e) => console.warn('[Notifications] cancel check-in failed', e));
     }
-  } catch { /* best-effort */ }
+  } catch (e) {
+    console.warn('[Notifications] could not list scheduled check-ins', e);
+  }
 
   const ids = (await Promise.all([
     scheduleDailyCheckIn('morning', settings.morningTime.hour, settings.morningTime.minute),
@@ -318,7 +370,8 @@ export async function rescheduleDailyNotifications(settings: AppSettings) {
     scheduleDailyCheckIn('evening', settings.eveningTime.hour, settings.eveningTime.minute),
   ])).filter((id): id is string => Boolean(id));
 
-  await AsyncStorage.setItem(CHECKIN_IDS_KEY, JSON.stringify(ids)).catch(() => {});
+  await AsyncStorage.setItem(CHECKIN_IDS_KEY, JSON.stringify(ids))
+    .catch((e) => console.warn('[Notifications] could not save check-in ids', e));
 }
 
 // Focus-task engagement: Lumi checks in on today's most important task during
@@ -440,7 +493,7 @@ export function subscribeNotificationTap(
   onOpenCheckIn: (type?: CheckInType) => void,
   onPlanTomorrow?: () => void,
   /** screen: where the alert wants to land ('TaskDetail' | 'LeaveNow'). */
-  onOpenTask?: (taskId: string, screen?: string) => void,
+  onOpenTask?: (taskId: string, screen?: string, intent?: 'cancel' | 'reschedule' | 'open') => void,
 ) {
   if (isExpoGo || !Notifications) {
     return {
@@ -463,9 +516,26 @@ export function subscribeNotificationTap(
       }
       return;
     }
+    // Running late: "still going" is an answer, not a screen.
+    if (response.actionIdentifier === 'late_going') {
+      console.warn('[NotificationService] running late — she is still going', data.taskId);
+      return;
+    }
+    const lateIntent = ({
+      late_reschedule: 'reschedule', late_moved: 'reschedule', late_cancel: 'cancel', late_unknown: 'open',
+    } as Record<string, 'reschedule' | 'cancel' | 'open'>)[response.actionIdentifier];
+    if (lateIntent) {
+      if (data.taskId) onOpenTask?.(String(data.taskId), 'TaskDetail', lateIntent);
+      return;
+    }
     // "Plan tomorrow" on the evening check-in → PlanTomorrow screen.
     if (response.actionIdentifier === 'plan_tomorrow') {
       onPlanTomorrow?.();
+      return;
+    }
+    // Find time together (Feature 3): the group, not a task. groupId rides in the id slot.
+    if (data.screen === 'FindTime') {
+      onOpenTask?.(String(data.groupId ?? ''), 'FindTime');
       return;
     }
     if (data.taskId) {
@@ -905,11 +975,11 @@ export async function rehydrateTaskAlerts(tasks: Task[], lang: AppLanguage): Pro
 }
 
 // Send immediate notification
-export async function sendImmediate(title: string, body: string, data?: any): Promise<void> {
+export async function sendImmediate(title: string, body: string, data?: any, categoryIdentifier?: string): Promise<void> {
   if (isExpoGo) { console.log(`[NOTIF] ${title}: ${body}`); return; }
   if (!Notifications) return;
   await Notifications.scheduleNotificationAsync({
-    content: { title, body, data },
+    content: { title, body, data, ...(categoryIdentifier ? { categoryIdentifier } : {}) },
     trigger: null,
   });
 }

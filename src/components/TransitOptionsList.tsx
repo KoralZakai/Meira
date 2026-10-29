@@ -30,7 +30,8 @@ import {
   DepartureOption, changesLabel, slackLabel, vehicleLabel, boardLabel, urgencyLabel,
   minutesToDecide, departureUncatchable, superlativeLabel,
 } from '../utils/departureOptions';
-import { BRAND, FONTS, RADIUS } from '../constants/theme';
+import { BRAND, FONTS, MIN_TOUCH, RADIUS } from '../constants/theme';
+import { flowArrow } from './today/readingRow';
 
 interface Props {
   options: DepartureOption[];
@@ -136,7 +137,7 @@ export default function TransitOptionsList({
                 take one. Nothing here is allowed to shrink. */}
             <View style={styles.timesLine}>
               <Text style={styles.depart}>{o.departAt}</Text>
-              <Text style={styles.arrow}>→</Text>
+              <Text style={styles.arrow}>{flowArrow()}</Text>
               <Text style={[styles.arrive, o.late && styles.arriveLate]}>{o.arriveAt}</Text>
               <View style={styles.spacer} />
               {o.current ? (
@@ -150,6 +151,9 @@ export default function TransitOptionsList({
                   disabled={busy}
                   activeOpacity={0.85}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  accessibilityRole="button"
+                  accessibilityState={{ busy, disabled: busy }}
+                  accessibilityLabel={he ? `לקחת את הנסיעה של ${o.departAt}` : `Take the ${o.departAt} departure`}
                 >
                   <Text style={styles.pickBtnText} numberOfLines={1}>
                     {busy ? (he ? '…' : '…') : (he ? 'קחי את זו' : 'Take it')}
@@ -182,12 +186,16 @@ export default function TransitOptionsList({
                 train is this, and can I still reach the platform". Its own
                 line rather than more text on row 2: this is what she reads
                 while deciding whether to run. */}
+            {/* "leave in 4 min" goes FIRST: it was the tail of this line, so
+                on a narrow phone, with a long station name, it was the part
+                that got cut — and it is the one that says whether to run. If
+                anything is cut now it is the station's name. */}
             {boardLabel(o, he) ? (
               <Text style={styles.board} numberOfLines={2}>
-                {boardLabel(o, he)}
                 {isToday && urgencyLabel(o, clock, he)
-                  ? `  ·  ${urgencyLabel(o, clock, he)}`
-                  : ''}
+                  ? <Text style={[styles.urgency, urgent && styles.urgencyNow]}>{`${urgencyLabel(o, clock, he)}  ·  `}</Text>
+                  : null}
+                {boardLabel(o, he)}
               </Text>
             ) : null}
           </View>
@@ -206,7 +214,7 @@ const styles = StyleSheet.create({
   loadingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 4 },
   hint: { fontFamily: FONTS.body, fontSize: 12.5, color: BRAND.inkSoft, flex: 1 },
   originNote: {
-    fontFamily: FONTS.bodySemi, fontSize: 11, color: BRAND.inkFaint,
+    fontFamily: FONTS.bodySemi, fontSize: 12, color: BRAND.inkSoft,
     paddingHorizontal: 2,
   },
   row: {
@@ -215,10 +223,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10, paddingVertical: 9, gap: 4,
   },
   board: {
-    fontFamily: FONTS.bodySemi, fontSize: 11.5, color: BRAND.goldInk, lineHeight: 16,
+    fontFamily: FONTS.bodySemi, fontSize: 12, color: BRAND.goldInk, lineHeight: 17,
   },
+  urgency: { fontFamily: FONTS.bodyHeavy, color: BRAND.warmInk },
+  urgencyNow: { color: BRAND.lateInk },
   superlative: {
-    fontFamily: FONTS.bodyHeavy, fontSize: 11, color: BRAND.success, lineHeight: 15,
+    fontFamily: FONTS.bodyHeavy, fontSize: 12, color: BRAND.success, lineHeight: 16,
   },
   // Five minutes or less to be out of the door: the row says so in colour as
   // well as in words, because at that point she is scanning, not reading.
@@ -237,7 +247,7 @@ const styles = StyleSheet.create({
   spacer: { flex: 1, minWidth: 8 },
   pickBtn: {
     flexShrink: 0, backgroundColor: BRAND.sunGold, borderRadius: RADIUS.pill,
-    paddingHorizontal: 14, paddingVertical: 7, minWidth: 74, alignItems: 'center',
+    paddingHorizontal: 14, paddingVertical: 7, minWidth: 74, minHeight: MIN_TOUCH, alignItems: 'center', justifyContent: 'center',
   },
   pickBtnBusy: { opacity: 0.6 },
   pickBtnText: { fontFamily: FONTS.bodyHeavy, fontSize: 12.5, color: BRAND.onGold },

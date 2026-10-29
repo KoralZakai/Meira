@@ -16,7 +16,7 @@
  */
 import React from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from '../services/EncryptedStorage';  // AES-256-GCM at rest (7.10)
 import { BRAND, FONTS, RADIUS } from '../constants/theme';
 
 export const LAST_CRASH_KEY = 'lumi.lastCrash.v1';

@@ -39,7 +39,7 @@ const memoryAsyncStorage = {
 const Module = require('module');
 const origLoad = Module._load;
 Module._load = function patched(request: string, ...rest: any[]) {
-  if (request === '@react-native-async-storage/async-storage') {
+  if (request === '@react-native-async-storage/async-storage' || request.endsWith('/EncryptedStorage')) {
     return { __esModule: true, default: memoryAsyncStorage };
   }
   if (request === './supabaseClient' || request.endsWith('/supabaseClient')) {
@@ -217,7 +217,7 @@ async function main() {
     r.outcome === 'unchanged', `${r.outcome} (${r.changed.join(',')})`);
 
   r = await TaskStorage.reconcileExternalTask(
-    fromGoogle({ attendees: ['koralzakai1@gmail.com', 'dana@ceva-dsp.com'] } as any),
+    fromGoogle({ attendees: ['koralzakai1@gmail.com', 'marika@ceva-dsp.com'] } as any),
     ['attendees'],
   );
   check('a genuinely different attendee list IS a change',

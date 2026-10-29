@@ -27,7 +27,7 @@ const CEVA_DESCRIPTION =
   + 'An in-person interview has been scheduled for you in Ceva.\n'
   + 'Please review the interview details below.\n​\n'
   + 'Position:C++ Software Engineer – AI & DSP Processor Simulators  \n---  \n'
-  + '| Interview with Dana Levi (Core Simulator and Debugger Team Leader)  \n–  \n'
+  + '| Interview with Marika Klubakov (Core Simulator and Debugger Team Leader)  \n–  \n'
   + '|  Wednesday, September 23, 2026, 2:30 PM IDT  \n'
   + "|  7 HaPnina Street, Ra'anana, Center District  \n"
   + "Please arrive at the reception at HaPnina 7, Ra'anana, building D, 9th floor  \n"

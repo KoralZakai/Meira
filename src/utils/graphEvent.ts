@@ -13,7 +13,7 @@
  *  - A meeting she DECLINED is still returned. It is not in her day.
  */
 import { meetingUrlFromEvent } from './meetingLink';
-import { addressFromDescription } from './eventAddress';
+import { addressFromDescription, addressFromTitle } from './eventAddress';
 import type { CalendarEvent } from '../types/index';
 
 function parseGraphTime(t?: { dateTime?: string; timeZone?: string }): Date | null {
@@ -55,7 +55,7 @@ export function graphEventToCalendarEvent(it: any): { event: CalendarEvent; date
       title: String(it.subject),
       startTime: hhmm(start),
       endTime,
-      location: place || addressFromDescription(body),
+      location: place || addressFromDescription(body) || addressFromTitle(String(it.subject)),
       description: body,
       meetingUrl: it.onlineMeeting?.joinUrl || it.onlineMeetingUrl || meetingUrlFromEvent(place, body),
       organizer: it.organizer?.emailAddress?.address || undefined,

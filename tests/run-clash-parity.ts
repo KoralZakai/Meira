@@ -28,6 +28,7 @@ function main() {
     clashes: resolveClashes(day.tasks as Task[], day.dayEnd).map((c) => ({
       a: c.a.id,
       b: c.b.id,
+      kind: c.kind,
       overlapMinutes: c.overlapMinutes,
       travelShortfall: c.travelShortfall ?? null,
       questionEn: c.questionEn,

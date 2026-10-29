@@ -144,8 +144,8 @@ export default function FlexibleTasksCard({
         <TouchableOpacity style={styles.more} onPress={toggleExpand} activeOpacity={0.8}>
           <Text style={styles.moreText} numberOfLines={1}>
             {expanded
-              ? (he ? '▴ פחות' : '▴ Show less')
-              : (he ? `▾ עוד ${hidden}` : `▾ ${hidden} more`)}
+              ? (he ? '▲ פחות' : '▲ Show less')
+              : (he ? `▼ עוד ${hidden}` : `▼ ${hidden} more`)}
           </Text>
         </TouchableOpacity>
       ) : null}

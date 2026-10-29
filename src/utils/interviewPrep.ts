@@ -42,6 +42,7 @@
  */
 import { Task, TaskCategory, AppLanguage } from '../types/index';
 import { timeToMinutes, minutesToTime } from './timeUtils';
+import { isSameMeeting } from './calendarEventTask';
 
 const HHMM = /^\d{1,2}:\d{2}$/;
 
@@ -410,6 +411,58 @@ export function prepTasksFor(interview: Task, opts: PrepOptions): Task[] {
 }
 
 /**
+ * One meeting, one prep. 5.10, "why are there 2 duplicated tasks tomorrow?":
+ * the calendar's "ראיון ראשון - קורל זכאי - חיפה" and her typed "ראיון עבודה
+ * רפאל ב 10 בפארק מדעי" sit on one 10:00 slot, and each row got its own
+ * 19:00 block two evenings before. Of twins (same slot, or same meeting), the
+ * calendar's row owns the prep — it carries the place and the route the
+ * morning block is measured from — then the older row.
+ */
+function twinRank(t: Task): string {
+  const calendar = /^(gcal|dcal|ocal)-/.test(t.id) ? '0' : '1';
+  return `${calendar}|${String(t.createdAt ?? 0).padStart(15, '0')}|${t.id}`;
+}
+
+/**
+ * Two interviews at the same minute of the same day share one prep — the time
+ * before that slot is the same time, whichever row it is. Not isSameMeeting:
+ * "ראיון ראשון - קורל זכאי - חיפה" and "ראיון עבודה רפאל…" share no name, so
+ * the cards stay two (with their "same time" note, so she can drop one); only
+ * the prep stops being doubled.
+ */
+const sameSlot = (a: Task, b: Task): boolean =>
+  a.date === b.date && Boolean(a.fixedTime) && a.fixedTime === b.fixedTime;
+
+function ownsPrep(t: Task, pool: Task[]): boolean {
+  return !pool.some((o) => o.id !== t.id && o.status !== 'complete' && isInterview(o)
+    && (sameSlot(o, t) || isSameMeeting(o, t)) && twinRank(o) < twinRank(t));
+}
+
+/**
+ * Untouched prep blocks still ahead whose interview no longer earns them: the
+ * twin that does NOT own the prep (the second set), and a parent that is gone,
+ * done, or no longer an interview at all. 5.10: the Rafael row on 8.10 had
+ * been overwritten with "Morning study for …" (an old absorbed merge), so it
+ * stopped being an interview — and its two blocks stayed on 6.10 and 7.10.
+ */
+export function twinPrepIds(all: Task[], today = ''): string[] {
+  const byId = new Map(all.map((t) => [t.id, t]));
+  const live = all.filter((t) => t.status !== 'complete' && isInterview(t));
+  return all
+    // A block she placed herself from a suggestion is hers (6.10): never swept.
+    .filter((t) => PREP_ID_RE.test(t.id || '') && t.status === 'pending' && (t.date || '') >= today
+      && !(t as { pickedAt?: number }).pickedAt)
+    .filter((t) => {
+      const parentId = String((t as { prepForTaskId?: string }).prepForTaskId
+        || PREP_ID_RE.exec(t.id || '')?.[2] || '');
+      const parent = byId.get(parentId);
+      if (!parent || parent.status === 'complete' || !isInterview(parent)) return true;
+      return !ownsPrep(parent, live);
+    })
+    .map((t) => t.id);
+}
+
+/**
  * Prep for every interview in a set of tasks, deduped against what exists.
  *
  * `existing` is the store. Anything already carrying one of the generated ids
@@ -423,7 +476,9 @@ export function missingPrepTasks(
 ): Task[] {
   const have = new Set(existing.map((t) => t.id));
   const out: Task[] = [];
+  const pool = [...existing, ...tasks];
   for (const t of tasks) {
+    if (!ownsPrep(t, pool)) continue;
     for (const prep of prepTasksFor(t, opts)) {
       if (have.has(prep.id)) continue;
       have.add(prep.id);

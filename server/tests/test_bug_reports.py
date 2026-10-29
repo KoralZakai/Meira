@@ -38,34 +38,34 @@ class StoreTests(unittest.TestCase):
         bug_reports._PATH = os.path.join(tempfile.mkdtemp(), "bugs.json")
 
     def test_file_and_fetch(self):
-        rec = bug_reports.file_bug("972500000009", "notifications appear twice")
+        rec = bug_reports.file_bug("972542902729", "notifications appear twice")
         self.assertEqual(rec["status"], "new")
         self.assertTrue(rec["id"].startswith("LUMI-"))
         self.assertEqual(bug_reports.get(rec["id"])["description"], "notifications appear twice")
 
     def test_status_transition(self):
-        rec = bug_reports.file_bug("972500000009", "x")
+        rec = bug_reports.file_bug("972542902729", "x")
         moved = bug_reports.set_status(rec["id"], "fixing", issueUrl="http://example/1")
         self.assertEqual(moved["status"], "fixing")
         self.assertEqual(moved["issueUrl"], "http://example/1")
 
     def test_unknown_status_refused(self):
-        rec = bug_reports.file_bug("972500000009", "x")
+        rec = bug_reports.file_bug("972542902729", "x")
         self.assertIsNone(bug_reports.set_status(rec["id"], "banana"))
         self.assertEqual(bug_reports.get(rec["id"])["status"], "new")
 
     def test_open_only_hides_released(self):
-        a = bug_reports.file_bug("972500000009", "still broken")
-        b = bug_reports.file_bug("972500000009", "already shipped")
+        a = bug_reports.file_bug("972542902729", "still broken")
+        b = bug_reports.file_bug("972542902729", "already shipped")
         bug_reports.set_status(b["id"], "released")
-        open_ids = [r["id"] for r in bug_reports.list_for_phone("972500000009", open_only=True)]
+        open_ids = [r["id"] for r in bug_reports.list_for_phone("972542902729", open_only=True)]
         self.assertIn(a["id"], open_ids)
         self.assertNotIn(b["id"], open_ids)
 
     def test_phone_scoping(self):
-        bug_reports.file_bug("972500000009", "mine")
+        bug_reports.file_bug("972542902729", "mine")
         bug_reports.file_bug("972500000001", "someone else")
-        rows = bug_reports.list_for_phone("0500000009")   # local format, same number
+        rows = bug_reports.list_for_phone("0542902729")   # local format, same number
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["description"], "mine")
 

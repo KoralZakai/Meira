@@ -1,319 +1,200 @@
 /**
- * TaskDetailScreen — single-task detail/edit modal (subtasks, location,
- * contact, progress).
- * Dependencies: task passed via navigation; edits flow through TaskStorage upstream.
+ * TaskDetailScreen — one task, opened (the home's "הבא בלו״ז", any alert about a task).
+ *
+ * v3 (Koral, 28.10: "the content is great — when to leave, walk, train,
+ * walk, arrive, the map, Google Maps / Waze / Moovit — update the design"):
+ * the sky behind it, the task's hero (when, day, place, the yellow "צאי"),
+ * the way there as the same short timeline the day card draws (TripTimeline),
+ * the map, then one row to navigate in the app she likes. Edits happen in the
+ * task card on Today (✏️), where every field and its re-planning live.
  */
 import React, { useEffect, useState } from 'react';
-import {
-  Alert,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-  Pressable,
-} from 'react-native';
+import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types/navigation';
-import { TransitLeg } from '../types/index';
 import { useLumiContext } from '../hooks/useLumiContext';
 import { SubtaskList } from '../components/SubtaskList';
 import RouteMap from '../components/RouteMap';
-import { BRAND, COLORS, CATEGORY_META, FONTS, RADIUS } from '../constants/theme';
+import { BRAND, FONTS, MIN_TOUCH, SHADOWS } from '../constants/theme';
+import SkyBackdrop, { useSky } from '../components/ui/SkyBackdrop';
+import LineIcon from '../components/ui/LineIcon';
+import TaskSheetHero from '../components/today/TaskSheetHero';
+import TripTimeline from '../components/today/TripTimeline';
+import { useAppLanguage } from '../hooks/useAppLanguage';
+import { getAllTasks } from '../services/TaskStorage';
+import { getTodayString } from '../utils/timeUtils';
+import { moovitLinks } from '../utils/moovitLink';
+import { contactPhoneOf } from '../utils/lateNotice';
+import { isRemoteTask } from '../utils/meetingLink';
+import type { Task } from '../types/index';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'TaskDetail'>;
+
+function nowHHMM(): string {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
 
 export default function TaskDetailScreen({ route, navigation }: Props) {
   const { taskId } = route.params;
   const { tasksState } = useLumiContext();
-  const [task, setTask] = useState<any | null>(null);
-  const [text, setText] = useState('');
-  const [duration, setDuration] = useState('30');
+  const { he } = useAppLanguage();
+  const insets = useSafeAreaInsets();
+  const sky = useSky();
+  const [task, setTask] = useState<Task | null>(null);
+  const [missing, setMissing] = useState(false);
 
   useEffect(() => {
-    const found = tasksState.tasks.find((t: any) => t.id === taskId);
-    if (found) {
-      setTask(found);
-      setText(found.text);
-      // Duration might not exist in models.ts Task, use a reasonable default
-      setDuration('30');
-    }
+    const found = tasksState.tasks.find((t: any) => t.id === taskId) as Task | undefined;
+    if (found) { setTask(found); return; }
+    // Not in the hook's list (another day, or not loaded yet): read the store — and say so if it is gone.
+    getAllTasks().then((all) => {
+      const t = all.find((x) => x.id === taskId);
+      if (t) setTask(t); else setMissing(true);
+    }).catch((e) => { console.warn('[TaskDetail] task unreadable', e); setMissing(true); });
   }, [taskId, tasksState.tasks]);
-
-  const handleSave = async () => {
-    if (!task) return;
-    await tasksState.updateTaskDetails?.(task.id, { text });
-    navigation.goBack();
-  };
-
-  const handleDelete = () => {
-    Alert.alert('Delete task?', 'This cannot be undone.', [
-      { text: 'Cancel' },
-      {
-        text: 'Delete',
-        onPress: async () => {
-          if (task && tasksState.removeTask) {
-            await tasksState.removeTask(task.id);
-            navigation.goBack();
-          }
-        },
-        style: 'destructive',
-      },
-    ]);
-  };
 
   if (!task) {
     return (
-      <SafeAreaView style={styles.container}>
-        <Text style={styles.loadingText}>Loading...</Text>
-      </SafeAreaView>
+      <View style={[styles.root, { paddingTop: insets.top + 16 }]}>
+        <SkyBackdrop sky={sky} />
+        <Text style={[styles.loading, { color: sky.ink }]}>
+          {missing ? (he ? 'המשימה הזו כבר לא קיימת' : 'This task is gone') : (he ? 'טוענת…' : 'Loading…')}
+        </Text>
+      </View>
     );
   }
 
-  const category = CATEGORY_META[task.category] || CATEGORY_META.general;
+  const loc: any = task.location && typeof task.location === 'object' ? task.location : null;
+  const label = loc?.displayName || loc?.address || '';
+  const hasPoint = loc && Number.isFinite(loc.lat) && Number.isFinite(loc.lng) && (loc.lat || loc.lng);
+  const remote = isRemoteTask(task as any);
+  const plan = loc?.transitPlan;
+  const transit = Boolean(plan?.legs?.some((l: any) => l.type !== 'walk')) || loc?.transportType === 'bus' || loc?.transportType === 'train';
+  const moovit = transit && !remote ? moovitLinks({ lat: loc?.lat, lng: loc?.lng, name: label }) : null;
+  const phone = contactPhoneOf(task);
+  const isToday = task.date === getTodayString();
+  const dir = he ? 'row-reverse' : 'row';
+  const rtl = he && styles.rtl;
+
+  const open = (url: string, fallback?: string) =>
+    Linking.openURL(url).catch(() => (fallback ? Linking.openURL(fallback) : Promise.reject()))
+      .catch((e) => Alert.alert(he ? 'לא נפתח' : "Couldn't open", String(e)));
+  const navs: Array<{ key: string; label: string; go: () => void }> = [];
+  if (hasPoint || label) {
+    const q = hasPoint ? `${loc.lat},${loc.lng}` : encodeURIComponent(label);
+    navs.push({ key: 'google', label: 'Google Maps', go: () => open(`google.navigation:q=${q}`, `https://www.google.com/maps/dir/?api=1&destination=${q}`) });
+    navs.push({ key: 'waze', label: 'Waze', go: () => open(hasPoint ? `waze://?ll=${loc.lat},${loc.lng}&navigate=yes` : `waze://?q=${q}&navigate=yes`,
+      hasPoint ? `https://waze.com/ul?ll=${loc.lat},${loc.lng}&navigate=yes` : `https://waze.com/ul?q=${q}&navigate=yes`) });
+  }
+  if (moovit) navs.push({ key: 'moovit', label: 'Moovit', go: () => open(moovit.app, moovit.web) });
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.header}>
-          <View style={[styles.categoryBadge, { backgroundColor: category.color }]}>
-            <Text style={styles.categoryIcon}>{category.icon}</Text>
-          </View>
-          <Text style={styles.categoryName}>{category.labelEn}</Text>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.label}>Task</Text>
-          <TextInput
-            style={styles.textInput}
-            placeholder="Task description"
-            value={text}
-            onChangeText={setText}
-            multiline
-            placeholderTextColor={BRAND.inkSoft}
-          />
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.label}>Duration (minutes)</Text>
-          <TextInput
-            style={styles.numberInput}
-            placeholder="30"
-            value={duration}
-            onChangeText={setDuration}
-            keyboardType="number-pad"
-            placeholderTextColor={BRAND.inkSoft}
-          />
-        </View>
-
-        {task.contact && (
-          <View style={styles.section}>
-            <Text style={styles.label}>Contact</Text>
-            <Text style={styles.value}>👤 {task.contact.name}</Text>
-            {task.contact.phone && <Text style={styles.value}>{task.contact.phone}</Text>}
-            {task.contact.email && <Text style={styles.value}>{task.contact.email}</Text>}
-          </View>
-        )}
-
-        {task.location && (
-          <View style={styles.section}>
-            <Text style={styles.label}>Location</Text>
-            <Text style={styles.value}>📍 {task.location.displayName || task.location.address}</Text>
-            {task.location.wakeUpBy && (
-              <Text style={styles.value}>⏰ Wake by {task.location.wakeUpBy}</Text>
-            )}
-            {task.location.leaveHomeBy && (
-              <Text style={styles.value}>🚪 Leave by {task.location.leaveHomeBy}</Text>
-            )}
-            {/* The route Lumi computed, saved on the task so it's here after the chat closes. */}
-            {task.location.transitPlan && (
-              <View style={styles.routeBox}>
-                {task.location.transitPlan.legs?.map((leg: TransitLeg, i: number) => (
-                  <Text key={i} style={styles.routeLeg}>
-                    {leg.type === 'walk' ? '🚶' : leg.type === 'train' ? '🚆' : leg.type === 'subway' ? '🚇' : '🚌'}{' '}
-                    {leg.type === 'walk'
-                      ? `Walk ${leg.durationMinutes}m${leg.to ? ` to ${leg.to}` : ''}`
-                      : `${leg.lineNumber ? `Line ${leg.lineNumber} · ` : ''}${leg.from ?? ''}${leg.to ? ` → ${leg.to}` : ''}${leg.departureTime ? ` (${leg.departureTime}${leg.arrivalTime ? `–${leg.arrivalTime}` : ''})` : ''}`}
-                  </Text>
-                ))}
-                {task.location.transitPlan.arriveAt && (
-                  <Text style={styles.value}>🎯 Arrive {task.location.transitPlan.arriveAt}</Text>
-                )}
-              </View>
-            )}
-            {/* Map + one-tap Navigate (falls back to text legs in Expo Go). */}
-            {task.location.transitPlan && task.location.lat != null && (
-              <RouteMap
-                plan={task.location.transitPlan}
-                destLat={task.location.lat}
-                destLng={task.location.lng}
-                destLabel={task.location.displayName || task.location.address}
-              />
-            )}
-          </View>
-        )}
-
-        {task.subtasks && task.subtasks.length > 0 && (
-          <View style={styles.section}>
-            {task.subtasks && (
-              <SubtaskList
-                subtasks={task.subtasks}
-                onToggle={subtask => {
-                  // Toggle subtask - in models.ts this might be handled differently
-                  setTask(task);
-                }}
-              />
-            )}
-          </View>
-        )}
-
-        {/* Important things to complete (e.g. extracted from the source email). */}
-        {task.how && (
-          <View style={styles.section}>
-            <Text style={styles.label}>To prepare</Text>
-            <Text style={styles.value}>📝 {task.how}</Text>
-          </View>
-        )}
-
-        {task.deadline && (
-          <View style={styles.section}>
-            <Text style={styles.label}>Deadline</Text>
-            <Text style={styles.value}>📅 {task.deadline}</Text>
-            {task.deadlineTime && <Text style={styles.value}>{task.deadlineTime}</Text>}
-          </View>
-        )}
-      </ScrollView>
-
-      <View style={styles.actions}>
-        <Pressable
-          onPress={handleDelete}
-          style={({ pressed }) => [styles.button, styles.deleteButton, pressed && styles.buttonPressed]}
-        >
-          <Text style={styles.deleteButtonText}>Delete</Text>
+    <View style={styles.root}>
+      <SkyBackdrop sky={sky} />
+      <View style={[styles.top, { paddingTop: insets.top + 8, flexDirection: dir }]}>
+        <Pressable style={styles.round} onPress={() => navigation.goBack()} accessibilityRole="button" accessibilityLabel={he ? 'סגירה' : 'Close'}>
+          <Text style={styles.roundText}>×</Text>
         </Pressable>
-        <Pressable
-          onPress={handleSave}
-          style={({ pressed }) => [styles.button, styles.saveButton, pressed && styles.buttonPressed]}
-        >
-          <Text style={styles.saveButtonText}>Save</Text>
+        <Text style={[styles.title, { color: sky.ink }, rtl]} numberOfLines={2}>{task.text}</Text>
+        <Pressable style={styles.round} accessibilityRole="button" accessibilityLabel={he ? 'עריכה' : 'Edit'}
+          onPress={() => (navigation as any).navigate('MainTabs', { screen: 'Today', params: { editTask: task.id, nonce: Date.now() } })}>
+          <Text style={styles.roundText}>✏️</Text>
         </Pressable>
       </View>
-    </SafeAreaView>
+
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 24 }]} showsVerticalScrollIndicator={false}>
+        <TaskSheetHero task={task} he={he} />
+
+        {loc?.leaveHomeBy || plan?.leaveHomeAt ? (
+          <View style={styles.card}>
+            <Text style={[styles.cap, rtl]}>{he ? 'הדרך לשם' : 'Getting there'}</Text>
+            <TripTimeline task={task} he={he} now={isToday ? nowHHMM() : undefined} readyAt={loc?.wakeUpBy} />
+          </View>
+        ) : null}
+
+        {plan && hasPoint ? (
+          <View style={styles.mapCard}>
+            <RouteMap plan={plan} destLat={loc.lat} destLng={loc.lng} destLabel={label} hideNavigate />
+          </View>
+        ) : null}
+
+        {navs.length ? (
+          <View style={[styles.navRow, { flexDirection: dir }]}>
+            {navs.map((n, i) => (
+              <Pressable key={n.key} style={[styles.nav, i === 0 && styles.navMain]} onPress={n.go} accessibilityRole="button">
+                {i === 0 ? <LineIcon name="map" size={16} color={BRAND.onGold} /> : null}
+                <Text style={[styles.navText, i === 0 && styles.navMainText]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>{n.label}</Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+
+        {task.contact?.name || phone ? (
+          <View style={[styles.card, styles.rowCard, { flexDirection: dir }]}>
+            <Text style={styles.rowIcon}>👤</Text>
+            <Text style={[styles.rowText, rtl]} numberOfLines={1}>{task.contact?.name || phone}</Text>
+            {phone ? (
+              <Pressable style={styles.call} onPress={() => open(`tel:${phone.replace(/[^\d+]/g, '')}`)} accessibilityRole="button"
+                accessibilityLabel={he ? 'להתקשר' : 'Call'}>
+                <Text style={styles.callText}>📞</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : null}
+
+        {(task as any).how ? (
+          <View style={styles.card}>
+            <Text style={[styles.cap, rtl]}>{he ? 'להכין' : 'To prepare'}</Text>
+            <Text style={[styles.body, rtl]}>{(task as any).how}</Text>
+          </View>
+        ) : null}
+
+        {task.subtasks?.length ? (
+          <View style={styles.card}>
+            <SubtaskList subtasks={task.subtasks} onToggle={() => setTask(task)} />
+          </View>
+        ) : null}
+
+        {task.deadline ? (
+          <View style={[styles.card, styles.rowCard, { flexDirection: dir }]}>
+            <Text style={styles.rowIcon}>📅</Text>
+            <Text style={[styles.rowText, rtl]} numberOfLines={2}>{`${he ? 'עד' : 'Due'} ${task.deadline}${task.deadlineTime ? ` ${task.deadlineTime}` : ''}`}</Text>
+          </View>
+        ) : null}
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: BRAND.cream,
+  root: { flex: 1, backgroundColor: BRAND.cream },
+  rtl: { textAlign: 'right', writingDirection: 'rtl' },
+  loading: { fontFamily: FONTS.bodyHeavy, fontSize: 16, textAlign: 'center', marginTop: 40 },
+  top: { alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingBottom: 10 },
+  title: { flex: 1, fontFamily: FONTS.display, fontSize: 20 },
+  round: { width: MIN_TOUCH, height: MIN_TOUCH, borderRadius: MIN_TOUCH / 2, backgroundColor: 'rgba(255,255,255,0.8)', alignItems: 'center', justifyContent: 'center' },
+  roundText: { fontSize: 20, fontFamily: FONTS.bodyHeavy, color: BRAND.warmInk },
+  scroll: { paddingHorizontal: 16, gap: 12 },
+  card: {
+    padding: 14, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.92)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.9)', ...SHADOWS.card,
   },
-  content: {
-    flex: 1,
-    paddingHorizontal: 16,
-    paddingTop: 16,
+  cap: { fontFamily: FONTS.bodyHeavy, fontSize: 12, color: BRAND.goldInk, marginBottom: 8 },
+  body: { fontFamily: FONTS.bodySemi, fontSize: 14, color: BRAND.warmInk, lineHeight: 20 },
+  mapCard: { borderRadius: 22, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.92)' },
+  navRow: { gap: 8 },
+  nav: {
+    flex: 1, minWidth: 0, minHeight: MIN_TOUCH + 4, paddingHorizontal: 10, borderRadius: 999, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6,
+    backgroundColor: 'rgba(255,255,255,0.92)', borderWidth: 1, borderColor: BRAND.line,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 24,
-  },
-  categoryBadge: {
-    width: 48,
-    height: 48,
-    borderRadius: RADIUS.card,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  categoryIcon: {
-    fontSize: 24,
-  },
-  categoryName: {
-    fontSize: 18,
-    fontFamily: FONTS.bodyBold,
-    color: BRAND.warmInk,
-  },
-  section: {
-    marginBottom: 20,
-  },
-  label: {
-    fontSize: 13,
-    fontFamily: FONTS.bodyBold,
-    color: BRAND.warmInk,
-    marginBottom: 8,
-    textTransform: 'uppercase',
-    opacity: 0.7,
-  },
-  textInput: {
-    backgroundColor: BRAND.creamCard,
-    borderRadius: RADIUS.chip,
-    padding: 12,
-    fontSize: 15,
-    color: BRAND.warmInk,
-    minHeight: 80,
-    textAlignVertical: 'top',
-  },
-  numberInput: {
-    backgroundColor: BRAND.creamCard,
-    borderRadius: RADIUS.chip,
-    padding: 12,
-    fontSize: 15,
-    color: BRAND.warmInk,
-  },
-  value: {
-    fontSize: 14,
-    color: BRAND.warmInk,
-    paddingVertical: 4,
-  },
-  routeBox: {
-    marginTop: 6,
-    paddingLeft: 8,
-    borderLeftWidth: 2,
-    borderLeftColor: BRAND.line,
-  },
-  routeLeg: {
-    fontSize: 13,
-    color: BRAND.warmInk,
-    paddingVertical: 3,
-  },
-  actions: {
-    flexDirection: 'row',
-    gap: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    borderTopWidth: 1,
-    borderTopColor: BRAND.line,
-  },
-  button: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: RADIUS.chip,
-    alignItems: 'center',
-  },
-  buttonPressed: {
-    opacity: 0.7,
-  },
-  deleteButton: {
-    backgroundColor: COLORS.danger,
-  },
-  deleteButtonText: {
-    fontSize: 14,
-    fontFamily: FONTS.bodyBold,
-    color: '#FFF',
-  },
-  saveButton: {
-    backgroundColor: BRAND.sunGold,
-  },
-  saveButtonText: {
-    fontSize: 14,
-    fontFamily: FONTS.bodyBold,
-    color: BRAND.white,
-  },
-  loadingText: {
-    fontSize: 16,
-    color: BRAND.warmInk,
-    textAlign: 'center',
-    marginTop: 20,
-  },
+  navMain: { backgroundColor: BRAND.sunGold, borderColor: BRAND.sunGold },
+  navText: { flexShrink: 1, fontFamily: FONTS.bodyHeavy, fontSize: 14, color: BRAND.warmInk },
+  navMainText: { color: BRAND.onGold },
+  rowCard: { alignItems: 'center', gap: 10, paddingVertical: 8 },
+  rowIcon: { fontSize: 20 },
+  rowText: { flex: 1, minWidth: 0, fontFamily: FONTS.bodyHeavy, fontSize: 15, color: BRAND.warmInk },
+  call: { width: MIN_TOUCH, height: MIN_TOUCH, borderRadius: MIN_TOUCH / 2, backgroundColor: BRAND.goldSoft, alignItems: 'center', justifyContent: 'center' },
+  callText: { fontSize: 18 },
 });

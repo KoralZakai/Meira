@@ -140,7 +140,7 @@ Full regression: `python3 -m pytest tests/ -q` → **389 passed** · `npm run te
 
 ```bash
 # 1. Unauthenticated → 401
-curl -s -o /dev/null -w '%{http_code}\n' https://lumi-whatsapp.fly.dev/tasks/972500000009
+curl -s -o /dev/null -w '%{http_code}\n' https://lumi-whatsapp.fly.dev/tasks/972542902729
 # expect 401
 
 # 2. Cross-user with a REAL token → 403
@@ -272,12 +272,17 @@ exist**: `startBackgroundLocationUpdates` names a task never registered with
 permission on Play — a declaration form and a demo video. Removed and blocked.
 
 Also removed or blocked: `WRITE_CONTACTS` (contacts are only read),
-`SYSTEM_ALERT_WINDOW`, `USE_BIOMETRIC`, `USE_FINGERPRINT`,
-`READ/WRITE_EXTERNAL_STORAGE` — all pulled in by libraries, used by nothing.
+`USE_BIOMETRIC`, `USE_FINGERPRINT`, `READ/WRITE_EXTERNAL_STORAGE` — all pulled in by
+libraries, used by nothing. (`SYSTEM_ALERT_WINDOW` was on this list until 17.10; the
+learning-session blocker, `modules/focus-guard`, needs it to show its screen over a
+blocked app, so it is declared by that module and no longer blocked.)
 
-`USE_EXACT_ALARM` **stays**. Waking her up on time is the product, Play's policy
-covers alarm and calendar apps, and dropping it would trade a real feature for a
-paperwork saving. It needs a declaration at submission — see the checklist.
+`USE_EXACT_ALARM` **was removed on 19.10** (it was "stays" until then). Play grants it
+only to apps whose core function is an alarm clock or a calendar, so for Meira it was a
+near-certain rejection. The wake alarm never needed it: it is set in the clock app
+(`ACTION_SET_ALARM`), which rings exactly on its own. `SCHEDULE_EXACT_ALARM` stays (she
+can grant it); without it, notifications and focus-session starts fall back to an
+inexact alarm. It is now in `blockedPermissions`, pinned by `tests/run-release-config.ts`.
 
 ## 11. Release logs — fixed
 

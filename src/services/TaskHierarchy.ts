@@ -25,7 +25,7 @@
  * Dependencies: TaskStorage (read/write), utils/fuzzyMatch (textSimilarity).
  * Consumed by MyTasks, AddTask flows.
  */
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from './EncryptedStorage';  // AES-256-GCM at rest (7.10)
 import { Task } from '../types/index';
 import { getAllTasks, updateTaskFields } from './TaskStorage';
 import {

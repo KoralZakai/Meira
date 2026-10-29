@@ -80,6 +80,7 @@ export function TaskCard({ task, onComplete, onPostpone, onPress }: Props) {
             )}
             {task.contact && <Text style={styles.detail}>👤 {task.contact.name}</Text>}
             {task.gmailThreadId && <Text style={styles.detail}>📧 Gmail</Text>}
+            {!task.gmailThreadId && /^(gcal|ocal)-/.test(task.id) && <Text style={styles.detail}>📅</Text>}
             {task.verifiedArrival && <Text style={styles.detail}>✅ Arrived</Text>}
           </View>
 

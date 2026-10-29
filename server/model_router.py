@@ -64,6 +64,8 @@ CONTEXT: dict[str, int] = {
 DEFAULT_TIER: dict[str, str] = {
     "task_extract":    SMALL,
     "understand":      MEDIUM,   # meaning, not keywords: the conversation → actions
+    "advice":          LARGE,    # "which one helps me more?" — judgment about HER, 2 options (27.10)
+    "vehicle_understand": MEDIUM,  # her bike/car elsewhere: the slots for vehicle_chain
     "profile_extract": SMALL,
     "email_events":    SMALL,
     "categorize":      SMALL,
@@ -73,6 +75,7 @@ DEFAULT_TIER: dict[str, str] = {
     "meeting_brief":   MEDIUM,
     "task_prep_plan":  SMALL,    # is there anything worth preparing? which searches
     "task_prep":       MEDIUM,   # cited prep items from the searches
+    "add_understand":  MEDIUM,   # a warm greeting in both languages + what follows from an occasion
     "errand_understand": SMALL,  # is this an errand, and what to search on the map
     "errand_price": SMALL,       # read one price out of cited web snippets (code verifies it)
     "research":        LARGE,
@@ -134,6 +137,18 @@ def pick(source: str, *, prompt_chars: int = 0, tier: Optional[str] = None) -> s
                          "%s (%d) — this reply may be truncated", source, need, chosen,
                          CONTEXT[chosen])
 
+    # 3. Her own allowance: a person near their limit runs on the small tier.
+    try:
+        import user_quota
+        person_cap = user_quota.tier_ceiling()
+    except Exception as exc:  # noqa: BLE001 — accounting must never gate a reply
+        logger.warning("model_router: person quota check failed: %s", exc)
+        person_cap = None
+    if person_cap and _ORDER.index(chosen) > _ORDER.index(person_cap):
+        logger.warning("model_router: %s's allowance caps %s at %s (was %s)",
+                       user_quota.current(), source, person_cap, chosen)
+        chosen = person_cap
+
     return MODELS[chosen]
 
 
@@ -169,3 +184,21 @@ async def verify() -> dict:
                 ", ".join(sorted(s for s in served if "emotron" in s.lower())) or "(no Nemotron found)")
     return {"ok": True, "tiers": report,
             "nemotron_available": sorted(s for s in served if "emotron" in s.lower())}
+
+
+def tier_for_frame(fr: Optional[dict]) -> Optional[str]:
+    """The agent's tier by WHAT the message is (frame.py), not by its words.
+
+    Retrieval, context updates and bookings are answered in code before the
+    agent (intent_turn) — when one still reaches it, the default is enough.
+    A message that asks Meira to REASON about her plan ("I'm exhausted and
+    don't think I can make my workout") gets the large model: weighing what
+    to drop is judgment, not lookup. None → the call site's default."""
+    if not fr:
+        return None
+    if fr.get("intent") == "GENERAL_CONVERSATION" and fr.get("time") == "present" \
+            and (fr.get("entity") or fr.get("days") or fr.get("about_plan")):
+        # Only when it is about a PLAN (a workout, a day): a bare "I'm tired" is chat.
+        logger.warning("model_router: tier LARGE by intent (%s)", fr.get("why"))
+        return LARGE
+    return None

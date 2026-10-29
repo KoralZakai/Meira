@@ -9,7 +9,7 @@
  *
  * WHY THE PHONE NO LONGER ASKS GOOGLE DIRECTLY
  *
- * The Maps key compiled into the APK is restricted to `com.lumi.app` + a SHA-1
+ * The Maps key compiled into the APK is restricted to `meira.secretary` + a SHA-1
  * fingerprint. Google enforces that through the `X-Android-Package` and
  * `X-Android-Cert` headers, which ONLY the Maps SDK sends — a plain `fetch()`
  * sends neither, so every Directions call came back REQUEST_DENIED. Her
@@ -27,7 +27,7 @@
  * Trigger: installed by App.tsx at startup, before any sync can run.
  */
 import { getSession } from './SupabaseAuthService';
-import { setDirectionsGateway } from './RoutePlanner';
+import { setDirectionsGateway, setPlacesGateway, PlaceHit } from './RoutePlanner';
 
 const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL || '';
 
@@ -121,4 +121,33 @@ export async function askServerForDirections(
  */
 export function installRouteGateway(): void {
   setDirectionsGateway(askServerForDirections);
+  setPlacesGateway(askServerForPlaces);
+}
+
+/**
+ * Places Text Search through the server (POST /app/place/search), 8.10. Throws
+ * on anything but an answer, so a refused key or a signed-out phone is never
+ * read as "no such place".
+ */
+export async function askServerForPlaces(
+  req: { query: string; type?: string; radius?: number },
+): Promise<PlaceHit[]> {
+  if (!SERVER_URL) throw new Error('no EXPO_PUBLIC_SERVER_URL in this build');
+  const token = (await getSession().catch(() => null))?.access_token;
+  if (!token) throw new Error('signed out — the server cannot know who is asking');
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ROUTE_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${SERVER_URL}/app/place/search`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(req),
+      signal: controller.signal,
+    });
+    const json = await res.json().catch(() => null);
+    if (!res.ok || !json?.ok) throw new Error(`place search: ${json?.reason ?? `HTTP ${res.status}`}`);
+    return Array.isArray(json.results) ? json.results : [];
+  } finally {
+    clearTimeout(timer);
+  }
 }

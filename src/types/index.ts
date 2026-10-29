@@ -110,6 +110,13 @@ export interface TransitPlan {
    */
   rulesVersion?: number;
   /**
+   * She chose this departure herself (the ‹ earlier · later › arrows, 13.10).
+   * The chain keeps it: only a changed ORIGIN re-plans it — never newer
+   * ranking rules or an age refresh, which would quietly put back the train
+   * she just stepped away from.
+   */
+  pickedBy?: 'her';
+  /**
    * The vehicle she asked for, recorded ONLY when the route could not honour
    * it. Google's `transit_mode` is a preference, not a filter: ask for rail on
    * a corridor with no train and it returns the bus anyway. Without this the
@@ -154,11 +161,24 @@ export interface TaskLocation {
   /** Per-task transport override; the profile's transportType is the fallback. */
   transportType?: TransportType;
   /**
+   * Who picked `transportType`: 'her' (on the card, or remembered for this
+   * place) or 'ladder' (utils/travelLadder chose it). A ladder choice is
+   * re-decided on the next route; hers never is. Absent on plans stored before
+   * the ladder existed — treated as hers, which is what they always were.
+   */
+  transportTypeBy?: 'her' | 'ladder';
+  /**
    * Why the vehicle on this plan is not the one she asked for — e.g.
    * "No train to Ra'anana — bus instead". Set by the rail-first ladder in
    * utils/transitFallback; undefined when she got what she wanted.
    */
   modeNote?: string;
+  /**
+   * How the vehicle was chosen, step by step (utils/travelLadder): what she
+   * has, the distance, each way tried and what it came back with. Shown under
+   * "Why this way?" on the trip, so a wrong choice can be seen and corrected.
+   */
+  routeWhy?: string[];
   /**
    * Where a two-mode journey changes over — "Hadera West". A real Israeli
    * trip is often train to a station and then a lift, and asking a single-mode
@@ -168,6 +188,23 @@ export interface TaskLocation {
   viaStation?: string;
   /** How the last mile is covered from `viaStation`. */
   lastLegMode?: 'car' | 'taxi' | 'bike' | 'scooter' | 'walk';
+  /** The last news check for disruptions on this trip (server/transit_alerts.py). */
+  transitAlerts?: TaskTransitAlerts;
+}
+
+/** One news report that may affect her trip — a HINT, shown with its source. */
+export interface TransitAlert {
+  title: string;
+  link: string;
+  published?: string;
+  matched?: string[];
+}
+
+/** checkedAt + alerts = we looked (alerts may be []); reason = we could NOT look. */
+export interface TaskTransitAlerts {
+  checkedAt: number;
+  alerts: TransitAlert[];
+  reason?: string;
 }
 
 export interface TaskContact {
@@ -260,6 +297,10 @@ export interface Task {
   calendarEventId?: string;
   verifiedArrival?: boolean;
   completedAt?: number | null;
+  /** She placed it in a slot from a suggestion (GapFillService.applyGapIdea) — hers, not ours. */
+  pickedAt?: number;
+  /** 'arrival': ticked because she reached its place (utils/arrivalDone), not by her tap. */
+  completedBy?: 'arrival';
   /**
    * When she explicitly UNticked it. Without this, "completion always wins"
    * in dedupeTasks cannot tell a task that was never done from one she has
@@ -383,6 +424,32 @@ export interface UserProfile {
    * it was written; nothing populated it until the learning engine was wired.
    */
   learnedLeadMinutes?: Partial<Record<TaskCategory, number>>;
+  /**
+   * Does she have a car to drive? Unset = "a driver has one, nobody else
+   * does" (utils/travelLadder.hasCarOf). Without it the app cannot tell "take
+   * the car" from "find the best bus, then a bike, then a taxi".
+   */
+  hasCar?: boolean;
+  /**
+   * How pushy Meira is around a study block: 'alarm' (one reminder), 'gentle'
+   * (default), 'motivating'. Chosen on Profile; sent with every chat turn so the
+   * server's reminders (reschedule.nudges_for) follow it. utils/nudgeLevel.
+   */
+  nudgeLevel?: 'alarm' | 'gentle' | 'motivating';
+  /**
+   * The earliest she is willing to be woken, HH:MM. A day whose first trip
+   * needs her up before this is flagged, never silently armed at 04:49
+   * (utils/dayFeasibility — WAKE_CONFLICT). Unset → DEFAULT_EARLIEST_WAKE.
+   */
+  earliestWakeTime?: string;
+  /** Minutes of slack she wants between arriving and the start. Unset → 10. */
+  travelBufferMinutes?: number;
+  /**
+   * How late she habitually leaves, learned from detected departures
+   * (utils/leadLearning.nextDepartDelay). Added to the buffer when judging
+   * whether a gap between two places is comfortable or merely possible.
+   */
+  departDelayMinutes?: number;
   // ─── MBTI / personality (optional; populated by Quick MBTI + behavioral learning) ───
   mbtiType?: MBTIType;
   mbtiProfile?: MBTIProfile;

@@ -142,10 +142,14 @@ export function slackMinutes(plan: TransitPlan, arriveBy: string): number | unde
  * How much room to aim for before a `must`.
  *
  * Thirteen minutes is technically on time and is not how anyone wants to walk
- * into a job interview. Half an hour is enough to find the building, sit down
- * and stop being someone who just ran for a train.
+ * into a job interview. It was 30, and on 13.10 it picked her a train landing
+ * an hour early — "you chose a train that arrives too early for me". She chose
+ * "the latest one still on time, with 10–15 minutes to walk", and Google's
+ * arrival is already at the door, so 20 is the target: for 13:00 the 12:37
+ * (23 early) beats the 12:07 (53), and for 14:30 the 13:58 (32) still beats
+ * the 14:16 (14), which she asked for on 22.9.
  */
-export const MUST_ARRIVAL_BUFFER_MIN = 30;
+export const MUST_ARRIVAL_BUFFER_MIN = 20;
 
 /**
  * Kinds of appointment where arriving on the dot is arriving badly. Someone
@@ -267,6 +271,32 @@ export function tierOf(plan: TransitPlan): JourneyTier {
 }
 
 /**
+ * Is the train what carries this journey? True when the longest ride is rail —
+ * "bus to the station, train to Haifa, a short bus at the end" is a train
+ * journey; "three buses" is not.
+ *
+ * 13.10, Koral, on a Haifa interview planned as buses 24 → 669 → 998 → 768:
+ * "no train?! better a train, arriving with enough time ahead to walk to the
+ * place". Every connection counted as 'mixed', so a train with a feeder bus
+ * and three buses tied on tier, and whichever landed nearer the 30-minute
+ * target won — the buses, by a few minutes.
+ */
+export function railCarries(plan: TransitPlan): boolean {
+  const rides = (plan.legs ?? []).filter((l) => l.type !== 'walk');
+  if (!rides.length) return false;
+  const longest = rides.reduce((a, b) => ((b.durationMinutes ?? 0) > (a.durationMinutes ?? 0) ? b : a));
+  return RAIL.includes(longest.type);
+}
+
+/**
+ * How much "further from the target" a train journey may land and still beat
+ * a bus one: arriving half an hour earlier by train is better than exactly on
+ * target by bus. In the same units as missesTargetBy (a minute early = 1, a
+ * minute short of the cushion = SHORTFALL_WEIGHT).
+ */
+export const RAIL_PREFERENCE = 30;
+
+/**
  * The vehicle to show for a plan.
  *
  * A mixed journey has no single answer, so it reports the FIRST vehicle she
@@ -292,7 +322,8 @@ export function vehicleOf(plan: TransitPlan): TransportType {
  * One sort, stated once:
  *
  *   1. arrives in time       — a plan that makes her late is not a better plan
- *   2. lands near the target — `missesTargetBy`, 0 when minBufferMinutes is 0
+ *   2. lands near the target — `missesTargetBy`, 0 when minBufferMinutes is 0,
+ *                              less RAIL_PREFERENCE when a train carries it
  *   3. tier                  — direct rail, then direct bus, then mixed
  *   4. fewest rides          — separates a 2-leg mix from a 3-leg one
  *   5. latest departure      — every minute earlier is a minute spent waiting
@@ -316,7 +347,9 @@ export function rankPlans(
   opts: { minBufferMinutes?: number } = {},
 ): TransitPlan[] {
   const buffer = opts.minBufferMinutes ?? 0;
-  const miss = (p: TransitPlan): number => missesTargetBy(p, arriveBy, buffer);
+  // A train journey is preferred (railCarries) — in time comes first, always.
+  const miss = (p: TransitPlan): number => missesTargetBy(p, arriveBy, buffer)
+    - (railCarries(p) ? RAIL_PREFERENCE : 0);
   return [...plans].sort((a, b) => {
     const aOk = arrivesInTime(a, arriveBy);
     const bOk = arrivesInTime(b, arriveBy);

@@ -90,12 +90,32 @@ def record(source: str, tokens_in: int, tokens_out: int, model: str | None = Non
         # then idempotent, where a retried increment would double-count.
         database_service.shadow_write(database_service.record_usage(
             day, source, row["in"], row["out"], row["calls"]))
+        # …and to the person it served (user_quota), so one heavy user is visible
+        # and can be capped before the shared budget is gone.
+        import user_quota
+        user_quota.charge(model, tokens_in, tokens_out)
     except Exception as exc:  # noqa: BLE001 — accounting must never break a reply
         logger.warning("usage record failed: %s", exc)
 
 
+def price_of(model: str | None) -> tuple[float, float] | None:
+    """(in, out) $/1M for a model id, or None. Case-insensitive: the Fly
+    secret says "nvidia/Nemotron-3-Nano-30B-A3B" where the catalog says
+    "nvidia/NVIDIA-Nemotron-3-Nano-…", and an exact lookup priced it at $0."""
+    if not model:
+        return None
+    if model in PRICES:
+        return PRICES[model]
+    low = model.lower()
+    for name, price in PRICES.items():
+        n = name.lower()
+        if n == low or n.replace("nvidia-", "") == low.replace("nvidia-", ""):
+            return price
+    return None
+
+
 def _cost(tokens_in: int, tokens_out: int, model: str) -> float:
-    pin, pout = PRICES.get(model, (0.0, 0.0))
+    pin, pout = price_of(model) or (0.0, 0.0)
     return (tokens_in * pin + tokens_out * pout) / 1_000_000
 
 
@@ -126,7 +146,7 @@ def summary() -> dict:
         if by_model:
             # Priced per model — the only honest number once tiers are in play.
             cost = sum(_cost(m["in"], m["out"], mdl) for mdl, m in by_model.items())
-            unpriced = [mdl for mdl in by_model if mdl not in PRICES]
+            unpriced = [mdl for mdl in by_model if not price_of(mdl)]
         else:
             # Pre-tier history carries no model tag; fall back to the old
             # single-model estimate rather than reporting $0.

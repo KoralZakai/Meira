@@ -38,9 +38,23 @@
 import { Task } from '../types/index';
 import { timeToMinutes, minutesToTime, addMinutes } from './timeUtils';
 import { isRemoteTask } from './meetingLink';
+import { isFlexibleTask, isStudyTask } from './taskShape';
 
 /** What a trip costs when no route has been computed. */
 export const ASSUMED_TRAVEL_MINUTES = 15;
+
+/**
+ * Placeless work sharing this much of an appointment is not riding along.
+ *
+ * "An hour of the CV inside a four-hour conference" is parallel, and stays so.
+ * A two-hour business plan laid exactly over a 90-minute meetup is not: there
+ * is no hour of that meetup left to write it in (Koral, 30.9). The line is
+ * drawn on the HOST: an appointment of two hours or less has no slack to lend.
+ */
+export const OCCUPIED_OVERLAP_MINUTES = 30;
+export const SHORT_HOST_MINUTES = 120;
+/** Her own work that needs her attention — a call cannot ride along with it. */
+export const FOCUS_CATEGORIES = ['course', 'work'];
 
 export type OverlapKind = 'parallel' | 'displaced' | 'same-place' | 'spatial';
 
@@ -55,7 +69,10 @@ export interface OverlapVerdict {
   suggestDuringTravel?: boolean;
   /** displaced only: the placeless block that has to give way. */
   displacedTaskId?: string;
-  /** displaced only: the departure it was covering. */
+  /**
+   * displaced only: the departure it was covering. Absent when the block is
+   * displaced because it fills a short appointment rather than a departure.
+   */
   departureAt?: string;
   /** spatial: leave the earlier one at this time to arrive on time. */
   leaveEarlyAt?: string;
@@ -181,6 +198,20 @@ export function classifyOverlap(
   const overlap = overlapMinutesOf(a, b);
   if (overlap <= 0) return null;
 
+  // 0. Her own work during a call. A call rides along with a PLACE — the
+  // office, a train — not with work that needs her. 6.10: the mock-interview
+  // prep ran to 15:37 over the 15:00 Datadog call and nothing asked what to
+  // shorten. Server twin: clashes.clash_kind.
+  // Work that needs her attention only — study, work, prep (always 'course');
+  // an after-office party can still carry a call.
+  for (const [work, call] of [[a, b], [b, a]] as const) {
+    if (isRemoteTask(call) && !isRemoteTask(work) && !placeKey(work) && isFlexibleTask(work)
+        && (FOCUS_CATEGORIES.includes(String(work.category)) || isStudyTask(work))
+        && overlap >= OCCUPIED_OVERLAP_MINUTES) {
+      return { kind: 'displaced', overlapMinutes: overlap, travelMinutes: 0, displacedTaskId: work.id };
+    }
+  }
+
   // 1. Does either side need to BE anywhere? A call rides along.
   for (const [remote, other] of [[a, b], [b, a]] as const) {
     if (isRemoteTask(remote) && !isRemoteTask(other)) {
@@ -220,6 +251,16 @@ export function classifyOverlap(
           travelMinutes: 0,
           displacedTaskId: floating.id,
           departureAt: minutesToTime(departure),
+        };
+      }
+      // …and the one that hid 30.9's evening: work that takes real time out of
+      // a short appointment. See OCCUPIED_OVERLAP_MINUTES.
+      if (overlap >= OCCUPIED_OVERLAP_MINUTES && (other.durationMinutes || 30) <= SHORT_HOST_MINUTES) {
+        return {
+          kind: 'displaced',
+          overlapMinutes: overlap,
+          travelMinutes: 0,
+          displacedTaskId: floating.id,
         };
       }
       return {

@@ -202,3 +202,153 @@ class TaskExtract(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ProfileRoutines(unittest.TestCase):
+    """6.10: the phone reads what she told Meira about her week."""
+
+    def test_requires_a_token(self):
+        self.assertEqual(client.post("/app/profile/routines", json={}).status_code, 401)
+
+    def test_reads_the_verified_callers_own_profile_only(self):
+        with _signed_in(), patch.object(main.user_profile, "get_profile",
+                                         side_effect=lambda key: {"routinesNotes": "קיקבוקס 20:30-21:30",
+                                                                  "hobbies": "climbing"}) as gp:
+            res = client.post("/app/profile/routines", json={"phone": "972599999999"},
+                              headers={"Authorization": "Bearer t"})
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json(), {"routinesNotes": "קיקבוקס 20:30-21:30", "hobbies": "climbing"})
+        gp.assert_called_once()
+        self.assertNotEqual(gp.call_args[0][0], "972599999999", "a number in the body chose whose profile")
+
+
+
+class ChangeSuggestRoute(unittest.TestCase):
+    """POST /app/change/suggest — a free hour for the study offer on the Today card."""
+
+    BODY = {"task": {"id": "w", "category": "interview", "text": "Phone screen at Workday", "fixed_time": "13:00"},
+            "before": {"date": "2099-01-05"}, "after": {"date": "2099-01-06", "time": "13:00"},
+            "rows": [{"id": "m", "date": "2099-01-05", "fixed_time": "18:00", "duration_minutes": 60, "category": "meeting"}]}
+
+    def test_needs_a_signed_in_caller(self):
+        self.assertEqual(client.post("/app/change/suggest", json=self.BODY).status_code, 401)
+
+    def test_proposes_a_free_evening_hour(self):
+        with _signed_in():
+            r = client.post("/app/change/suggest", json=self.BODY, headers=AUTH)
+        self.assertEqual(r.status_code, 200)
+        j = r.json()
+        self.assertTrue(j["ok"] and j["prep"])
+        self.assertEqual((j["proposal"]["date"], j["proposal"]["time"]), ("2099-01-05", "20:00"))
+        self.assertEqual(j["morning"], ["07:00", "08:00", "09:00"])
+
+    def test_a_bad_body_is_refused_not_guessed(self):
+        with _signed_in():
+            r = client.post("/app/change/suggest", json={"task": {"id": "x"}}, headers=AUTH)
+        self.assertEqual(r.status_code, 400)
+        self.assertFalse(r.json()["ok"])
+
+
+class HistoryRoutes(unittest.TestCase):
+    def test_all_three_require_a_token(self):
+        self.assertEqual(client.post("/app/history/consent", json={"on": True}).status_code, 401)
+        self.assertEqual(client.post("/app/history/events", json={"events": []}).status_code, 401)
+        self.assertEqual(client.get("/app/history/week").status_code, 401)
+
+    def test_consent_needs_a_real_boolean(self):
+        with _signed_in():
+            r = client.post("/app/history/consent", json={"on": "yes"}, headers=AUTH)
+        self.assertEqual(r.status_code, 400)
+
+    def test_week_without_her_yes_says_so(self):
+        import history_store
+        with _signed_in(), patch.object(history_store, "opted_in", return_value=False):
+            body = client.get("/app/history/week", headers=AUTH).json()
+        self.assertEqual((body["ok"], body["reason"]), (False, "not_opted_in"))
+
+    def test_events_are_recorded_under_her_brain_key(self):
+        import history_store
+        from unittest.mock import AsyncMock
+        rec = AsyncMock(return_value={"ok": True, "stored": 1, "streaks": []})
+        with _signed_in(), patch.object(history_store, "record", rec):
+            body = client.post("/app/history/events",
+                               json={"events": [{"kind": "moved", "day": "2026-10-20"}]},
+                               headers=AUTH).json()
+        self.assertTrue(body["ok"])
+        self.assertEqual(rec.await_args.args[0], "alice-uuid")
+class TransitAlerts(unittest.TestCase):
+    def test_requires_a_token(self):
+        self.assertEqual(client.post("/app/transit/alerts", json={"places": ["Haifa"]}).status_code, 401)
+
+    def test_no_route_terms_is_a_bad_request(self):
+        with _signed_in():
+            r = client.post("/app/transit/alerts", json={"modes": ["bus"]}, headers=AUTH)
+        self.assertEqual(r.status_code, 400)
+        self.assertFalse(r.json()["checked"])
+
+    def test_passes_her_route_through(self):
+        import transit_alerts
+        from unittest.mock import AsyncMock
+        fake = AsyncMock(return_value={"ok": True, "checked": True, "alerts": []})
+        with _signed_in(), patch.object(transit_alerts, "disruptions_for", fake):
+            body = client.post("/app/transit/alerts",
+                               json={"places": ["Haifa"], "lines": ["251", {"x": 1}], "modes": ["bus"]},
+                               headers=AUTH).json()
+        self.assertTrue(body["checked"])
+        self.assertEqual(fake.await_args.kwargs["lines"], ["251"])
+
+
+class GroupRoutes(unittest.TestCase):
+    def test_all_require_a_token(self):
+        self.assertEqual(client.post("/app/groups", json={}).status_code, 401)
+        self.assertEqual(client.get("/app/groups").status_code, 401)
+        self.assertEqual(client.get("/app/groups/x").status_code, 401)
+        self.assertEqual(client.post("/app/groups/x/lock", json={"slotId": "s"}).status_code, 401)
+
+    def test_create_needs_slots_and_members(self):
+        with _signed_in():
+            r = client.post("/app/groups", json={"title": "x"}, headers=AUTH)
+        self.assertEqual(r.status_code, 400)
+
+    def test_create_is_keyed_to_the_verified_caller(self):
+        import group_time
+        from unittest.mock import AsyncMock
+        fake = AsyncMock(return_value={"ok": True, "groupId": "g", "invites": []})
+        with _signed_in(), patch.object(group_time, "create", fake):
+            client.post("/app/groups", json={"title": "x", "slots": [], "members": [],
+                                             "ownerKey": "someone-else"}, headers=AUTH)
+        self.assertEqual(fake.await_args.args[0], "alice-uuid")
+
+    def test_respond_needs_something_to_say(self):
+        with _signed_in():
+            r = client.post("/app/groups/g/respond", json={}, headers=AUTH)
+        self.assertEqual(r.status_code, 400)
+
+
+class GroupInvitePage(unittest.TestCase):
+    def test_unknown_token_page_says_not_found(self):
+        import group_time
+        from unittest.mock import AsyncMock
+        with patch.object(group_time, "by_token", AsyncMock(return_value=(None, None, None, "not_found"))):
+            r = client.get("/g/nope")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("ההזמנה לא נמצאה", r.text)
+
+    def test_the_page_lists_slots_and_escapes_the_title(self):
+        import group_time
+        from unittest.mock import AsyncMock
+        g = {"id": "g", "title": "<b>מסיבה</b>", "minutes": 120, "status": "open"}
+        slots = [{"id": "s1", "day": "2026-10-23", "start": "20:00"}]
+        with patch.object(group_time, "by_token", AsyncMock(return_value=(g, {"id": "m"}, slots, ""))):
+            r = client.get("/g/tok")
+        self.assertIn("יום שישי 23.10 · 20:00", r.text)
+        self.assertNotIn("<b>מסיבה</b>", r.text)
+
+    def test_posting_answers(self):
+        import group_time
+        from unittest.mock import AsyncMock
+        ans = AsyncMock(return_value={"ok": True})
+        with patch.object(group_time, "answer_by_token", ans):
+            r = client.post("/g/tok", data={"s1": "yes", "s2": "maybe"})
+        self.assertIn("נשלח", r.text)
+        self.assertEqual(ans.await_args.args[1], {"s1": "yes"})

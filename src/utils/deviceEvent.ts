@@ -4,7 +4,7 @@
  * Pure; tested in tests/run-calendar-sources.ts.
  */
 import { meetingUrlFromEvent } from './meetingLink';
-import { addressFromDescription } from './eventAddress';
+import { addressFromDescription, addressFromTitle } from './eventAddress';
 import type { CalendarEvent } from '../types/index';
 
 function localDateKey(d: Date): string {
@@ -42,7 +42,7 @@ export function deviceEventToCalendarEvent(ev: {
       startTime: hhmm(start),
       endTime,
       // Same as Google: an invitation that left the venue in the body.
-      location: ev.location || addressFromDescription(notes),
+      location: ev.location || addressFromDescription(notes) || addressFromTitle(ev.title),
       description: notes,
       meetingUrl: meetingUrlFromEvent(ev.location, notes) || meetingUrlFromEvent(ev.url, undefined),
       organizer: ev.organizerEmail || undefined,

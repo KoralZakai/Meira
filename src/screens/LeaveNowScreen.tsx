@@ -29,6 +29,7 @@ import { loadProfile } from '../services/UserProfileStorage';
 // RouteMap renders the Google overview polyline on EAS builds; falls back to
 // a flat placeholder in Expo Go — same behavior as WakeCalculator.
 import RouteMap from '../components/RouteMap';
+import { WashedSky } from '../components/ui/SkyBackdrop';
 
 interface Props {
   navigation: any;
@@ -189,6 +190,7 @@ export default function LeaveNowScreen({ navigation, route }: Props) {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
+      <WashedSky />
       <ScrollView contentContainerStyle={styles.content}>
         {/* top bar */}
         <View style={styles.topBar}>
@@ -342,7 +344,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 22, paddingVertical: 10, alignItems: 'center', ...SHADOWS.button,
   },
   countdownLate: { backgroundColor: '#EF476F' },
-  countdownLabel: { fontFamily: FONTS.bodyHeavy, fontSize: 11, letterSpacing: 1, color: '#7A5A18' },
+  countdownLabel: { fontFamily: FONTS.bodyHeavy, fontSize: 11, letterSpacing: 1, color: BRAND.goldInk },
   countdownValue: { fontFamily: FONTS.display, fontSize: 34, color: '#4A3512', lineHeight: 38 },
   countdownUnit: { fontSize: 15 },
   // No fixed height and no clipping: the child decides how tall it is, and a

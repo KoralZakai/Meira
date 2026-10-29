@@ -17,27 +17,71 @@ import { BRAND, FONTS } from '../constants/theme';
 import { Task } from '../types/index';
 import { ErrandCandidate, ErrandsResult, ErrandTrip, errandsAlong } from '../services/LumiServer';
 import { getAllTasks } from '../services/TaskStorage';
-import { getTodayString } from '../utils/timeUtils';
+import { addMinutes, getTodayString } from '../utils/timeUtils';
+import { loadProfile } from '../services/UserProfileStorage';
+import { encodePolyline } from '../utils/polyline';
 import { dateOffset } from '../services/GoogleSync';
 
 const HEB = /[֐-׿]/;
 
-/** The journeys Meira planned for today (still ahead) and tomorrow. */
-export async function plannedTrips(now = new Date()): Promise<ErrandTrip[]> {
+type LL = [number, number];
+const pointOf = (lat?: number, lng?: number): LL | null =>
+  (typeof lat === 'number' && typeof lng === 'number' && !(lat === 0 && lng === 0) ? [lat, lng] : null);
+const locOf = (t: Task): any => (t.location && typeof t.location === 'object' ? t.location : undefined);
+
+/** A straight leg, as points along it — the server samples by vertex. */
+const straight = (a: LL, b: LL, n = 8): LL[] =>
+  Array.from({ length: n + 1 }, (_, k) => [a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n] as LL);
+
+/**
+ * Her journeys on the errand's day (or today and tomorrow for one with no
+ * day): every planned leg TO an event, and the leg AFTER each one — on to the
+ * next event, or home when it is the last (Koral, 1.10: "where is the next
+ * event? if none, probably going home"). The way home is not routed, so it
+ * goes up as a straight line, and its label says it was assumed.
+ */
+export async function plannedTrips(forDate?: string, now = new Date()): Promise<ErrandTrip[]> {
   const today = getTodayString();
-  const tomorrow = dateOffset(1);
+  const dates = forDate && forDate > today ? [forDate] : [today, dateOffset(1)];
   const hhmm = now.toTimeString().slice(0, 5);
-  const all = await getAllTasks();
+  const [all, profile] = await Promise.all([
+    getAllTasks(),
+    loadProfile().catch((e) => { console.warn('[OnYourWay] profile not read — no way home', e); return null; }),
+  ]);
+  // UserProfileStorage keeps home as homeLatLng; the older shape as homeLat/Lng.
+  const p: any = profile;
+  const home = pointOf(p?.homeLatLng?.lat, p?.homeLatLng?.lng) || pointOf(p?.homeLat, p?.homeLng);
+  if (!home) console.warn('[OnYourWay] no home coordinates — no way-home leg');
   const out: ErrandTrip[] = [];
-  for (const t of all) {
-    if (t.status !== 'pending' || (t.date !== today && t.date !== tomorrow)) continue;
-    const loc = typeof t.location === 'object' ? t.location : undefined;
-    const plan = loc?.transitPlan as any;
-    const leave = loc?.leaveHomeBy || plan?.leaveHomeAt;
-    const arrive = plan?.arriveAt || t.fixedTime || t.scheduledTime;
-    if (!plan?.overviewPolyline || !leave || !arrive) continue;
-    if (t.date === today && arrive < hhmm) continue;
-    out.push({ polyline: plan.overviewPolyline, leave, arrive, date: t.date, label: t.text });
+  for (const date of dates) {
+    const placed = all
+      .filter((t) => t.status === 'pending' && t.date === date && (t.fixedTime || t.scheduledTime)
+        && pointOf(locOf(t)?.lat, locOf(t)?.lng))
+      .sort((a, b) => (a.fixedTime || a.scheduledTime || '').localeCompare(b.fixedTime || b.scheduledTime || ''));
+    placed.forEach((t, i) => {
+      const loc = locOf(t);
+      const plan = loc?.transitPlan as any;
+      const start = (t.fixedTime || t.scheduledTime)!;
+      const leave = loc?.leaveHomeBy || plan?.leaveHomeAt;
+      const arrive = plan?.arriveAt || start;
+      if (plan?.overviewPolyline && leave && !(date === today && arrive < hhmm)) {
+        out.push({ polyline: plan.overviewPolyline, leave, arrive, date, label: t.text });
+      }
+      const end = addMinutes(start, t.durationMinutes || 30);
+      if (date === today && end < hhmm) return;
+      const next = placed[i + 1];
+      // The next event's own route already starts here (the chain plans prev→next).
+      if (next && (locOf(next)?.transitPlan as any)?.overviewPolyline) return;
+      const to = next ? pointOf(locOf(next)?.lat, locOf(next)?.lng) : home;
+      const from = pointOf(loc?.lat, loc?.lng);
+      if (!to || !from) return;
+      const ride = plan?.totalDurationMinutes || loc?.travelMinutes || 30;
+      out.push({
+        polyline: encodePolyline(straight(from, to)), leave: end, arrive: addMinutes(end, ride), date,
+        label: next ? `${t.text} → ${next.text}` : `${t.text} → 🏠`,
+        after: true,
+      });
+    });
   }
   return out.sort((a, b) => `${a.date} ${a.leave}`.localeCompare(`${b.date} ${b.leave}`)).slice(0, 3);
 }
@@ -70,11 +114,11 @@ export default function OnYourWayCard({ task, he, onPlan }: Props) {
     (async () => {
       setState({ loading: true, res: null });
       try {
-        const trips = await plannedTrips();
+        const trips = await plannedTrips(task.date);
         const res = trips.length
           ? await errandsAlong(task.text, trips)
           : ({ ok: false, reason: 'no_route' } as ErrandsResult);
-        if (!res?.ok) console.warn('[OnYourWay]', res?.reason ?? 'no answer', 'for', task.text);
+        if (!res?.ok) console.warn('[OnYourWay]', res?.reason ?? 'no answer', 'for task', task.id);
         if (!cancelled) setState({ loading: false, res });
       } catch (e) {
         console.warn('[OnYourWay] failed', e);
@@ -170,7 +214,7 @@ const styles = StyleSheet.create({
   facts: { fontFamily: FONTS.bodyBold, fontSize: 12, color: BRAND.warmInk },
   name: { fontFamily: FONTS.bodyHeavy, fontSize: 14, color: BRAND.warmInk },
   rtl: { writingDirection: 'rtl', textAlign: 'right' },
-  sub: { fontFamily: FONTS.bodySemi, fontSize: 12, color: '#7A5A18', lineHeight: 17 },
+  sub: { fontFamily: FONTS.bodySemi, fontSize: 12, color: BRAND.goldInk, lineHeight: 17 },
   map: { fontSize: 18 },
   planBtn: { backgroundColor: BRAND.warmInk, borderRadius: 999, paddingVertical: 8, paddingHorizontal: 12, minHeight: 36, justifyContent: 'center' },
   planText: { color: BRAND.white, fontFamily: FONTS.bodyHeavy, fontSize: 12 },

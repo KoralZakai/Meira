@@ -9,7 +9,7 @@
  * (the phone) + mergeExternalTasks (non-destructive merge by stable id).
  * Consumed by useTasks on load. Server endpoint: GET /tasks/{phone} in server/main.py.
  */
-import { getSettings, mergeExternalTasks } from './TaskStorage';
+import { getAllTasks, getSettings, mergeExternalTasks } from './TaskStorage';
 import { authedFetch } from './serverAuth';
 import { Task, TaskCategory, TaskPriority, TaskStatus } from '../types/index';
 
@@ -18,7 +18,7 @@ const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL || '';
 /**
  * The floor between two pulls of the same list.
  *
- * The log showed `pulling from …/tasks/972500000009` 53 times in 200 lines,
+ * The log showed `pulling from …/tasks/972542902729` 53 times in 200 lines,
  * each answering with all 121 tasks. The callers are all legitimate — mount,
  * and every return to the foreground — so rather than hunt for whichever one
  * fires most, the pull itself refuses to repeat work. A task typed in WhatsApp
@@ -84,6 +84,27 @@ function mapRow(r: any): Task | null {
   } as Task;
 }
 
+const placeText = (loc: any): string =>
+  String((typeof loc === 'string' ? loc : loc?.address || loc?.displayName) || '')
+    .split(',')[0].trim().toLowerCase().replace(/\s+/g, ' ');
+
+/**
+ * The server's copy of a place is its words; the phone's is the words AND the
+ * route, leave time and wake time it planned there. A pull must never trade
+ * the second for the first. 1.10: yoga routed by bike at 10:43, then a pull
+ * wrote back the server's plain "Yigal Alon St 94" — "routing…" again, and a
+ * fallback 10:25 alarm. A DIFFERENT place still comes through: that is a move.
+ */
+export function keepPlannedPlaces(incoming: Task[], local: Task[]): Task[] {
+  const byId = new Map(local.map((t) => [t.id, t]));
+  return incoming.map((t) => {
+    const mine: any = byId.get(t.id)?.location;
+    if (!mine || typeof mine !== 'object' || !(mine.transitPlan || mine.leaveHomeBy)) return t;
+    const theirs = placeText(t.location);
+    return !theirs || theirs === placeText(mine) ? { ...t, location: mine } : t;
+  });
+}
+
 /**
  * Fetch the user's WhatsApp tasks and merge new ones into local storage.
  * No-ops (returns 0) when the server URL or WhatsApp number isn't set, or on
@@ -123,7 +144,23 @@ export async function pullWhatsAppTasks({ force = false } = {}): Promise<number>
     const body = await res.json();
     const mapped = (body.tasks ?? []).map(mapRow).filter((t: Task | null): t is Task => t !== null);
     console.log('[WhatsAppTaskSync] merged tasks', { count: mapped.length, source: body.source });
-    return await mergeExternalTasks(mapped);
+    const local = await getAllTasks().catch((e) => {
+      console.warn('[WhatsAppTaskSync] local read failed — merging blind', e);
+      return [] as Task[];
+    });
+    const before = new Set(local.map((t) => t.id));
+    const added = await mergeExternalTasks(keepPlannedPlaces(mapped, local));
+    // A task Meira saved (WhatsApp, Claude, ChatGPT) gets its route, leave time
+    // and wake alarm NOW, not on some screen's next sweep. 1.10: the yoga sat on
+    // "routing…" under a fallback 10:25 alarm until a button was tapped.
+    // Lazy: GoogleSync imports this module, ArrivedTaskPlanner imports GoogleSync.
+    if (added > 0) {
+      const arrived = mapped.filter((t: Task) => !before.has(t.id));
+      import('./ArrivedTaskPlanner')
+        .then(({ planArrivedTasks }) => planArrivedTasks(arrived))
+        .catch((e) => console.warn('[WhatsAppTaskSync] arrived tasks not routed', e));
+    }
+    return added;
   } catch (e) {
     console.warn('[WhatsAppTaskSync] pull failed', e);
     return 0;

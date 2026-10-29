@@ -96,6 +96,12 @@ export const getNameVariants = (name: string): string[] => {
 export const PLACE_NAME_CORRECTIONS: Record<string, string> = {
   'igal alon': 'יגאל אלון',
   'איגל אלון': 'יגאל אלון',
+  // How Whisper heard "יגאל אלון" on her phone, 9–11.10 — each one a separate
+  // "place" that never geocoded to her gym.
+  'עיגל אלון': 'יגאל אלון',
+  'עיגול אלון': 'יגאל אלון',
+  'עיגאל אלון': 'יגאל אלון',
+  'איגאל אלון': 'יגאל אלון',
   'even gvirol': 'אבן גבירול',
   'dizengof': 'דיזנגוף',
   'biniamina': 'בנימינה',
@@ -120,8 +126,10 @@ export const correctPlaceName = (text: string): string => {
   let result = text;
   for (const [wrong, correct] of Object.entries(PLACE_NAME_CORRECTIONS)) {
     const escaped = wrong.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const regex = new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'giu');
-    result = result.replace(regex, correct);
+    // A Hebrew word carries its preposition glued on ("בעיגל אלון"): allow one.
+    const prefix = /[\u0590-\u05FF]/.test(wrong) ? '([בלמהו]-?)?' : '()';
+    const regex = new RegExp(`(?<![\\p{L}\\p{N}])${prefix}${escaped}(?![\\p{L}\\p{N}])`, 'giu');
+    result = result.replace(regex, (_m, pre: string | undefined) => `${pre ?? ''}${correct}`);
   }
   return result;
 };

@@ -22,6 +22,7 @@
  * tests/run-task-shape.ts drives every branch.
  */
 import { Task, TaskCategory } from '../types/index';
+import { isPrepBlock } from './interviewPrep';
 
 /**
  * Categories that ARE an appointment by their nature. You do not reschedule a
@@ -44,6 +45,8 @@ export interface ShapeVerdict {
     | 'has-place'        // she has to physically be somewhere
     | 'appointment-kind' // its category is an appointment
     | 'external'         // it came from a calendar or an email
+    | 'prep'             // her own preparation FOR an appointment — done anywhere
+    | 'study'            // studying — at home, or a study spot she picks
     | 'no-anchor';       // nothing holds it to this hour
 }
 
@@ -62,8 +65,17 @@ function placeOf(task: Task): string {
  * appointment, or a diary entry somebody else made. An hour on the task is
  * deliberately not one of them — see the note at the bottom.
  */
+const STUDY_RE = /(^|\s)(ללמוד|לימוד|לחזור על|שיעורי בית|study|homework|revise)(\s|$)/i;
+export const isStudyTask = (task: Task): boolean => STUDY_RE.test(task.text || '');
+
 export function classifyShape(task: Task): ShapeVerdict {
   if (placeOf(task)) return { shape: 'time-bound', reason: 'has-place' };
+  // "Prep for the Ceva interview" is filed under course/interview by its words,
+  // and is work at her desk: it was drawn with "📍 add place" (1.10).
+  if (isPrepBlock(task)) return { shape: 'flexible', reason: 'prep' };
+  // "ללמוד לראיון של אמזון" is filed as a course by its words, and is desk work
+  // she can do at home or at a study spot (1.10) — never "add place".
+  if (isStudyTask(task)) return { shape: 'flexible', reason: 'study' };
   if (task.category && APPOINTMENT_CATEGORIES.includes(task.category)) {
     return { shape: 'time-bound', reason: 'appointment-kind' };
   }

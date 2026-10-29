@@ -30,6 +30,7 @@
  * TaskStorage, KnownPlacesStore, DayEvents, utils/voicePlan.
  * Consumed by components/VoiceSheet.
  */
+import { namesInTitle } from '../utils/namesInTitle';
 import { AppLanguage, Task } from '../types/index';
 import { CalendarSyncResult, syncCalendarNow } from './CalendarAutoSync';
 import { HereResult, getAddressFromCoordinates, getHereDetailed } from './LocationService';
@@ -37,50 +38,91 @@ import { brainTurn } from './LumiBrain';
 import { planDay } from './LumiServer';
 import { getAllTasks, getTasksForDate, loadProfile, toDateKey, updateTaskFields } from './TaskStorage';
 import { loadKnownPlaces } from './KnownPlacesStore';
+import { PLACE_NAME_CORRECTIONS } from '../utils/fuzzyMatch';
+import type { LookupAnswer } from '../utils/answerCard';
+import type { ChainAnswer } from '../utils/chainAnswer';
 import { emitDayPlanned } from './DayEvents';
 import { VoicePlanReport, describePlan, linkPrepTasks } from '../utils/voicePlan';
 
 export interface VoiceContext {
   calendar: Promise<CalendarSyncResult>;
   here: Promise<HereResult>;
+  /** The street name for `here` — a nicety for the agent, never waited for. */
+  label: Promise<string | null>;
 }
 
 export type PlanStep = 'understanding' | 'planning';
 
 /** Start the checks that do not depend on what she says. Call when the mic opens. */
 export function beginVoiceContext(lang: AppLanguage): VoiceContext {
+  const here = getHereDetailed(8000);
   return {
     calendar: syncCalendarNow(lang, 'voice').catch((e): CalendarSyncResult => {
       console.warn('[VoicePlan] calendar sync threw', e);
       return { added: 0, error: String(e).slice(0, 160), newTasks: [], ran: false };
     }),
-    here: getHereDetailed(8000),
+    here,
+    // Looked up while she talks, not after: it used to start only once the
+    // transcript was in, and held the call to Meira for up to 3 s.
+    label: here.then((h) => (h.ok ? getAddressFromCoordinates(h.lat, h.lng) : null))
+      .catch((e) => { console.warn('[VoicePlan] street name lookup failed', e); return null; }),
   };
 }
 
 const withTimeout = <T,>(p: Promise<T>, ms: number, fallback: T): Promise<T> =>
   Promise.race([p, new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms))]);
 
+/** A NAME is at most three words; anything longer is a sentence, and the
+ * server drops it anyway (stt.clean_prompt) — so it is never sent. */
+const asName = (s: string | undefined | null): string | null => {
+  const t = (s ?? '').split(',')[0].trim();
+  return t && t.split(/\s+/).length <= 3 && !t.includes('?') ? t.slice(0, 40) : null;
+};
+
 /**
- * Words Whisper should spell her way: the names on what is coming up and the
- * places she goes. "Ceva", not "Siva"; "רעננה", not "ראננה".
+ * Words Whisper should spell her way — NAMES only: the people and places on
+ * what is coming up, the places she goes, her own name. "Ceva", not "Siva";
+ * "רעננה", not "ראננה". Task titles used to be sent whole, and every one
+ * longer than three words was dropped on the server, so the hint was mostly
+ * empty. Started when the mic opens (useVoiceCapture), not after she stops.
  */
 export async function buildVoiceHint(): Promise<string> {
-  const words: string[] = ['Meira'];
+  const people: string[] = [];
+  const places: string[] = [];
+  const titles: string[] = [];
   try {
+    const profile = await loadProfile().catch(() => null);
+    const me = asName(profile?.name);
+    if (me) people.push(me);
     const today = toDateKey();
     const soon = toDateKey(new Date(Date.now() + 14 * 86400000));
     const tasks = (await getAllTasks())
       .filter((t) => t.date >= today && t.date <= soon && t.status !== 'complete')
       .slice(0, 25);
-    for (const t of tasks) words.push(t.text.slice(0, 40));
-    const places = await loadKnownPlaces().catch(() => ({}));
-    for (const place of Object.values(places)) {
-      if (place.address) words.push(place.address.slice(0, 40));
+    for (const t of tasks) {
+      const who = asName(t.contact?.name);
+      if (who) people.push(who);
+      // The person inside the title — "שיחה עם דותן" (20.10: heard five ways).
+      people.push(...namesInTitle(t.text));
+      const loc = t.location;
+      const where = typeof loc === 'string'
+        ? asName(loc)
+        : asName(loc?.displayName) ?? asName(loc?.address);
+      if (where) places.push(where);
+      const what = asName(t.text);
+      if (what) titles.push(what);
+    }
+    const known = await loadKnownPlaces().catch(() => ({}));
+    for (const place of Object.values(known)) {
+      const where = asName(place.address);
+      if (where) places.push(where);
     }
   } catch (e) {
     console.warn('[VoicePlan] could not build the vocabulary hint', e);
   }
+  // Most useful first: the server keeps the first dozen.
+  const words = ['Meira', ...people, ...places, ...titles,
+    ...Object.values(PLACE_NAME_CORRECTIONS)];
   return Array.from(new Set(words)).join(', ').slice(0, 400);
 }
 
@@ -139,7 +181,7 @@ export async function runVoicePlan(
   ctx: VoiceContext,
   lang: AppLanguage,
   onStep?: (step: PlanStep) => void,
-): Promise<VoicePlanReport & { reply: string }> {
+): Promise<VoicePlanReport & { reply: string; type?: string; answer?: LookupAnswer; chain?: ChainAnswer }> {
   const he = lang === 'he';
   // Rule 10, on our side: every step says how long it took. On 2026-09-28 a
   // voice plan sat on "Understanding…" for 2.7 minutes and nothing could say
@@ -152,9 +194,12 @@ export async function runVoicePlan(
   mark(`position ${here.ok ? 'ok' : here.error}`);
   let hereForAgent: { lat: number; lng: number; label?: string } | undefined;
   if (here.ok) {
-    const label = await withTimeout(
-      getAddressFromCoordinates(here.lat, here.lng).catch(() => null), 3000, null);
+    // The coordinates are what the agent routes from; the street name is only
+    // a nicety. Take it if the lookup started at mic-open has already landed,
+    // never wait for it (it held this call for up to 3 s, 19.10).
+    const label = await withTimeout(ctx.label, 0, null);
     hereForAgent = { lat: here.lat, lng: here.lng, ...(label ? { label } : {}) };
+    mark(label ? 'street name ready' : 'street name not ready — coordinates only');
   }
 
   onStep?.('understanding');
@@ -165,20 +210,35 @@ export async function runVoicePlan(
   // What she said and what came back, field by field: on 28.9 reserve duty
   // for 8.10 landed as an undated, hourless task and nothing on the phone
   // could say whether the words, the server or the mapping lost the date.
-  console.warn('[VoicePlan] heard:', JSON.stringify(transcript.slice(0, 200)));
+  // Shapes only — what she said and where she is going stay out of logcat (7.10).
+  console.warn('[VoicePlan] heard', transcript.length, 'chars');
   for (const t of created) {
-    console.warn('[VoicePlan] saved:', JSON.stringify({ text: t.text, date: t.date, at: t.fixedTime ?? null,
-      min: t.durationMinutes, cat: t.category, place: typeof t.location === 'string' ? t.location : t.location?.address ?? null }));
+    console.warn('[VoicePlan] saved:', JSON.stringify({ date: t.date, at: t.fixedTime ?? null,
+      min: t.durationMinutes, cat: t.category, placed: Boolean(t.location) }));
   }
-  if (brain?.text) console.warn('[VoicePlan] reply:', JSON.stringify(brain.text.slice(0, 300)));
+  if (brain?.text) console.warn('[VoicePlan] reply', brain.text.length, 'chars');
 
   // Her plan does not wait for Google. The calendar check was started when
-  // the mic opened; if it has not finished by now it carries on in the
+  // the mic opened, and has had her whole sentence, the transcription and
+  // Meira's turn to finish; if it still has not, it carries on in the
   // background (CalendarAutoSync announces what it lands), and "not finished"
-  // is reported as not-run — never as a Google error, which it is not.
-  const calendar = await withTimeout<CalendarSyncResult>(ctx.calendar, 5000,
+  // is reported as not-run — never as a Google error, which it is not. One
+  // more second, not five (19.10): a slow Google must not hold her answer.
+  const calendar = await withTimeout<CalendarSyncResult>(ctx.calendar, 1000,
     { added: 0, error: null, newTasks: [], ran: false });
   mark(calendar.ran ? 'calendar checked' : 'calendar still running — not waited for');
+
+  // She ASKED something ("how do I get home?") — nothing to plan, and the
+  // answer belongs in the chat (her pick, 7.10). The day is left as it is.
+  if (brain?.type === 'answer') {
+    mark('an answer, not a plan');
+    return {
+      created: [], placed: [], unplaced: [], prepLinks: [], plannerOffline: false,
+      calendarError: null, calendarAdded: 0, location: here.ok ? 'here' : here.error,
+      reply: brain.text, type: 'answer', ...(brain.answer ? { answer: brain.answer } : {}),
+      ...(brain.chain ? { chain: brain.chain } : {}),
+    };
+  }
 
   onStep?.('planning');
   const planned = brain === null

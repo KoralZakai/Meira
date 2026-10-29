@@ -214,11 +214,12 @@ class HereStampTests(unittest.TestCase):
         import agent_turn
         s = agent_turn._here_stamp({"lat": 32.0853, "lng": 34.7818, "label": "דיזנגוף 50"})
         self.assertIn("דיזנגוף 50", s)
-        self.assertIn("32.08530", s)
+        self.assertIn("32.085", s)
+        self.assertNotIn("32.0853", s)   # ~100 m, never the door (7.10 privacy)
 
     def test_a_bare_fix_still_gives_an_origin(self):
         import agent_turn
-        self.assertIn("32.08530,34.78180", agent_turn._here_stamp({"lat": 32.0853, "lng": 34.7818}))
+        self.assertIn("32.085,34.782", agent_turn._here_stamp({"lat": 32.0853, "lng": 34.7818}))
 
     def test_nothing_is_claimed_without_a_fix(self):
         import agent_turn

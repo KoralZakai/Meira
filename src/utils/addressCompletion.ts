@@ -75,16 +75,21 @@ export function cityOf(address?: string | null): string | null {
     const hit = CITY_WORDS.find((c) => s.includes(c.toLowerCase()));
     return hit ? hit : null;
   }
-  // Skip a segment that is only a house number (Google sometimes leads with
-  // one: "11א, Kaufmann Street, Tel Aviv") — the city is the one after.
-  for (const part of parts.slice(1)) {
-    if (/^\d+[a-zא-ת]?$/.test(part)) continue;
-    if (namesACity(part)) return part;
-    // The second real segment IS the city in both formats, even when it is a
-    // town this file has never heard of.
-    return part;
-  }
-  return null;
+  // A town this file knows, anywhere after the street, wins outright.
+  const country = (part: string) => /^(israel|ישראל)$/i.test(part);
+  const known = parts.slice(1).find((part) => namesACity(part) && !country(part));
+  if (known) return known;
+  // Google sometimes LEADS with the house number — "21, Mordei ha-Geta'ot
+  // Street, Tel Aviv-Yafo" — and then the second segment is the STREET. Read
+  // as the city, it was appended to an interview in Haifa as "- פארק מדעי
+  // החיים, Mordei ha-Geta'ot Street" (13.10). The city is the segment after
+  // the street, wherever the number stands.
+  const isNumber = (part: string) => /^\d+[a-zא-ת]?$/i.test(part);
+  const rest = isNumber(parts[0]) ? parts.slice(2) : parts.slice(1);
+  const city = rest.find((part) => !isNumber(part) && !country(part));
+  // The real segment after the street IS the city in both formats, even when
+  // it is a town this file has never heard of.
+  return city ?? null;
 }
 
 /**
@@ -98,9 +103,11 @@ export function needsCity(address?: string | null): boolean {
   if (!s) return false;
   if (s.includes(',')) return false;        // already has segments
   if (namesACity(s)) return false;          // already says the town
-  // A street and a number, or a short venue name. Longer than that and it is
-  // prose, or an address complete enough to leave alone.
-  return s.split(/\s+/).filter(Boolean).length <= 4;
+  // A STREET AND A NUMBER — "יגאל אלון 94" is in a dozen towns. A venue name is
+  // not completed (13.10): "רפאל מכון דוד" is in Haifa, and ", תל אביב" sent
+  // the geocoder looking for it in the wrong city. A name is unique enough for
+  // Google, which already searches near her (the geocode carries her bounds).
+  return /\d/.test(s) && s.split(/\s+/).filter(Boolean).length <= 4;
 }
 
 /**
@@ -111,9 +118,49 @@ export function needsCity(address?: string | null): boolean {
  * geocoded by a device geocoder that has no idea which country she is in.
  */
 export function completeAddress(address?: string | null, homeAddress?: string | null): string {
-  const s = String(address || '').trim();
+  // " - פארק מדעי החיים " is how a calendar invite wrote its venue.
+  const s = String(address || '').trim().replace(/^[\s\-–—,·:]+|[\s\-–—,·:]+$/g, '');
   if (!needsCity(s)) return s;
   const city = cityOf(homeAddress);
   if (!city) return s;
   return `${s}, ${city}`;
+}
+
+/** A town this file knows, named in free text (an event's title): "… - חיפה". */
+export function cityNamedIn(text?: string | null): string | null {
+  const s = String(text || '').toLowerCase();
+  return CITY_WORDS.find((c) => c !== 'israel' && c !== 'ישראל' && s.includes(c.toLowerCase())) ?? null;
+}
+
+/**
+ * The destination to route to: a bare venue is completed from the city the
+ * EVENT names before the city she lives in. "ראיון ראשון - קורל זכאי - חיפה"
+ * at " - פארק מדעי החיים " is in Haifa (13.10) — her home city would have put
+ * it in Tel Aviv, and the street her home address leads with put it nowhere.
+ */
+export function completeDestination(address?: string | null, title?: string | null, homeAddress?: string | null): string {
+  address = withoutAppendedStreet(address);
+  const city = cityNamedIn(title);
+  if (!city) return completeAddress(address, homeAddress);
+  // The event SAID the town: that is not a guess, so a venue name gets it too.
+  const clean = String(address || '').trim().replace(/^[\s\-–—,·:]+|[\s\-–—,·:]+$/g, '');
+  return clean && !namesACity(clean) && !clean.includes(',') ? `${clean}, ${city}` : completeAddress(address, homeAddress);
+}
+
+/**
+ * Undo what the old cityOf appended (13.10): it read the STREET of a home
+ * written "21, Mordei ha-Geta'ot Street, Tel Aviv-Yafo" as the city, so
+ * stored venues ended ", Mordei ha-Geta'ot Street" — "רפאל מכון דוד,
+ * Mordei ha-Geta'ot Street" could not be found at all. A last segment that is
+ * a bare street name (no number, a street word) is never how a place ends.
+ */
+export function withoutAppendedStreet(address?: string | null): string {
+  const s = String(address || '').trim();
+  const parts = s.split(',').map((p) => p.trim());
+  if (parts.length < 2) return s;
+  const last = parts[parts.length - 1];
+  if (!/\d/.test(last) && /(?:^|\s)(?:street|st\.?|road|rd\.?|avenue|ave\.?|boulevard|blvd\.?|רחוב|רח')$/i.test(last)) {
+    return parts.slice(0, -1).join(', ');
+  }
+  return s;
 }

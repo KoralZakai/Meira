@@ -1,10 +1,15 @@
 /**
- * CustomTabBar — Today · [🎙️ | 💬] · Tasks · Trips.
+ * CustomTabBar — 💬 Meira · Today · Tasks · Trips (v3, 27.10; before: Today · 🎙️ Talk · 💬 Write · Tasks · Trips).
  *
  * Design handoff "Calm Today" (2026-09-28). What changed and why:
  *
- * - The centre is the TalkControl split pill: 🎙️ opens the voice sheet, 💬
- *   the chat. Chat used to hide behind a long-press on the mic.
+ * - 🎙️ opens the voice sheet, 💬 the chat. Chat used to hide behind a
+ *   long-press on the mic.
+ * - Koral, 17.10: "the microphone and text buttons on the same menu in the
+ *   bottom". They were a split pill raised 32px above the bar, which floated
+ *   over the last card on Today (it hid the fourth unfinished row). Her pick
+ *   of three mockups: five equal tabs, the two actions as ordinary slots with
+ *   an icon AND a label — nothing sits above the bar any more.
  * - Profile is no longer a tab. ☰ Menu opens the profile / settings as a
  *   sheet over whatever screen she is on — it is not a place she goes.
  * - Timeline was already merged into Today (the day chips moved into Today's
@@ -19,8 +24,8 @@ import { View, Pressable, StyleSheet, Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BRAND, FONTS } from '../constants/theme';
 import VoiceSheet from './VoiceSheet';
-import TalkControl from './TalkControl';
 import { useAppLanguage } from '../hooks/useAppLanguage';
+import LineIcon, { LineIconName } from './ui/LineIcon';
 
 interface TabBarProps {
   state: any;
@@ -29,15 +34,18 @@ interface TabBarProps {
 }
 
 type Slot =
-  | { kind: 'route'; route: string; icon: string; en: string; he: string }
-  | { kind: 'talk' }
+  | { kind: 'route'; route: string; icon: LineIconName; en: string; he: string }
+  | { kind: 'action'; action: 'voice' | 'chat'; icon: string; en: string; he: string }
   | { kind: 'menu'; icon: string; en: string; he: string };
 
+// v3 (Koral, 27.10): the chat with Meira is home and the first tab; talking
+// and writing happen inside it (its 🎤 and its box), so the two action slots
+// became one place.
 const SLOTS: Slot[] = [
-  { kind: 'route', route: 'Today', icon: '☀️', en: 'Today', he: 'היום' },
-  { kind: 'talk' },
-  { kind: 'route', route: 'Tasks', icon: '☑️', en: 'Tasks', he: 'משימות' },
-  { kind: 'route', route: 'Trips', icon: '🗺️', en: 'Trips', he: 'נסיעות' },
+  { kind: 'route', route: 'Meira', icon: 'chat', en: 'Meira', he: 'מאירה' },
+  { kind: 'route', route: 'Today', icon: 'sun', en: 'Today', he: 'היום' },
+  { kind: 'route', route: 'Tasks', icon: 'tasks', en: 'Tasks', he: 'משימות' },
+  { kind: 'route', route: 'Trips', icon: 'map', en: 'Trips', he: 'נסיעות' },
   // ☰ Menu moved to the Today header, beside the profile (Koral, 28.9).
 ];
 
@@ -65,17 +73,25 @@ export default function CustomTabBar({ state, navigation }: TabBarProps) {
   return (
     <View style={[styles.container, { paddingBottom: Math.max(insets.bottom, 28) }]}>
       {voiceOpen && (
-        <VoiceSheet onClose={closeVoice} onTypeInstead={(text) => openChat(text)} />
+        <VoiceSheet onClose={closeVoice} onTypeInstead={(text) => openChat(text)}
+          onAnswer={(turn) => { closeVoice(); root().navigate('CoachChat', { voiceTurn: turn }); }} />
       )}
       <View style={styles.bar}>
         {SLOTS.map((slot) => {
-          if (slot.kind === 'talk') {
+          if (slot.kind === 'action') {
+            // An action, not a place: it opens a sheet / the chat over the
+            // current tab, so it never takes the selected bar.
             return (
-              <View key="talk" style={styles.talkSlot}>
-                <View style={styles.talkRaise}>
-                  <TalkControl he={he} onVoice={() => setVoiceOpen(true)} onChat={() => openChat()} />
-                </View>
-              </View>
+              <Pressable
+                key={slot.action}
+                onPress={slot.action === 'voice' ? () => setVoiceOpen(true) : () => openChat()}
+                style={({ pressed }) => [styles.tab, pressed && styles.pressed]}
+                accessibilityRole="button"
+                accessibilityLabel={he ? slot.he : slot.en}
+              >
+                <Text style={styles.icon}>{slot.icon}</Text>
+                <Text style={[styles.label, styles.inactive]}>{he ? slot.he : slot.en}</Text>
+              </Pressable>
             );
           }
           if (slot.kind === 'menu') {
@@ -87,7 +103,7 @@ export default function CustomTabBar({ state, navigation }: TabBarProps) {
                 accessibilityRole="button"
                 accessibilityLabel={he ? slot.he : slot.en}
               >
-                <Text style={[styles.icon, styles.menuIcon, styles.inactive]}>{slot.icon}</Text>
+                <Text style={[styles.icon, styles.menuIcon, styles.inactiveIcon]}>{slot.icon}</Text>
                 <Text style={[styles.label, styles.inactive]}>{he ? slot.he : slot.en}</Text>
               </Pressable>
             );
@@ -109,7 +125,11 @@ export default function CustomTabBar({ state, navigation }: TabBarProps) {
               accessibilityState={{ selected: focused }}
               accessibilityLabel={he ? slot.he : slot.en}
             >
-              <Text style={[styles.icon, !focused && styles.inactive]}>{slot.icon}</Text>
+              {focused ? <View style={styles.selectedBar} /> : null}
+              {/* v3 line icon; the selected one sits in a gold-tinted pill. */}
+              <View style={[styles.iconPill, focused && styles.iconPillOn]}>
+                <LineIcon name={slot.icon} size={21} color={focused ? BRAND.goldInk : BRAND.inkSoft} strokeWidth={focused ? 2.2 : 1.9} />
+              </View>
               <Text style={[styles.label, !focused && styles.inactive]}>{he ? slot.he : slot.en}</Text>
             </Pressable>
           );
@@ -132,11 +152,15 @@ const styles = StyleSheet.create({
   },
   tab: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 2, height: BAR_HEIGHT },
   pressed: { opacity: 0.7 },
-  talkSlot: { width: 132, height: BAR_HEIGHT, alignItems: 'center' },
-  // Raised −32px above the bar, per the spec.
-  talkRaise: { position: 'absolute', top: -32 },
   icon: { fontSize: 21 },
   menuIcon: { color: BRAND.warmInk, fontSize: 22, lineHeight: 26 },
-  label: { fontSize: 10, fontFamily: FONTS.bodyHeavy, color: BRAND.warmInk },
-  inactive: { opacity: 0.5 },
+  label: { fontSize: 11, fontFamily: FONTS.bodyHeavy, color: BRAND.warmInk },
+  // Inactive was opacity .5 on icon AND label: ink at half strength measured under 3:1 on the bar.
+  // Now the label keeps solid ink (inkSoft, 6.8:1) and only the emoji is softened; the selected tab
+  // also gets a bar, so "which one am I on" never rests on colour alone.
+  inactive: { color: BRAND.inkSoft, fontFamily: FONTS.bodyBold },
+  inactiveIcon: { opacity: 0.7 },
+  iconPill: { width: 48, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  iconPillOn: { backgroundColor: BRAND.goldSoft },
+  selectedBar: { position: 'absolute', top: 0, width: 24, height: 3, borderBottomLeftRadius: 3, borderBottomRightRadius: 3, backgroundColor: BRAND.goldInk },
 });

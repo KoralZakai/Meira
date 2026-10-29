@@ -23,9 +23,10 @@
 import * as AuthSession from 'expo-auth-session';
 import * as SecureStore from 'expo-secure-store';
 import * as WebBrowser from 'expo-web-browser';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from './EncryptedStorage';  // AES-256-GCM at rest (7.10)
 
-import { importCalendarTasks } from './GoogleSync';
+import { importCalendarTasks, noteCancellationsFor } from './GoogleSync';
+import { datesAhead } from '../utils/cancelledEvents';
 import { calendarEventToTask } from '../utils/calendarEventTask';
 import { graphEventToCalendarEvent } from '../utils/graphEvent';
 import { getTodayString } from '../utils/timeUtils';
@@ -67,9 +68,21 @@ function redirectUri(): string {
   return AuthSession.makeRedirectUri({ scheme: 'lumi', path: 'outlook' });
 }
 
-async function loadTokens(): Promise<StoredTokens | null> {
+// ── Several Microsoft accounts (6.10: "many accounts of the same kind") ─────
+// One token per account under its own SecureStore key, listed in ACCOUNTS_KEY.
+// A second sign-in used to replace the first account; now the same address
+// replaces its own token and a new one is added. An older build's single
+// `ms_tokens` becomes the first account in place.
+const ACCOUNTS_KEY = 'ms_accounts';
+
+interface OutlookAccountRef { account: string; key: string }
+
+const sameAccount = (a?: string, b?: string) => Boolean(a && b && a.trim().toLowerCase() === b.trim().toLowerCase());
+const keyForAccount = (account: string) => `ms_tokens.${account.trim().toLowerCase().replace(/[^a-z0-9._-]/g, '_')}`;
+
+async function readTokens(key: string): Promise<StoredTokens | null> {
   try {
-    const raw = await SecureStore.getItemAsync(TOKEN_KEY);
+    const raw = await SecureStore.getItemAsync(key);
     return raw ? JSON.parse(raw) : null;
   } catch (e) {
     console.warn('[Outlook] token store unreadable', e);
@@ -77,17 +90,40 @@ async function loadTokens(): Promise<StoredTokens | null> {
   }
 }
 
-async function saveTokens(t: StoredTokens): Promise<void> {
-  await SecureStore.setItemAsync(TOKEN_KEY, JSON.stringify(t));
+async function writeTokens(key: string, t: StoredTokens): Promise<void> {
+  await SecureStore.setItemAsync(key, JSON.stringify(t));
+}
+
+async function saveAccounts(list: OutlookAccountRef[]): Promise<void> {
+  await SecureStore.setItemAsync(ACCOUNTS_KEY, JSON.stringify({ accounts: list }));
+}
+
+async function loadAccounts(): Promise<OutlookAccountRef[]> {
+  try {
+    const raw = await SecureStore.getItemAsync(ACCOUNTS_KEY);
+    if (raw) return JSON.parse(raw).accounts ?? [];
+  } catch (e) {
+    console.warn('[Outlook] accounts list unreadable', e);
+  }
+  const legacy = await readTokens(TOKEN_KEY);
+  if (!legacy) return [];
+  const first = { account: legacy.account || '', key: TOKEN_KEY };
+  await saveAccounts([first]).catch((e) => console.warn('[Outlook] accounts list not saved', e));
+  return [first];
 }
 
 export async function outlookConnected(): Promise<boolean> {
-  return Boolean(await loadTokens());
+  return (await loadAccounts()).length > 0;
 }
 
-/** The signed-in account ("koral@company.com"), for the Menu row. */
+/** The first signed-in account ("koral@company.com"), for one-line summaries. */
 export async function outlookAccount(): Promise<string | null> {
-  return (await loadTokens())?.account ?? null;
+  return (await loadAccounts())[0]?.account || null;
+}
+
+/** Every Microsoft account she connected. */
+export async function outlookAccounts(): Promise<string[]> {
+  return (await loadAccounts()).map((a) => a.account);
 }
 
 export async function lastOutlookResult(): Promise<OutlookSyncResult | null> {
@@ -125,12 +161,24 @@ export async function signInWithMicrosoft(): Promise<{ ok: boolean; account?: st
       discovery,
     );
     const account = await whoAmI(tokens.accessToken);
-    await saveTokens({
+    const fresh: StoredTokens = {
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
       expiresAt: Date.now() + (tokens.expiresIn ?? 3600) * 1000,
       account: account ?? undefined,
-    });
+    };
+    // The same address replaces its own token; a new address is a new account.
+    const list = await loadAccounts();
+    let ref = account ? list.find((a) => sameAccount(a.account, account)) : undefined;
+    if (!ref && !account && list.length === 1 && !list[0].account) ref = list[0];
+    if (!ref) {
+      ref = { account: account || '', key: account ? keyForAccount(account) : `ms_tokens.added_${Date.now()}` };
+      list.push(ref);
+    } else if (account) {
+      ref.account = account;
+    }
+    await writeTokens(ref.key, fresh);
+    await saveAccounts(list);
     return { ok: true, account: account ?? undefined };
   } catch (e) {
     const why = String((e as Error)?.message || e).slice(0, 160);
@@ -139,9 +187,15 @@ export async function signInWithMicrosoft(): Promise<{ ok: boolean; account?: st
   }
 }
 
-export async function signOutMicrosoft(): Promise<void> {
-  await SecureStore.deleteItemAsync(TOKEN_KEY).catch((e) => console.warn('[Outlook] sign-out failed', e));
-  await AsyncStorage.removeItem(LAST_RESULT_KEY).catch(() => {});
+/** Disconnect one account (by address), or every account when none is named. */
+export async function signOutMicrosoft(account?: string): Promise<void> {
+  const list = await loadAccounts();
+  const gone = account === undefined ? list : list.filter((a) => sameAccount(a.account, account) || (!account && !a.account));
+  for (const ref of gone) {
+    await SecureStore.deleteItemAsync(ref.key).catch((e) => console.warn('[Outlook] sign-out failed', e));
+  }
+  await saveAccounts(list.filter((a) => !gone.includes(a))).catch((e) => console.warn('[Outlook] accounts list not saved', e));
+  if (gone.length === list.length) await AsyncStorage.removeItem(LAST_RESULT_KEY).catch(() => {});
 }
 
 async function whoAmI(token: string): Promise<string | null> {
@@ -157,9 +211,9 @@ async function whoAmI(token: string): Promise<string | null> {
   }
 }
 
-/** A live access token, refreshed when due. null = she must sign in again. */
-async function token(): Promise<string | null> {
-  const t = await loadTokens();
+/** A live access token for one account, refreshed when due. null = she must sign in again. */
+async function token(ref: OutlookAccountRef): Promise<string | null> {
+  const t = await readTokens(ref.key);
   if (!t) return null;
   if (Date.now() < t.expiresAt - 60_000) return t.accessToken;
   if (!t.refreshToken) return null;
@@ -169,7 +223,7 @@ async function token(): Promise<string | null> {
       { clientId: CLIENT_ID, refreshToken: t.refreshToken, scopes: SCOPES },
       discovery,
     );
-    await saveTokens({
+    await writeTokens(ref.key, {
       ...t,
       accessToken: r.accessToken,
       refreshToken: r.refreshToken ?? t.refreshToken,
@@ -208,7 +262,8 @@ async function calendarView(accessToken: string, from: Date, to: Date): Promise<
   }
 }
 
-/** Read the month ahead from Outlook and land it. Never throws. */
+/** Read the month ahead from every Outlook account and land it. Never throws.
+ *  Each account fails on its own; the result names which (rule 1). */
 export async function syncOutlook(lang: AppLanguage, days = SYNC_DAYS): Promise<OutlookSyncResult> {
   const finish = async (r: Omit<OutlookSyncResult, 'at'>): Promise<OutlookSyncResult> => {
     const out = { ...r, at: Date.now() };
@@ -217,28 +272,45 @@ export async function syncOutlook(lang: AppLanguage, days = SYNC_DAYS): Promise<
     return out;
   };
   if (!CLIENT_ID) return { ok: false, added: 0, events: 0, error: 'not_configured', at: Date.now() };
-  const stored = await loadTokens();
-  if (!stored) return { ok: false, added: 0, events: 0, error: 'not_connected', at: Date.now() };
-  const access = await token();
-  if (!access) return finish({ ok: false, added: 0, events: 0, account: stored.account, error: 'reconnect' });
+  const list = await loadAccounts();
+  if (!list.length) return { ok: false, added: 0, events: 0, error: 'not_connected', at: Date.now() };
 
   const [y, m, d] = getTodayString().split('-').map(Number);
   const from = new Date(y, m - 1, d, 0, 0, 0, 0);
   const to = new Date(y, m - 1, d + days, 23, 59, 59, 999);
-  const { items, error } = await calendarView(access, from, to);
-  if (error) return finish({ ok: false, added: 0, events: items.length, account: stored.account, error });
-
   const tasks: Task[] = [];
-  for (const it of items) {
-    const mapped = graphEventToCalendarEvent(it);
-    if (mapped) tasks.push(calendarEventToTask(mapped.event, mapped.date, 'outlook', { calendarName: 'Outlook' }));
+  let events = 0;
+  let firstError: OutlookFailure | undefined;
+  const names = list.map((a) => a.account).filter(Boolean).join(', ') || undefined;
+  for (const ref of list) {
+    const access = await token(ref);
+    if (!access) {
+      firstError = firstError ?? 'reconnect';
+      continue;
+    }
+    const { items, error } = await calendarView(access, from, to);
+    events += items.length;
+    if (error) {
+      firstError = firstError ?? error;
+      continue;
+    }
+    for (const it of items) {
+      const mapped = graphEventToCalendarEvent(it);
+      // Labelled with the account it came from, not a hardcoded "Outlook".
+      if (mapped) tasks.push(calendarEventToTask(mapped.event, mapped.date, 'outlook', { calendarName: ref.account || 'Outlook' }));
+    }
   }
   try {
+    // Every account answered: what Outlook no longer lists was cancelled (strictly — see cancelledEvents).
+    if (!firstError) {
+      await noteCancellationsFor('ocal-', datesAhead(getTodayString(), days), new Set(tasks.map((t) => t.id)),
+        list.map((a) => a.account || '').sort().join('|'), tasks);
+    }
     const added = tasks.length ? await importCalendarTasks(tasks, lang, 'outlook') : 0;
-    console.warn(`[Outlook] ${items.length} event(s) → ${added} added/corrected`);
-    return finish({ ok: true, added, events: items.length, account: stored.account });
+    console.warn(`[Outlook] ${events} event(s) from ${list.length} account(s) → ${added} added/corrected`);
+    return finish({ ok: !firstError, added, events, account: names, ...(firstError ? { error: firstError } : {}) });
   } catch (e) {
-    return finish({ ok: false, added: 0, events: items.length, account: stored.account,
+    return finish({ ok: false, added: 0, events, account: names,
       error: `network: import ${String((e as Error)?.message || e).slice(0, 120)}` });
   }
 }

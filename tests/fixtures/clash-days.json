@@ -5,49 +5,648 @@
       "name": "the reported evening — zoom, after-office and yoga",
       "dayEnd": "23:00",
       "tasks": [
-        { "id": "zoom", "text": "פגישת זום", "category": "zoom", "isFixed": true, "fixedTime": "18:00", "durationMinutes": 60, "meetingUrl": "https://us02web.zoom.us/j/123", "status": "pending" },
-        { "id": "after", "text": "אפטר אופיס", "category": "leisure", "isFixed": false, "fixedTime": "18:30", "durationMinutes": 270, "status": "pending" },
-        { "id": "yoga", "text": "יוגה", "category": "hobby_class", "isFixed": true, "fixedTime": "19:00", "durationMinutes": 60, "location": "Yigal Alon 94", "status": "pending" }
+        {
+          "id": "zoom",
+          "text": "פגישת זום",
+          "category": "zoom",
+          "isFixed": true,
+          "fixedTime": "18:00",
+          "durationMinutes": 60,
+          "meetingUrl": "https://us02web.zoom.us/j/123",
+          "status": "pending"
+        },
+        {
+          "id": "after",
+          "text": "אפטר אופיס",
+          "category": "leisure",
+          "isFixed": false,
+          "fixedTime": "18:30",
+          "durationMinutes": 270,
+          "status": "pending"
+        },
+        {
+          "id": "yoga",
+          "text": "יוגה",
+          "category": "hobby_class",
+          "isFixed": true,
+          "fixedTime": "19:00",
+          "durationMinutes": 60,
+          "location": "Yigal Alon 94",
+          "status": "pending"
+        }
       ]
     },
     {
       "name": "a conference that swallows the evening, and a class across town",
       "dayEnd": "23:00",
       "tasks": [
-        { "id": "conf", "text": "conference", "category": "conference", "isFixed": true, "fixedTime": "09:00", "durationMinutes": 780, "location": "Expo Tel Aviv", "status": "pending" },
-        { "id": "pilates", "text": "pilates", "category": "hobby_class", "isFixed": true, "fixedTime": "18:00", "durationMinutes": 60, "location": { "address": "Space Gym", "travelMinutes": 30 }, "status": "pending" }
+        {
+          "id": "conf",
+          "text": "conference",
+          "category": "conference",
+          "isFixed": true,
+          "fixedTime": "09:00",
+          "durationMinutes": 780,
+          "location": "Expo Tel Aviv",
+          "status": "pending"
+        },
+        {
+          "id": "pilates",
+          "text": "pilates",
+          "category": "hobby_class",
+          "isFixed": true,
+          "fixedTime": "18:00",
+          "durationMinutes": 60,
+          "location": {
+            "address": "Space Gym",
+            "travelMinutes": 30
+          },
+          "status": "pending"
+        }
       ]
     },
     {
       "name": "back-to-back in two places — zero overlap, still impossible",
       "dayEnd": "23:00",
       "tasks": [
-        { "id": "gym", "text": "gym", "category": "gym", "isFixed": true, "fixedTime": "19:00", "durationMinutes": 60, "location": "Space Gym", "status": "pending" },
-        { "id": "beach", "text": "beach", "category": "leisure", "isFixed": false, "fixedTime": "20:00", "durationMinutes": 90, "location": { "address": "Gordon Beach", "travelMinutes": 25 }, "status": "pending" }
+        {
+          "id": "gym",
+          "text": "gym",
+          "category": "gym",
+          "isFixed": true,
+          "fixedTime": "19:00",
+          "durationMinutes": 60,
+          "location": "Space Gym",
+          "status": "pending"
+        },
+        {
+          "id": "beach",
+          "text": "beach",
+          "category": "leisure",
+          "isFixed": false,
+          "fixedTime": "20:00",
+          "durationMinutes": 90,
+          "location": {
+            "address": "Gordon Beach",
+            "travelMinutes": 25
+          },
+          "status": "pending"
+        }
       ]
     },
     {
       "name": "two appointments nobody can move",
       "dayEnd": "23:00",
       "tasks": [
-        { "id": "interview", "text": "job interview", "category": "interview", "isFixed": true, "fixedTime": "10:00", "durationMinutes": 90, "location": "MER Group", "status": "pending" },
-        { "id": "doctor", "text": "dentist", "category": "doctor", "isFixed": true, "fixedTime": "10:30", "durationMinutes": 60, "location": "Clinic", "status": "pending" }
+        {
+          "id": "interview",
+          "text": "job interview",
+          "category": "interview",
+          "isFixed": true,
+          "fixedTime": "10:00",
+          "durationMinutes": 90,
+          "location": "MER Group",
+          "status": "pending"
+        },
+        {
+          "id": "doctor",
+          "text": "dentist",
+          "category": "doctor",
+          "isFixed": true,
+          "fixedTime": "10:30",
+          "durationMinutes": 60,
+          "location": "Clinic",
+          "status": "pending"
+        }
       ]
     },
     {
       "name": "a completed task cannot clash with anything",
       "dayEnd": "23:00",
       "tasks": [
-        { "id": "done", "text": "finished thing", "category": "work", "isFixed": true, "fixedTime": "18:00", "durationMinutes": 120, "status": "complete" },
-        { "id": "live", "text": "live thing", "category": "work", "isFixed": true, "fixedTime": "18:30", "durationMinutes": 60, "status": "pending" }
+        {
+          "id": "done",
+          "text": "finished thing",
+          "category": "work",
+          "isFixed": true,
+          "fixedTime": "18:00",
+          "durationMinutes": 120,
+          "status": "complete"
+        },
+        {
+          "id": "live",
+          "text": "live thing",
+          "category": "work",
+          "isFixed": true,
+          "fixedTime": "18:30",
+          "durationMinutes": 60,
+          "status": "pending"
+        }
       ]
     },
     {
       "name": "a long evening plan with nowhere left to go",
       "dayEnd": "23:00",
       "tasks": [
-        { "id": "class", "text": "evening class", "category": "class", "isFixed": true, "fixedTime": "19:00", "durationMinutes": 60, "status": "pending" },
-        { "id": "long", "text": "long plan", "category": "leisure", "isFixed": false, "fixedTime": "19:30", "durationMinutes": 270, "status": "pending" }
+        {
+          "id": "class",
+          "text": "evening class",
+          "category": "class",
+          "isFixed": true,
+          "fixedTime": "19:00",
+          "durationMinutes": 60,
+          "status": "pending"
+        },
+        {
+          "id": "long",
+          "text": "long plan",
+          "category": "leisure",
+          "isFixed": false,
+          "fixedTime": "19:30",
+          "durationMinutes": 270,
+          "status": "pending"
+        }
+      ]
+    },
+    {
+      "name": "meira-sim edge user 1 2026-10-05 — cross-country, infeasible by bus",
+      "dayEnd": "23:00",
+      "tasks": [
+        {
+          "id": "gcal-edge-1",
+          "text": "Interview — Google (onsite)",
+          "category": "interview",
+          "isFixed": true,
+          "fixedTime": "10:00",
+          "durationMinutes": 60,
+          "date": "2026-10-05",
+          "status": "pending",
+          "source": "calendar",
+          "location": {
+            "address": "Yigal Alon St 98, Tel Aviv-Yafo",
+            "travelMinutes": 23
+          }
+        },
+        {
+          "id": "gcal-edge-2",
+          "text": "Interview — Intel Haifa (onsite)",
+          "category": "interview",
+          "isFixed": true,
+          "fixedTime": "11:30",
+          "durationMinutes": 60,
+          "date": "2026-10-05",
+          "status": "pending",
+          "source": "calendar",
+          "location": {
+            "address": "Andrei Sakharov St 9, Haifa",
+            "travelMinutes": 151
+          }
+        }
+      ]
+    },
+    {
+      "name": "meira-sim edge user 1 2026-10-06 — mode-dependent",
+      "dayEnd": "23:00",
+      "tasks": [
+        {
+          "id": "gcal-edge-3",
+          "text": "Interview — Wix",
+          "category": "interview",
+          "isFixed": true,
+          "fixedTime": "12:00",
+          "durationMinutes": 60,
+          "date": "2026-10-06",
+          "status": "pending",
+          "source": "calendar",
+          "location": {
+            "address": "Yunitsman St 5, Tel Aviv-Yafo",
+            "travelMinutes": 58
+          }
+        },
+        {
+          "id": "gcal-edge-4",
+          "text": "Interview — monday.com",
+          "category": "interview",
+          "isFixed": true,
+          "fixedTime": "13:50",
+          "durationMinutes": 60,
+          "date": "2026-10-06",
+          "status": "pending",
+          "source": "calendar",
+          "location": {
+            "address": "Yitzhak Sadeh St 6, Tel Aviv-Yafo",
+            "travelMinutes": 52
+          }
+        }
+      ]
+    },
+    {
+      "name": "meira-sim edge user 1 2026-10-07 — tight by margin",
+      "dayEnd": "23:00",
+      "tasks": [
+        {
+          "id": "gcal-edge-5",
+          "text": "Team sync @ Nebius",
+          "category": "meeting",
+          "isFixed": true,
+          "fixedTime": "09:00",
+          "durationMinutes": 90,
+          "date": "2026-10-07",
+          "status": "pending",
+          "source": "calendar",
+          "location": {
+            "address": "Yitzhak Sadeh St 8, Tel Aviv-Yafo",
+            "travelMinutes": 23
+          }
+        },
+        {
+          "id": "gcal-edge-6",
+          "text": "Coffee chat — Amazon recruiter",
+          "category": "meeting",
+          "isFixed": true,
+          "fixedTime": "10:50",
+          "durationMinutes": 45,
+          "date": "2026-10-07",
+          "status": "pending",
+          "source": "calendar",
+          "location": {
+            "address": "Menachem Begin Rd 121, Tel Aviv-Yafo",
+            "travelMinutes": 14
+          }
+        }
+      ]
+    },
+    {
+      "name": "meira-sim edge user 1 2026-10-08 — online meeting between two physical ones",
+      "dayEnd": "23:00",
+      "tasks": [
+        {
+          "id": "gcal-edge-7",
+          "text": "Interview — Check Point",
+          "category": "interview",
+          "isFixed": true,
+          "fixedTime": "09:00",
+          "durationMinutes": 60,
+          "date": "2026-10-08",
+          "status": "pending",
+          "source": "calendar",
+          "location": {
+            "address": "Shlomo Kaplan St 5, Tel Aviv-Yafo",
+            "travelMinutes": 30
+          }
+        },
+        {
+          "id": "gcal-edge-8",
+          "text": "Phone screen — Qualcomm (Zoom)",
+          "category": "zoom",
+          "isFixed": true,
+          "fixedTime": "10:15",
+          "durationMinutes": 45,
+          "date": "2026-10-08",
+          "status": "pending",
+          "source": "calendar",
+          "meetingUrl": "https://meet.google.com/mock-8"
+        },
+        {
+          "id": "gcal-edge-9",
+          "text": "Interview — Hailo",
+          "category": "interview",
+          "isFixed": true,
+          "fixedTime": "11:30",
+          "durationMinutes": 60,
+          "date": "2026-10-08",
+          "status": "pending",
+          "source": "calendar",
+          "location": {
+            "address": "Yigal Alon St 82, Tel Aviv-Yafo",
+            "travelMinutes": 12
+          }
+        }
+      ]
+    },
+    {
+      "name": "meira-sim edge user 1 2026-10-11 — wake conflict",
+      "dayEnd": "23:00",
+      "tasks": [
+        {
+          "id": "gcal-edge-10",
+          "text": "Onsite — Mobileye Jerusalem",
+          "category": "meeting",
+          "isFixed": true,
+          "fixedTime": "07:30",
+          "durationMinutes": 60,
+          "date": "2026-10-11",
+          "status": "pending",
+          "source": "calendar",
+          "location": {
+            "address": "Shlomo Momo ha-Levi St 1, Jerusalem",
+            "travelMinutes": 96
+          }
+        }
+      ]
+    },
+    {
+      "name": "meira-sim edge user 1 2026-10-12 — overlap",
+      "dayEnd": "23:00",
+      "tasks": [
+        {
+          "id": "gcal-edge-11",
+          "text": "Doctor — Ichilov",
+          "category": "doctor",
+          "isFixed": true,
+          "fixedTime": "14:00",
+          "durationMinutes": 90,
+          "date": "2026-10-12",
+          "status": "pending",
+          "source": "calendar",
+          "location": {
+            "address": "Weizmann St 6, Tel Aviv-Yafo",
+            "travelMinutes": 25
+          }
+        },
+        {
+          "id": "gcal-edge-12",
+          "text": "Gym — Holmes Place",
+          "category": "gym",
+          "isFixed": true,
+          "fixedTime": "15:00",
+          "durationMinutes": 60,
+          "date": "2026-10-12",
+          "status": "pending",
+          "source": "calendar",
+          "location": {
+            "address": "Dizengoff Center, Dizengoff St 50, Tel Aviv",
+            "travelMinutes": 17
+          }
+        }
+      ]
+    },
+    {
+      "name": "meira-sim edge user 1 2026-10-26 — day after DST ends",
+      "dayEnd": "23:00",
+      "tasks": [
+        {
+          "id": "gcal-edge-13",
+          "text": "Interview — Apple (day after DST ends)",
+          "category": "interview",
+          "isFixed": true,
+          "fixedTime": "09:00",
+          "durationMinutes": 60,
+          "date": "2026-10-26",
+          "status": "pending",
+          "source": "calendar",
+          "location": {
+            "address": "Maskit St 12, Herzliya",
+            "travelMinutes": 93
+          }
+        },
+        {
+          "id": "gcal-edge-14",
+          "text": "Lunch — Sarona Market",
+          "category": "meeting",
+          "isFixed": true,
+          "fixedTime": "12:30",
+          "durationMinutes": 60,
+          "date": "2026-10-26",
+          "status": "pending",
+          "source": "calendar",
+          "location": {
+            "address": "Aluf Kalman Magen St 3, Tel Aviv-Yafo",
+            "travelMinutes": 62
+          }
+        }
+      ]
+    },
+    {
+      "name": "meira-sim sim user 102 2026-10-13 — Sarona → TAU infeasible this week",
+      "dayEnd": "23:00",
+      "tasks": [
+        {
+          "id": "gcal-sim-78",
+          "text": "Office — morning block, WeWork Sarona",
+          "category": "work",
+          "isFixed": true,
+          "fixedTime": "09:30",
+          "durationMinutes": 150,
+          "date": "2026-10-13",
+          "status": "pending",
+          "source": "calendar",
+          "location": {
+            "address": "Aluf Kalman Magen St 3, Tel Aviv-Yafo",
+            "travelMinutes": 57
+          }
+        },
+        {
+          "id": "gcal-sim-79",
+          "text": "Portfolio review — Wix",
+          "category": "meeting",
+          "isFixed": true,
+          "fixedTime": "12:45",
+          "durationMinutes": 60,
+          "date": "2026-10-13",
+          "status": "pending",
+          "source": "calendar",
+          "location": {
+            "address": "Yunitsman St 5, Tel Aviv-Yafo",
+            "travelMinutes": 75
+          }
+        },
+        {
+          "id": "gcal-sim-80",
+          "text": "Office — afternoon block, WeWork Sarona",
+          "category": "work",
+          "isFixed": true,
+          "fixedTime": "15:30",
+          "durationMinutes": 120,
+          "date": "2026-10-13",
+          "status": "pending",
+          "source": "calendar",
+          "location": {
+            "address": "Aluf Kalman Magen St 3, Tel Aviv-Yafo",
+            "travelMinutes": 75
+          }
+        },
+        {
+          "id": "gcal-sim-81",
+          "text": "Course — Interaction Design, TAU",
+          "category": "course",
+          "isFixed": true,
+          "fixedTime": "18:30",
+          "durationMinutes": 150,
+          "date": "2026-10-13",
+          "status": "pending",
+          "source": "calendar",
+          "location": {
+            "address": "Chaim Levanon St 55, Tel Aviv-Yafo",
+            "travelMinutes": 63
+          }
+        }
+      ]
+    },
+    {
+      "name": "meira-sim sim user 102 2026-10-20 — same commitment, tight next week",
+      "dayEnd": "23:00",
+      "tasks": [
+        {
+          "id": "gcal-sim-88",
+          "text": "Office — morning block, WeWork Sarona",
+          "category": "work",
+          "isFixed": true,
+          "fixedTime": "09:30",
+          "durationMinutes": 150,
+          "date": "2026-10-20",
+          "status": "pending",
+          "source": "calendar",
+          "location": {
+            "address": "Aluf Kalman Magen St 3, Tel Aviv-Yafo",
+            "travelMinutes": 48
+          }
+        },
+        {
+          "id": "gcal-sim-89",
+          "text": "Dentist — Dizengoff Center",
+          "category": "doctor",
+          "isFixed": true,
+          "fixedTime": "12:30",
+          "durationMinutes": 45,
+          "date": "2026-10-20",
+          "status": "pending",
+          "source": "calendar",
+          "location": {
+            "address": "Dizengoff St 50, Tel Aviv-Yafo",
+            "travelMinutes": 25
+          }
+        },
+        {
+          "id": "gcal-sim-90",
+          "text": "Office — afternoon block, WeWork Sarona",
+          "category": "work",
+          "isFixed": true,
+          "fixedTime": "15:30",
+          "durationMinutes": 120,
+          "date": "2026-10-20",
+          "status": "pending",
+          "source": "calendar",
+          "location": {
+            "address": "Aluf Kalman Magen St 3, Tel Aviv-Yafo",
+            "travelMinutes": 25
+          }
+        },
+        {
+          "id": "gcal-sim-91",
+          "text": "Course — Interaction Design, TAU",
+          "category": "course",
+          "isFixed": true,
+          "fixedTime": "18:30",
+          "durationMinutes": 150,
+          "date": "2026-10-20",
+          "status": "pending",
+          "source": "calendar",
+          "location": {
+            "address": "Chaim Levanon St 55, Tel Aviv-Yafo",
+            "travelMinutes": 53
+          }
+        }
+      ]
+    },
+    {
+      "name": "meira-sim sim user 101 2026-10-06 — the 04:50 wake",
+      "dayEnd": "23:00",
+      "tasks": [
+        {
+          "id": "gcal-sim-7",
+          "text": "Commissioning — Intel Haifa",
+          "category": "meeting",
+          "isFixed": true,
+          "fixedTime": "08:30",
+          "durationMinutes": 120,
+          "date": "2026-10-06",
+          "status": "pending",
+          "source": "calendar",
+          "location": {
+            "address": "Andrei Sakharov St 9, Haifa",
+            "travelMinutes": 159
+          }
+        },
+        {
+          "id": "gcal-sim-8",
+          "text": "Site visit — NVIDIA Yokneam",
+          "category": "meeting",
+          "isFixed": true,
+          "fixedTime": "12:00",
+          "durationMinutes": 90,
+          "date": "2026-10-06",
+          "status": "pending",
+          "source": "calendar",
+          "location": {
+            "address": "HaKidma St 26, Yokne'am Illit",
+            "travelMinutes": 28
+          }
+        },
+        {
+          "id": "gcal-sim-9",
+          "text": "Site visit — Rafael Haifa",
+          "category": "meeting",
+          "isFixed": true,
+          "fixedTime": "15:30",
+          "durationMinutes": 90,
+          "date": "2026-10-06",
+          "status": "pending",
+          "source": "calendar",
+          "location": {
+            "address": "Rafael, Haifa",
+            "travelMinutes": 31
+          }
+        }
+      ]
+    },
+    {
+      "name": "meira-sim sim user 103 2026-10-12 — the control: nothing to report",
+      "dayEnd": "23:00",
+      "tasks": [
+        {
+          "id": "gcal-sim-117",
+          "text": "Lecture — Optimization, TAU",
+          "category": "course",
+          "isFixed": true,
+          "fixedTime": "10:00",
+          "durationMinutes": 120,
+          "date": "2026-10-12",
+          "status": "pending",
+          "source": "calendar",
+          "location": {
+            "address": "Chaim Levanon St 55, Tel Aviv-Yafo",
+            "travelMinutes": 19
+          }
+        },
+        {
+          "id": "gcal-sim-118",
+          "text": "Gym — Holmes Place",
+          "category": "gym",
+          "isFixed": true,
+          "fixedTime": "17:30",
+          "durationMinutes": 60,
+          "date": "2026-10-12",
+          "status": "pending",
+          "source": "calendar",
+          "location": {
+            "address": "Dizengoff Center, Dizengoff St 50, Tel Aviv",
+            "travelMinutes": 28
+          }
+        }
+      ]
+    },
+    {
+      "name": "30.9 — Azrieli until 12:00, Herzliya at 12:15, and a business plan laid over a meetup filed as a 'call'",
+      "dayEnd": "23:00",
+      "tasks": [
+        { "id": "dentist", "text": "Dentist — Dr. Levi", "category": "doctor", "isFixed": true, "fixedTime": "09:30", "durationMinutes": 45, "source": "calendar", "status": "pending", "location": { "address": "Ibn Gabirol St 120, Tel Aviv-Yafo", "leaveHomeBy": "09:21", "travelMinutes": 25 } },
+        { "id": "nebius", "text": "Meeting — Nebius team", "category": "meeting", "isFixed": true, "fixedTime": "11:00", "durationMinutes": 60, "source": "calendar", "status": "pending", "location": { "address": "Azrieli Center, Derech Menachem Begin 132, Tel Aviv-Yafo", "leaveHomeBy": "10:25", "travelMinutes": 29 } },
+        { "id": "dana", "text": "Coffee with Dana", "category": "meeting", "isFixed": true, "fixedTime": "12:15", "durationMinutes": 45, "source": "calendar", "status": "pending", "location": { "address": "Herzliya Pituah Marina, Herzliya", "leaveHomeBy": "11:08", "travelMinutes": 54 } },
+        { "id": "yoga", "text": "Yoga class", "category": "gym", "isFixed": true, "fixedTime": "16:00", "durationMinutes": 60, "source": "calendar", "status": "pending", "location": { "address": "Dizengoff Center, Dizengoff St 50, Tel Aviv-Yafo", "leaveHomeBy": "15:03", "travelMinutes": 47 } },
+        { "id": "meetup", "text": "AI Performance Engineering meetup", "category": "call", "isFixed": true, "fixedTime": "18:30", "durationMinutes": 90, "source": "calendar", "status": "pending", "location": { "address": "Sarona Market, Kalman Magen St 3, Tel Aviv-Yafo", "leaveHomeBy": "18:02", "travelMinutes": 18 } },
+        { "id": "plan", "text": "לעשות תכנית עסקית", "category": "general", "isFixed": true, "fixedTime": "18:30", "durationMinutes": 122, "status": "pending" },
+        { "id": "concert", "text": "הופעה של כנסיית השכל", "category": "conference", "isFixed": true, "fixedTime": "21:00", "durationMinutes": 60, "source": "calendar", "status": "pending" }
       ]
     }
   ]

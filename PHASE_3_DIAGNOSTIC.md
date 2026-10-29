@@ -60,7 +60,7 @@ Missing time is likely an **unpatched edge case** in how the LLM output is mappe
 ```bash
 # Read real conversation (requires ADMIN_TOKEN or fly ssh)
 fly ssh console -a lumi-whatsapp
-python3 -c "import reminders; print(reminders.get_departures('972500000009', limit=10))"
+python3 -c "import reminders; print(reminders.get_departures('972542902729', limit=10))"
 ```
 
 ### Why This Matters
@@ -415,7 +415,7 @@ This log is **never** sent to the user, but it:
 
 ```bash
 # 1. Check sync is working
-curl -s "https://lumi-whatsapp.fly.dev/diag/sync?phone=972500000009" | python3 -m json.tool
+curl -s "https://lumi-whatsapp.fly.dev/diag/sync?phone=972542902729" | python3 -m json.tool
 
 # 2. Run app tests (should be green)
 npm run test:all

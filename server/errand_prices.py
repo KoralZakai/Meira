@@ -30,6 +30,7 @@ import re
 import time
 from typing import Optional
 
+import ai_gate
 import config
 import llm_usage
 import model_router
@@ -80,12 +81,11 @@ def verified(price: str, snippet: str) -> bool:
 
 
 async def _read(place: dict, service: str, sources: list[dict]) -> Optional[dict]:
-    from openai import AsyncOpenAI
     listing = "\n".join(f"[{i+1}] {s.get('title')}\n{(s.get('snippet') or '')[:700]}"
                         for i, s in enumerate(sources))
     user = f"BUSINESS: {place.get('name')} — {place.get('address') or ''}\nSERVICE: {service}\n\nSNIPPETS:\n{listing}"
     model = model_router.pick("errand_price", prompt_chars=len(_SYSTEM) + len(user))
-    client = AsyncOpenAI(api_key=config.LLM_API_KEY, base_url=config.LLM_ENDPOINT)
+    client = ai_gate.client()
     try:
         resp = await client.chat.completions.create(
             model=model, temperature=0.0, max_tokens=80, timeout=30,

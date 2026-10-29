@@ -1,0 +1,30 @@
+{"id": "m01", "kind": "routine", "content": "קם ב-06:30 כל בוקר ומתאמן"}
+{"id": "m02", "kind": "routine", "content": "kids pickup from school at 16:00 every day"}
+{"id": "m03", "kind": "routine", "content": "קיקבוקס ביום שלישי ב-20:30 ביגאל אלון 94"}
+{"id": "m04", "kind": "routine", "content": "works from the office in Ramat Gan on Sundays and Mondays"}
+{"id": "m05", "kind": "routine", "content": "מגיעה הביתה עד 19:00 בימי חול"}
+{"id": "m06", "kind": "routine", "content": "yoga class on Thursday at 07:00 at Studio Nia"}
+{"id": "m07", "kind": "routine", "content": "שיחת משפחה כל יום שישי ב-12:00 עם סבתא"}
+{"id": "m08", "kind": "routine", "content": "Wednesday evening is for studying, 3 hours, no meetings"}
+{"id": "m09", "kind": "routine", "content": "הולכת לישון ב-23:00"}
+{"id": "m10", "kind": "routine", "content": "Sunday morning supermarket run before 10:00"}
+{"id": "m11", "kind": "routine", "content": "ריצה בפארק הירקון בשבת בבוקר"}
+{"id": "m12", "kind": "routine", "content": "piano lesson every Monday at 17:30 in Tel Aviv"}
+{"id": "m13", "kind": "preference", "content": "prefers traveling by train over bus when it is not slower"}
+{"id": "m14", "kind": "preference", "content": "אוהבת לעבוד על משימות קשות בבוקר"}
+{"id": "m15", "kind": "preference", "content": "no meetings before 09:00"}
+{"id": "m16", "kind": "preference", "content": "wants a 10 minute buffer between appointments"}
+{"id": "m17", "kind": "preference", "content": "מעדיפה תזכורות בוואטסאפ ולא בהתראות"}
+{"id": "m18", "kind": "preference", "content": "drives only when the trip is longer than 40 minutes by bus"}
+{"id": "m19", "kind": "preference", "content": "אוהבת קפה ללא סוכר"}
+{"id": "m20", "kind": "preference", "content": "prefers short answers, one or two sentences"}
+{"id": "m21", "kind": "preference", "content": "doesn't like scheduling anything on Friday afternoon"}
+{"id": "m22", "kind": "preference", "content": "מעדיפה לדבר בעברית"}
+{"id": "m23", "kind": "behavior", "content": "usually runs 10 minutes late when leaving home"}
+{"id": "m24", "kind": "behavior", "content": "skips the gym when it rains"}
+{"id": "m25", "kind": "behavior", "content": "תמיד מתעכבת בבוקר ביום ראשון"}
+{"id": "m26", "kind": "behavior", "content": "often reschedules dentist appointments"}
+{"id": "m27", "kind": "behavior", "content": "studies best after 21:00"}
+{"id": "m28", "kind": "behavior", "content": "forgets to eat lunch when meetings run long"}
+{"id": "m29", "kind": "behavior", "content": "מתחילה לעבוד על דדליינים יומיים לפני"}
+{"id": "m30", "kind": "behavior", "content": "spends 45 minutes on the morning routine"}

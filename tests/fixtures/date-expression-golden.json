@@ -1,0 +1,206 @@
+{
+  "_comment": "Generated from server/tz.resolve_date with today=2026-10-17 (a Saturday). Checked by tests/run-live-parse.ts (src/utils/dateExpression.ts) and server/tests/test_date_expression_parity.py. Regenerate ONLY when the server's rule changes on purpose.",
+  "today": "2026-10-17",
+  "cases": [
+    {
+      "text": "מחר",
+      "date": "2026-10-18"
+    },
+    {
+      "text": "tomorrow",
+      "date": "2026-10-18"
+    },
+    {
+      "text": "מחרתיים",
+      "date": "2026-10-19"
+    },
+    {
+      "text": "day after tomorrow",
+      "date": "2026-10-19"
+    },
+    {
+      "text": "היום",
+      "date": "2026-10-17"
+    },
+    {
+      "text": "today",
+      "date": "2026-10-17"
+    },
+    {
+      "text": "בעוד יומיים",
+      "date": "2026-10-19"
+    },
+    {
+      "text": "שבוע הבא",
+      "date": "2026-10-24"
+    },
+    {
+      "text": "בעוד שבוע",
+      "date": "2026-10-24"
+    },
+    {
+      "text": "next week",
+      "date": "2026-10-24"
+    },
+    {
+      "text": "in a week",
+      "date": "2026-10-24"
+    },
+    {
+      "text": "in 3 days",
+      "date": "2026-10-20"
+    },
+    {
+      "text": "בעוד 4 ימים",
+      "date": "2026-10-21"
+    },
+    {
+      "text": "ארוחה מחר ב-20:00",
+      "date": "2026-10-18"
+    },
+    {
+      "text": "meeting tomorrow at 5",
+      "date": "2026-10-18"
+    },
+    {
+      "text": "ביום ראשון",
+      "date": "2026-10-18"
+    },
+    {
+      "text": "יום שני",
+      "date": "2026-10-19"
+    },
+    {
+      "text": "ביום שישי",
+      "date": "2026-10-23"
+    },
+    {
+      "text": "ביום שבת",
+      "date": "2026-10-24"
+    },
+    {
+      "text": "ביום חמישי",
+      "date": "2026-10-22"
+    },
+    {
+      "text": "ביום רביעי",
+      "date": "2026-10-21"
+    },
+    {
+      "text": "ביום שלישי",
+      "date": "2026-10-20"
+    },
+    {
+      "text": "Sunday",
+      "date": "2026-10-18"
+    },
+    {
+      "text": "on Monday",
+      "date": "2026-10-19"
+    },
+    {
+      "text": "next Friday",
+      "date": "2026-10-23"
+    },
+    {
+      "text": "Saturday",
+      "date": "2026-10-24"
+    },
+    {
+      "text": "by Wednesday",
+      "date": "2026-10-21"
+    },
+    {
+      "text": "20.10",
+      "date": "2026-10-20"
+    },
+    {
+      "text": "20/10",
+      "date": "2026-10-20"
+    },
+    {
+      "text": "5.11",
+      "date": "2026-11-05"
+    },
+    {
+      "text": "1.1",
+      "date": "2027-01-01"
+    },
+    {
+      "text": "20.10.26",
+      "date": "2026-10-20"
+    },
+    {
+      "text": "8.10",
+      "date": "2027-10-08"
+    },
+    {
+      "text": "17.10",
+      "date": "2026-10-17"
+    },
+    {
+      "text": "16.10",
+      "date": "2027-10-16"
+    },
+    {
+      "text": "ב-20.10",
+      "date": "2026-10-20"
+    },
+    {
+      "text": "ראיון ב-20.10 ב-19:00",
+      "date": "2026-10-20"
+    },
+    {
+      "text": "8 באוקטובר",
+      "date": "2027-10-08"
+    },
+    {
+      "text": "8 לאוקטובר",
+      "date": "2027-10-08"
+    },
+    {
+      "text": "ב8 בנובמבר",
+      "date": "2026-11-08"
+    },
+    {
+      "text": "October 8",
+      "date": "2027-10-08"
+    },
+    {
+      "text": "8 October",
+      "date": "2027-10-08"
+    },
+    {
+      "text": "8th of November",
+      "date": "2026-11-08"
+    },
+    {
+      "text": "Nov 3",
+      "date": "2026-11-03"
+    },
+    {
+      "text": "3 jan",
+      "date": "2027-01-03"
+    },
+    {
+      "text": "interview Sunday 13:30 at Rafael",
+      "date": "2026-10-18"
+    },
+    {
+      "text": "ראיון ביום ראשון ב 13:30",
+      "date": "2026-10-18"
+    },
+    {
+      "text": "no date here",
+      "date": null
+    },
+    {
+      "text": "פגישה",
+      "date": null
+    },
+    {
+      "text": "",
+      "date": null
+    }
+  ]
+}

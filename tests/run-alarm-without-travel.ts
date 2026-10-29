@@ -21,7 +21,7 @@
  */
 import {
   plannedAlarmTime, decideAlarmState, wakeChipFor, wakeInputs, getReadyTimeFor,
-  alarmMomentOf, isWithinAlarmReach, dayWakeOwner, earliestWakeOf,
+  alarmMomentOf, isWithinAlarmReach, dayWakeOwner, earliestWakeOf, wakeAlarmsToArm, wakeAlarmWhy, alarmsNotYetSet, wakeAlarmKey,
 } from '../src/utils/alarmPlan';
 import { Task, UserProfile } from '../src/types/index';
 
@@ -275,6 +275,47 @@ function main() {
       ?.taskId === 'prep-0d-amz');
   check('any other task still gets no guessed alarm',
     plannedAlarmTime(task({ id: 'plain', fixedTime: '09:00', date: day })) === undefined);
+
+  // 3.10 — "I added a task for tomorrow at 8:40, why no alarm?" Picked from a
+  // free window, so it carries scheduledTime and no fixedTime.
+  const picked = task({ id: 'picked', isFixed: false, fixedTime: undefined, scheduledTime: '08:40' });
+  check('a picked hour (scheduledTime only) wakes her a routine before it',
+    plannedAlarmTime(picked, 35) === '08:05', String(plannedAlarmTime(picked, 35)));
+  check('...and owns the morning over the afternoon interview trip',
+    dayWakeOwner([picked, task({ id: 'ceva', fixedTime: '15:30',
+      location: { address: 'Ra\'anana', lat: 32.18, lng: 34.87, confirmed: true, wakeUpBy: '13:34' } })],
+    { routineMinutes: 35 })?.taskId === 'picked');
+
+  // 20.10 — "I added 'שיחה עם דותן ב9 וחצי', the ⏰ was on the card and I had
+  // to set it by hand." A just-saved task has no alarmState; the save must arm it.
+  {
+    const dotan = task({ id: 'dotan', text: 'שיחה עם דותן', fixedTime: '09:30', category: 'call' } as Partial<Task>);
+    const later = task({ id: 'gym', text: 'אימון', fixedTime: '20:00' } as Partial<Task>);
+    const fresh = { ...dotan, alarmState: undefined } as Task;
+    const arm = wakeAlarmsToArm([fresh, later], [tomorrow], { routineMinutes: 45 });
+    check('a just-saved morning task is the one to arm, planned',
+      arm.length === 1 && arm[0].id === 'dotan' && arm[0].alarmState === 'planned',
+      JSON.stringify(arm.map((t) => [t.id, t.alarmState])));
+    check('...at its start less her routine', plannedAlarmTime(arm[0], 45) === '08:45',
+      String(plannedAlarmTime(arm[0], 45)));
+    check('an alarm she turned off stays off',
+      wakeAlarmsToArm([{ ...dotan, alarmState: 'not_needed' } as Task], [tomorrow], { routineMinutes: 45 }).length === 0);
+    check('an armed one is not set twice',
+      wakeAlarmsToArm([{ ...dotan, alarmState: 'armed' } as Task], [tomorrow], { routineMinutes: 45 }).length === 0);
+    const he = wakeAlarmWhy(arm[0], '08:45', 45, 'he');
+    check('it says when and why, in Hebrew', he.title.includes('08:45') && he.body.includes('45 דק׳ להתארגנות'), he.body);
+    const en = wakeAlarmWhy({ ...arm[0], alarmAt: '08:00' } as Task, '08:00', 45, 'en');
+    check('...and an asked-for hour says so, in English', en.body.includes('as you asked'), en.body);
+    // 20.10 on her phone: alarmState is lost on the cloud read, so every save
+    // re-armed the same alarm and announced it again, every ~4 s.
+    const lostState = { ...arm[0], alarmState: undefined } as Task;
+    const again = wakeAlarmsToArm([lostState], [tomorrow], { routineMinutes: 45 });
+    check('an alarm already in Clock is not set again even when its state was lost',
+      alarmsNotYetSet(again, new Set([wakeAlarmKey(tomorrow, '08:45')]), 45).length === 0);
+    check('...but a NEW hour that morning is', alarmsNotYetSet(again, new Set([wakeAlarmKey(tomorrow, '08:00')]), 45).length === 1);
+    check('a day outside the window is not touched',
+      wakeAlarmsToArm([fresh], ['2099-01-01'], { routineMinutes: 45 }).length === 0);
+  }
 
   console.log(`\n${failures === 0 ? '✅' : '❌'} ${checks - failures}/${checks} checks passed\n`);
   process.exit(failures === 0 ? 0 : 1);

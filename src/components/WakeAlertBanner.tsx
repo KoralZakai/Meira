@@ -48,7 +48,7 @@ export default function WakeAlertBanner({ wakeTime, leaveTime, language, onDismi
 
         {onDismiss && (
           <TouchableOpacity onPress={onDismiss} style={styles.closeButton}>
-            <Text style={styles.closeIcon}>✕</Text>
+            <Text style={styles.closeIcon}>×</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -108,7 +108,7 @@ const styles = StyleSheet.create({
     padding: 8,
   },
   closeIcon: {
-    fontSize: 18,
+    fontSize: 24,
     color: 'white',
     fontFamily: FONTS.bodyBold,
   },

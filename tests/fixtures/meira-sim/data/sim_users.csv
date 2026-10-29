@@ -1,0 +1,4 @@
+id,name,home_address,home_lat,home_lng,transportation_type,other_modes,timezone,morning_routine_minutes,buffer_minutes,earliest_wake_time,initial_avg_lateness_minutes,true_depart_delay_min,true_miss_connection_p
+101,Ronen Shaked,Modi'in-Maccabim-Re'ut (approx.),31.8969,35.0095,car,walk,Asia/Jerusalem,35,10,05:15,0.0,-2..6,0.0
+102,Shani Berkovich,"Rishon LeZion, Nahalat Yehuda (approx.)",31.973,34.7925,train,bus|walk,Asia/Jerusalem,40,10,05:45,0.0,5..12,0.2
+103,Noa Levi,"Old North, Tel Aviv (approx.)",32.093,34.778,bike,walk|bus,Asia/Jerusalem,30,5,06:15,0.0,-4..1,0.0

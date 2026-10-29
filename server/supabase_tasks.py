@@ -50,6 +50,17 @@ def _rest(path: str) -> str:
     return f"{config.SUPABASE_URL.rstrip('/')}/rest/v1/{path}"
 
 
+def _pg_reason(body: str) -> str:
+    """A Postgres error WITHOUT the row. 'Failing row contains (…)' echoes the
+    whole task — text, place, time — into the Fly logs."""
+    try:
+        import json as _json
+        err = _json.loads(body or "{}")
+        return f"{err.get('code')}: {str(err.get('message') or '')[:120]}"
+    except Exception:  # noqa: BLE001
+        return "(unparsed error body)"
+
+
 def _digits(phone: str) -> str:
     return "".join(ch for ch in str(phone or "") if ch.isdigit())
 
@@ -57,8 +68,8 @@ def _digits(phone: str) -> str:
 def _same_phone(a: str, b: str) -> bool:
     """Are these the same number, written differently?
 
-    The queue is written with whatever form the webhook carried ("0500000009")
-    and flushed with whatever form the caller passed ("972500000009"). Strict
+    The queue is written with whatever form the webhook carried ("0542902729")
+    and flushed with whatever form the caller passed ("972542902729"). Strict
     equality made every such pair invisible to each other, so tasks queued
     while the phone was unlinked stayed queued forever while /link/verify
     happily answered {"linked": true, "flushed": 0} — a success with no effect,
@@ -98,50 +109,23 @@ def _legacy_task_id(text: str, date: str) -> str:
 
 
 async def user_id_for_phone(phone: str) -> Optional[str]:
-    """auth userId whose app_settings.whatsAppPhone matches this number.
-    Exact digits first, then a last-9-digits suffix match (0521… vs 972521…)."""
-    if not _enabled():
-        return None
+    """The auth userId this number is VERIFIABLY linked to (phone_links), or None.
+
+    7.10 audit: this used to read app_settings."whatsAppPhone" — a column the
+    user writes herself — with a last-9-digits suffix match. Anyone who typed a
+    stranger's number became her. Now only a number that proved itself by
+    sending the link code from WhatsApp resolves, and only by exact digits."""
     # An app-only account (no WhatsApp linked) is keyed by its VERIFIED
-    # Supabase user id — app_auth.identify sets key = phone or userId. Read as a
-    # phone number, a UUID's digits were suffix-matched against strangers'
-    # numbers and otherwise found nothing, so everything that account's agent
-    # saved stayed in the JSON mirror and never reached its phone.
+    # Supabase user id — app_auth.identify sets key = phone or userId.
     if _UUID_RE.match(str(phone or "").strip()):
         return str(phone).strip().lower()
     digits = _digits(phone)
     if not digits:
         return None
     try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            r = await client.get(
-                _rest("app_settings"),
-                headers=_headers(),
-                params={"select": "userId", "whatsAppPhone": f"eq.{digits}", "limit": "1"},
-            )
-            rows = r.json() if r.status_code == 200 else []
-            if not rows:
-                tail = digits[-9:]
-                r = await client.get(
-                    _rest("app_settings"),
-                    headers=_headers(),
-                    params={"select": "userId", "whatsAppPhone": f"like.*{tail}", "limit": "1"},
-                )
-                rows = r.json() if r.status_code == 200 else []
-            if not rows and len(digits) >= 9:
-                # Stored numbers may carry '+', spaces or dashes, which defeats the
-                # SQL suffix match. Scan and compare digits-normalized suffixes.
-                # ponytail: full-table scan; fine for a personal-app-sized table.
-                r = await client.get(
-                    _rest("app_settings"),
-                    headers=_headers(),
-                    params={"select": "userId,whatsAppPhone", "limit": "500"},
-                )
-                for row in (r.json() if r.status_code == 200 else []):
-                    if _digits(row.get("whatsAppPhone", "")).endswith(digits[-9:]):
-                        return row["userId"]
-            return rows[0]["userId"] if rows else None
-    except Exception as exc:  # noqa: BLE001 — mapping is always best-effort
+        import phone_links
+        return phone_links.user_for(digits)
+    except Exception as exc:  # noqa: BLE001 — unreadable links resolve nobody
         logger.warning("user_id_for_phone failed: %s", exc)
         return None
 
@@ -195,6 +179,56 @@ def _clamp_status(value: object) -> str:
     return resolved or "pending"
 
 
+# ── sealed rows (7.10): what she will do, where and with whom is ciphertext ──
+# One `sealed` column (migration 0014) holds these fields as AES-256-GCM JSON,
+# under a key derived for THIS account (field_crypto "user:<id>") — the same key
+# the app gets from POST /app/data-key, so phone and server read each other's
+# rows. The plaintext columns are emptied and `text` reads PLACEHOLDER.
+# A row whose `text` is NOT the placeholder was written by an older client in
+# plaintext: plaintext wins, and the next sealed write absorbs it.
+# SEAL_APP_ROWS=1 (fly.toml) turns it on — only after 0014 has run and every
+# tester has the app build that understands sealed rows. Never back to 0.
+SEALED_FIELDS = ("text", "location", "contact", "contactName", "contactPhone",
+                 "attendees", "meetingUrl", "progress", "subtasks", "how", "why",
+                 "locationLat", "locationLng")
+PLACEHOLDER = "🔒"
+
+
+def sealing_on() -> bool:
+    import field_crypto
+    return os.getenv("SEAL_APP_ROWS", "0") == "1" and field_crypto.enabled()
+
+
+def open_task_row(user_id: str, row: dict) -> dict:
+    """The row with its sealed fields restored; `_unreadable` if they will not open."""
+    if not (isinstance(row, dict) and row.get("sealed") and row.get("text") == PLACEHOLDER):
+        return row
+    import field_crypto
+    try:
+        blob = json.loads(field_crypto.open_text(row["sealed"], f"user:{user_id}", f"tasks:{row.get('id')}"))
+    except Exception as exc:  # noqa: BLE001 — reported, never shown as ciphertext
+        logger.warning("a sealed task did not open (%s)", type(exc).__name__)
+        return {**row, "_unreadable": True}
+    return {**row, **{k: blob.get(k) for k in SEALED_FIELDS if k in blob}}
+
+
+def seal_task_row(user_id: str, row: dict, prior: Optional[dict] = None) -> dict:
+    """`row` ready to write: sensitive fields (row's, else the stored copy's)
+    sealed into `sealed`, their columns emptied. Unchanged when sealing is off."""
+    if not sealing_on():
+        return row
+    import field_crypto
+    blob = {k: prior[k] for k in SEALED_FIELDS if prior and prior.get(k) not in (None, "")
+            and not (k == "text" and prior[k] == PLACEHOLDER)}
+    blob.update({k: row[k] for k in SEALED_FIELDS if k in row})
+    out = {k: v for k, v in row.items() if k not in SEALED_FIELDS and k != "sealed"}
+    out.update({k: None for k in SEALED_FIELDS})
+    out["text"] = PLACEHOLDER
+    out["sealed"] = field_crypto.seal_text(json.dumps(blob, ensure_ascii=False),
+                                           f"user:{user_id}", f"tasks:{row['id']}")
+    return out
+
+
 def _task_row(user_id: str, task: dict) -> dict:
     """The `tasks` row for one inbound task, before any merge with the stored
     copy. Split out of upsert_task so the parts that need no network — above
@@ -239,6 +273,10 @@ def _task_row(user_id: str, task: dict) -> dict:
     # project on the app's task board instead of eight unrelated notes.
     if task.get("subgroup"):
         row["subgroup"] = task["subgroup"]
+    # What the invitation said beyond title/time/place (what to bring, who is
+    # invited) — the app's Notes field is `progress`.
+    if task.get("notes"):
+        row["progress"] = str(task["notes"])[:400]
     return row
 
 
@@ -279,13 +317,14 @@ async def upsert_task(user_id: str, task: dict, trust_status: bool = False) -> O
                         _rest("tasks"),
                         headers=_headers(),
                         params={
-                            "select": "id,status,createdAt,completedAt",
+                            "select": "*",
                             "userId": f"eq.{user_id}",
                             "id": f"eq.{tid}",
                             "limit": "1",
                         },
                     )
                     existing = (er.json() or [None])[0] if er.status_code == 200 else None
+                    existing = open_task_row(user_id, existing) if existing else None
                 if not existing:
                     # Same-date rows fetched and matched in Python (PostgREST eq.
                     # filters choke on commas/parens in free text). Catches legacy
@@ -297,12 +336,12 @@ async def upsert_task(user_id: str, task: dict, trust_status: bool = False) -> O
                         _rest("tasks"),
                         headers=_headers(),
                         params={
-                            "select": "id,text,status,completedAt,createdAt,category,priority,durationMinutes,fixedTime,location",
+                            "select": "*",
                             "userId": f"eq.{user_id}",
                             "date": f"eq.{date}",
                         },
                     )
-                    cands = er.json() if er.status_code == 200 else []
+                    cands = [open_task_row(user_id, c) for c in (er.json() if er.status_code == 200 else [])]
                     for cand in cands:
                         if cand.get("id") == legacy or cand.get("text") == text:
                             existing = cand
@@ -350,6 +389,10 @@ async def upsert_task(user_id: str, task: dict, trust_status: bool = False) -> O
                 if not row.get("location") and existing.get("location"):
                     row["location"] = existing["location"]
             row["id"] = tid or str(uuid.uuid4())
+            if existing and existing.get("_unreadable"):
+                logger.warning("upsert_task: the stored copy will not open — not overwriting it")
+                return None
+            row = seal_task_row(user_id, row, existing if existing and existing.get("id") == row["id"] else None)
             r = await client.post(
                 _rest("tasks"),
                 headers={**_headers(), "Prefer": "resolution=merge-duplicates"},
@@ -358,7 +401,7 @@ async def upsert_task(user_id: str, task: dict, trust_status: bool = False) -> O
             )
             ok = r.status_code in (200, 201, 204)
             if not ok:
-                logger.warning("upsert_task rejected (%s): %s", r.status_code, r.text[:200])
+                logger.warning("upsert_task rejected (%s): %s", r.status_code, _pg_reason(r.text))
                 return None
             # Converge: the same task matched under an old id (legacy wa_ hash) —
             # its data now lives in row["id"], so remove the stale twin.
@@ -443,6 +486,10 @@ _PATCH_MAP = {
     "date": "date",
     "status": "status",
     "location": "location",
+    "notes": "progress",
+    # Where it was before she moved it: the phone's calendar re-import reads this so
+    # Google's old date does not pull her move back (TaskStorage.reconcileExternalTask).
+    "moved_from_date": "movedFromDate",
 }
 
 
@@ -467,16 +514,40 @@ async def update_task(user_id: str, task_id: str, patch: dict) -> bool:
         )
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            if sealing_on() and any(k in SEALED_FIELDS for k in body):
+                # Sealed fields live in one blob: read it, merge the patch, reseal.
+                er = await client.get(_rest("tasks"), headers=_headers(),
+                                      params={"select": "*", "userId": f"eq.{user_id}",
+                                              "id": f"eq.{task_id}", "limit": "1"})
+                stored = (er.json() or [None])[0] if er.status_code == 200 else None
+                if not stored:
+                    return False
+                stored = open_task_row(user_id, stored)
+                if stored.get("_unreadable"):
+                    logger.warning("update_task: the stored copy will not open — not overwriting it")
+                    return False
+                body = seal_task_row(user_id, {**body, "id": task_id}, stored)
+                body.pop("id", None)
             r = await client.patch(
                 _rest("tasks"),
-                headers=_headers(),
+                # The row back, so "no such row" is not a success: a PATCH that
+                # matches nothing is a 204 too. Live, 20.10: Meira "moved" a call
+                # she had deleted on the phone and confirmed it ✓ (rule 3).
+                headers={**_headers(), "Prefer": "return=representation"},
                 params={"userId": f"eq.{user_id}", "id": f"eq.{task_id}"},
                 json=body,
             )
-            ok = r.status_code in (200, 204)
-            if not ok:
-                logger.warning("update_task rejected (%s): %s", r.status_code, r.text[:200])
-            return ok
+            if r.status_code not in (200, 204):
+                logger.warning("update_task rejected (%s): %s", r.status_code, _pg_reason(r.text))
+                return False
+            try:
+                rows = r.json() if r.status_code == 200 and r.content else []
+            except ValueError:
+                rows = []
+            if not rows:
+                logger.warning("update_task: no such task in the cloud (deleted on the phone?)")
+                return False
+            return True
     except Exception as exc:  # noqa: BLE001
         logger.warning("update_task failed: %s", exc)
         return False
@@ -502,6 +573,8 @@ async def tasks_for_user(user_id: str, date_from: Optional[str] = None,
     columns = "id,text,category,priority,durationMinutes,fixedTime,date,status"
     if include_location:
         columns += ",location"
+    if sealing_on():
+        columns += ",sealed"
     date_filter = []
     if date_from:
         date_filter.append(f"gte.{date_from}")
@@ -520,7 +593,7 @@ async def tasks_for_user(user_id: str, date_from: Optional[str] = None,
                 },
             )
             if r.status_code != 200:
-                logger.warning("tasks_for_user rejected (%s): %s", r.status_code, r.text[:200])
+                logger.warning("tasks_for_user rejected (%s): %s", r.status_code, _pg_reason(r.text))
                 return []
             return [
                 {
@@ -534,7 +607,8 @@ async def tasks_for_user(user_id: str, date_from: Optional[str] = None,
                     "status": row.get("status"),
                     **({"location": row["location"]} if row.get("location") else {}),
                 }
-                for row in r.json()
+                for row in (open_task_row(user_id, raw) for raw in r.json())
+                if not row.get("_unreadable")
             ]
     except Exception as exc:  # noqa: BLE001
         logger.warning("tasks_for_user failed: %s", exc)

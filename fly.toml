@@ -46,6 +46,18 @@ swap_size_mb = 512
 
 [env]
   DATA_DIR = '/data'
+  # The AI hard stops (server/ai_gate.py). Not secrets. After a Token Factory
+  # top-up, set the NEW balance and today's date here and push.
+  TOKEN_FACTORY_BALANCE_USD = '140'
+  TOKEN_FACTORY_BALANCE_DATE = '2026-10-07'
+  LLM_RESERVE_USD = '10'
+  USER_AI_DAILY_REQUESTS = '18'
+  # Must cover USER_AI_DAILY_REQUESTS x the mean request cost (evals/cost.py checks it).
+  USER_LLM_DAILY_USD = '0.30'
+  # Sealed task/profile fields in Supabase (migration 0014, server/field_crypto).
+  # '1' only after 0014 has run AND every tester has the app build that reads
+  # sealed rows. Never back to '0' once on.
+  SEAL_APP_ROWS = '0'
 
 [[mounts]]
   source = 'lumi_data'

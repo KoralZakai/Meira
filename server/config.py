@@ -69,7 +69,7 @@ LLM_MODEL_CHEAP = (
 #
 # The fallback is a landmine and is kept only so a local dev shell with one
 # .env still works. The EXPO_PUBLIC_ key is the one compiled into the APK, and
-# it is restricted to `com.lumi.app` + SHA-1 — a restriction Google enforces
+# it is restricted to `meira.secretary` + SHA-1 — a restriction Google enforces
 # through headers only the Maps SDK sends. A server using it gets
 # REQUEST_DENIED on every Geocoding and Directions call, which is exactly the
 # failure `/app/geocode` and `/app/route/directions` exist to END: 107 refused
@@ -109,6 +109,7 @@ GOOGLE_SEARCH_API_KEY = _get("GOOGLE_SEARCH_API_KEY") or GOOGLE_MAPS_API_KEY
 # Nebius does NOT serve audio transcription — /audio/transcriptions there
 # returned 404 on every voice note, which is why they never worked. Unset keeps
 # the old behaviour (ask the user to type) rather than erroring.
+GOOGLE_TTS_API_KEY = _get("GOOGLE_TTS_API_KEY")   # optional; else the Maps server key (tts.py)
 GROQ_API_KEY = _get("GROQ_API_KEY")
 
 # ─── Embeddings (duplicate-task detection) ───
@@ -170,6 +171,9 @@ APP_OWNS_DEPARTURE_ALERTS = _get("LUMI_APP_OWNS_DEPARTURE_ALERTS", "1") not in (
 #   fly secrets set TAVILY_API_KEY=tvly-...
 # Server-side ONLY. Never EXPO_PUBLIC_* — that would inline it into every APK.
 TAVILY_API_KEY = _get("TAVILY_API_KEY")
+
+# Where share links point (group invites, /g/{token}).
+PUBLIC_URL = _get("PUBLIC_URL", "https://lumi-whatsapp.fly.dev")
 
 # ─── LLM budget (model_router) ───
 # A monthly ceiling in USD for Nebius model spend. 0/unset = no limit and the

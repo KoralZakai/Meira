@@ -60,7 +60,9 @@ function main() {
   check('a Google-formatted home gives its city', cityOf(HOME) === 'תל אביב-יפו', String(cityOf(HOME)));
   check('a typed home gives it too', cityOf('הרצל 20, רעננה') === 'רעננה');
   check('a leading house number is skipped, not mistaken for the city',
-    cityOf('11א, Kaufmann Street, Tel Aviv') === 'Kaufmann Street',
+    // 13.10: this used to expect 'Kaufmann Street' — the street — and that is
+    // the reading that sent a Haifa interview to "…, Mordei ha-Geta'ot Street".
+    cityOf('11א, Kaufmann Street, Tel Aviv') === 'Tel Aviv',
     'the segment after a bare number is the street; the city is further along');
   check('a home with no comma still yields an inline city',
     cityOf('הרצל 20 תל אביב') === 'תל אביב');
@@ -94,11 +96,13 @@ function main() {
   check('a hyphenated form', namesACity('תל-אביב'));
   check('a street name is not a city', !namesACity('יגאל אלון 94'));
 
-  console.log('\n6. A place NAME with no street still gets placed near her');
-  check('a short venue name is completed',
-    completeAddress('צ׳ארלס קלור', HOME) === 'צ׳ארלס קלור, תל אביב-יפו',
-    'a park name is as ambiguous to a geocoder as a street name');
-  check('Space Gym too', completeAddress('Space Gym', HOME) === 'Space Gym, תל אביב-יפו');
+  console.log('\n6. A place NAME is left to the geocoder, which searches near her');
+  // 13.10: completing names sent "רפאל מכון דוד" (Haifa) to Tel Aviv — a
+  // confident wrong place. A street with a number is the ambiguous shape; a
+  // venue name is found by Google, biased to her area, without a town forced on.
+  check('a venue name is not given her city',
+    completeAddress('רפאל מכון דוד', HOME) === 'רפאל מכון דוד');
+  check('a street with a number still is', completeAddress('יגאל אלון 94', HOME).includes('תל אביב'));
 
   console.log(`\n${failures ? '✗' : '✓'} ${checks - failures}/${checks} checks passed\n`);
   process.exit(failures ? 1 : 0);

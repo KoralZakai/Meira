@@ -142,6 +142,24 @@ function main() {
   check('English too', describeReplanReason('moved-off-origin', false).length > 0);
   check('a non-reason has no line', describeReplanReason('on-plan', true) === '');
 
+  console.log('\nN. Train times are predictions — asked again near departure (28.10: shown 15:06, real 15:04)');
+  const fetched = (hhmm: string) => at(hhmm).getTime();
+  check('times 25 min old, leaving in 40 → ask Google again',
+    decideLiveReplan({ current: HOME, trip: { ...TRIP, timetabled: true, fetchedAt: fetched('08:35') }, home: HOME, now: at('09:00') }).reason === 'refresh-times');
+  check('times 5 min old → still fresh, nothing to do',
+    decideLiveReplan({ current: HOME, trip: { ...TRIP, timetabled: true, fetchedAt: fetched('08:55') }, home: HOME, now: at('09:00') }).reason === 'on-plan');
+  check('leaving in 3 hours → not yet (no call spent)',
+    decideLiveReplan({ current: HOME, trip: { ...TRIP, timetabled: true, leaveHomeBy: '12:10', fetchedAt: fetched('07:00') }, home: HOME, now: at('09:00') }).reason === 'on-plan');
+  check('the cooldown still holds',
+    decideLiveReplan({ current: HOME, trip: { ...TRIP, timetabled: true, fetchedAt: fetched('08:35') }, home: HOME, now: at('09:00'), lastReplanAt: fetched('08:58') }).reason === 'cooling-down');
+  check('a car/walk plan is not refreshed (no timetable to drift)',
+    decideLiveReplan({ current: HOME, trip: { ...TRIP, fetchedAt: fetched('08:00') }, home: HOME, now: at('09:00') }).reason === 'on-plan');
+  check('last half hour: 6-min-old times are refreshed',
+    decideLiveReplan({ current: HOME, trip: { ...TRIP, timetabled: true, fetchedAt: fetched('09:14') }, home: HOME, now: at('09:20') }).reason === 'refresh-times');
+  check('…40 min out: 10-min-old times are still fine',
+    decideLiveReplan({ current: HOME, trip: { ...TRIP, timetabled: true, leaveHomeBy: '09:40', fetchedAt: fetched('08:50') }, home: HOME, now: at('09:00') }).reason === 'on-plan');
+  check('said in words', describeReplanReason('refresh-times', true).includes('Google'));
+
   console.log(`\n${failures ? '✗' : '✓'} ${checks - failures}/${checks} checks passed\n`);
   process.exit(failures ? 1 : 0);
 }

@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Lumi",
+    "name": "Meira",
     "slug": "lumi",
     "version": "1.0.0",
     "newArchEnabled": false,
@@ -18,6 +18,7 @@
       }
     },
     "android": {
+      "allowBackup": false,
       "adaptiveIcon": {
         "backgroundColor": "#FFD166",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -29,24 +30,24 @@
         "RECORD_AUDIO",
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
         "READ_CONTACTS",
         "READ_CALENDAR",
         "RECEIVE_BOOT_COMPLETED",
         "VIBRATE",
         "SCHEDULE_EXACT_ALARM",
-        "USE_EXACT_ALARM",
         "com.android.alarm.permission.SET_ALARM"
       ],
       "blockedPermissions": [
-        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.USE_EXACT_ALARM",
         "android.permission.WRITE_CONTACTS",
-        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.WRITE_CALENDAR",
         "android.permission.USE_BIOMETRIC",
         "android.permission.USE_FINGERPRINT",
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE"
       ],
-      "package": "com.lumi.app",
+      "package": "meira.secretary",
       "googleServicesFile": "./google-services.json"
     },
     "web": {
@@ -71,9 +72,11 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "Lumi needs background location to verify arrivals.",
-          "locationAlwaysPermission": "Lumi needs background location to verify arrivals.",
-          "locationWhenInUsePermission": "Lumi uses your location for travel time calculations."
+          "locationAlwaysAndWhenInUsePermission": "Meira tells you when you are near the place of an open errand, even when the app is closed. Your location stays on your phone.",
+          "locationAlwaysPermission": "Meira tells you when you are near the place of an open errand, even when the app is closed. Your location stays on your phone.",
+          "locationWhenInUsePermission": "Meira uses your location for travel times and leave-now alerts.",
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": false
         }
       ],
       [
@@ -101,7 +104,8 @@
       [
         "expo-audio",
         {
-          "microphonePermission": "Allow Meira to record what you say, so it can turn it into tasks."
+          "microphonePermission": "Allow Meira to record what you say, so it can turn it into tasks.",
+          "enableBackgroundPlayback": false
         }
       ]
     ],

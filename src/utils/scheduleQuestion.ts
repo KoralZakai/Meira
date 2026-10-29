@@ -42,6 +42,8 @@ export interface FeasibilityQuestion {
   endTime?: string;
   /** What she'd be doing — "meeting", "פגישה", "coffee". */
   what?: string;
+  /** Moving an existing task: judge the day without its old self (it is not in the way of itself). */
+  ignoreId?: string;
   raw: string;
 }
 

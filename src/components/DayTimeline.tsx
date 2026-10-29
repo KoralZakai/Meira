@@ -537,9 +537,13 @@ export default function DayTimeline({
               return (
                 <View style={styles.conflictBox}>
                   <Text style={styles.conflictTitle}>
-                    {isHe
-                      ? `⚠️ "${displaced.text}" רץ מעבר ל-${verdict.departureAt}, השעה שצריך לצאת ל"${anchorTask.text}"`
-                      : `⚠️ "${displaced.text}" runs past ${verdict.departureAt}, when you have to leave for "${anchorTask.text}"`}
+                    {verdict.departureAt
+                      ? (isHe
+                        ? `⚠️ "${displaced.text}" רץ מעבר ל-${verdict.departureAt}, השעה שצריך לצאת ל"${anchorTask.text}"`
+                        : `⚠️ "${displaced.text}" runs past ${verdict.departureAt}, when you have to leave for "${anchorTask.text}"`)
+                      : (isHe
+                        ? `⚠️ "${displaced.text}" באותה שעה כמו "${anchorTask.text}"`
+                        : `⚠️ "${displaced.text}" is at the same time as "${anchorTask.text}"`)}
                   </Text>
                   {plan && plan.action !== 'keep' ? (
                     <View style={styles.chipRow}>

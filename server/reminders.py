@@ -103,7 +103,7 @@ def schedule(phone: str, hhmm: str, text: str, day: str | None = None,
         "fireAt": fire_at.isoformat(), "kind": kind or "reminder",
         "payload": {"dest_key": dest_key, "day": d.isoformat()}, "sent": False,
     }))
-    logger.info("reminder persisted for %s at %s", phone, hhmm)
+    logger.info("reminder persisted at %s", hhmm)
     return True
 
 
@@ -135,7 +135,7 @@ def schedule_outgoing(owner_phone: str, to_phone: str, hhmm: str, day: str | Non
         "text": message, "sent": False, "day": d.isoformat(),
     })
     _save(items)
-    logger.info("outgoing message persisted: %s -> %s at %s", owner_phone, to_digits, fire_at)
+    logger.info("outgoing message persisted for %s", fire_at)
     return True
 
 
@@ -332,8 +332,7 @@ async def run_reminder_loop() -> None:
                         # A check-in whose task is gone/past (scheduled before the
                         # subject-resolution fix) — drop it instead of pinging about
                         # an old class.
-                        logger.info("dropped stale check-in for %s: %s",
-                                    it.get("phone"), it.get("text", "")[:50])
+                        logger.info("dropped a stale check-in")
                         changed = True
                         continue
                     if it.get("kind") == "departure" and await _app_owns_departures(it["phone"]):
@@ -366,7 +365,7 @@ async def run_reminder_loop() -> None:
                     else:
                         await WhatsAppService.send_message(it["phone"], it["text"])
                         await _push_if_registered(it["phone"], it["text"])
-                        logger.info("reminder fired -> %s: %s", it["phone"], it["text"])
+                        logger.info("reminder fired")
                     it["sent"] = True
                     changed = True
                     if it.get("key"):

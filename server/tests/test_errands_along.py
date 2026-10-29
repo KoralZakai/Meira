@@ -138,6 +138,18 @@ class Along(unittest.TestCase):
         refused = mock.AsyncMock(side_effect=ea.PlacesRefused("REQUEST_DENIED"))
         self.assertEqual(self._run(refused, mock.AsyncMock())["reason"], "places_refused")
 
+    def test_prices_false_spends_no_web_search_and_no_model(self):
+        # The Add screen's suggestion row only needs WHICH place is on the way.
+        on = ROUTE[5]
+        res = [{"place_id": "p", "name": "Shop", "geometry": {"location": {"lat": on[0], "lng": on[1]}}}]
+        boom = mock.AsyncMock(side_effect=AssertionError("prices must not be fetched"))
+        with mock.patch("errand_prices.enrich", boom):
+            out = self._run(mock.AsyncMock(return_value=res),
+                            mock.AsyncMock(return_value={"periods": SHOP, "weekday_text": WEEK}),
+                            prices=False)
+        self.assertTrue(out["ok"])
+        boom.assert_not_called()
+
     def test_all_closed_says_so(self):
         on = ROUTE[3]
         res = [{"place_id": "c", "name": "Shut", "geometry": {"location": {"lat": on[0], "lng": on[1]}}}]

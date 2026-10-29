@@ -25,7 +25,7 @@ export function MapPinConfirm({ visible, title, options, onSelect, onCancel }: P
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
           <Pressable onPress={onCancel} style={styles.closeButton}>
-            <Text style={styles.closeText}>✕</Text>
+            <Text style={styles.closeText}>×</Text>
           </Pressable>
           <Text style={styles.title}>{title}</Text>
           <View style={styles.closeButtonPlaceholder} />
@@ -95,7 +95,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   closeText: {
-    fontSize: 20,
+    fontSize: 26,
     color: BRAND.warmInk,
     fontFamily: FONTS.bodySemi,
   },

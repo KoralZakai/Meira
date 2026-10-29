@@ -43,6 +43,11 @@ yarn-error.*
 /ios
 /android
 
+# gradle output inside local native modules (modules/<name>/android/build)
+modules/*/android/build/
+modules/*/android/.gradle/
+modules/*/android/.cxx/
+
 # Nebius job local artifacts
 nebius/**/data/
 nebius/**/data-*/

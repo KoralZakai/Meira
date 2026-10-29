@@ -107,9 +107,21 @@ CHAT_LIMIT, CHAT_WINDOW_S = 30, 60.0
 # One signed-in account, speaking into the app. Each call is a Whisper request
 # billed by audio length; twenty a minute is already someone holding the mic.
 STT_LIMIT, STT_WINDOW_S = 20, 60.0
+TTS_LIMIT, TTS_WINDOW_S = 40, 60.0   # Meira's voice: one call per spoken line
 # One phone number, over WhatsApp.
 WHATSAPP_LIMIT, WHATSAPP_WINDOW_S = 30, 60.0
 # The whole webhook, whoever is calling. The per-number limit does nothing
 # against forged bodies that each name a DIFFERENT number, which is exactly
 # what an unauthenticated webhook invites; this is the ceiling that does.
 WEBHOOK_GLOBAL_LIMIT, WEBHOOK_GLOBAL_WINDOW_S = 240, 60.0
+# 19.10, before Play: the app's model-calling doors that had no ceiling at all —
+# tasks/extract, profile/extract, email/events, meeting/brief, task/prep,
+# questions/answer, errands/along. Each is one signed-in account, counted per
+# door. The heaviest real use is the night-before brief run, which asks for one
+# event at a time and each takes seconds of web search; twenty a minute on one
+# door is a loop.
+APP_MODEL_LIMIT, APP_MODEL_WINDOW_S = 20, 60.0
+# GET /personality/resolve is open (the token is the credential: 256-bit,
+# single use, 10 min), so it is counted per client IP. Nobody opens a quiz
+# link ten times a minute.
+RESOLVE_LIMIT, RESOLVE_WINDOW_S = 10, 60.0

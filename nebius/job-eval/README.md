@@ -10,8 +10,8 @@ CPU-only — it just calls the inference API / the student's endpoint.
 
 For each model it sends one call per example with the canonical
 `PARSER_SYSTEM_PROMPT` (byte-identical to [Job A](../job-datagen)'s and the
-endpoint's), parses `{"tasks":[...]}`, and scores it with the same EDD-style
-field checks used by `tests/edd-evaluator.ts`, ported to Python and aligned to
+endpoint's), parses `{"tasks":[...]}`, and scores it with EDD-style field checks
+implemented here and aligned to
 the parser schema (`category`, `priority`, `fixedTime`, `deadline`/date-math,
 `hasLocation`, `contactName`, recurrence, task count, …).
 

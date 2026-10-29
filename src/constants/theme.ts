@@ -32,6 +32,7 @@ export const BRAND = {
   timeChipText: '#8B6721', // clock times on chips     4.60:1  (was 2.39)
   success: '#458052',      // done / arrived on time   4.63:1  (was 2.24)
   danger: '#B9526B',       // late / urgent            4.61:1
+  warnInk: '#8A5306',      // a possible disruption    ~6:1 on cream (warning orange as TEXT)
 
   // ── The two halves of "accent". Yellow cannot be both at once, and the
   // terracotta set that used to cover this (CLAUDE.accent) had ONE colour
@@ -46,6 +47,12 @@ export const BRAND = {
   goldInk: '#8B6721',
   onGold: '#4A3512',
   goldSoft: '#FCF1D6',   // pressed / selected tint (replaces CLAUDE.accentSoft)
+
+  // Late / over-budget AS TEXT on a pale rose or cream ground. `danger` is the
+  // fill and border colour (4.61:1 on card); this is its text-weight sibling,
+  // used by the late pill, the clash title and the 'N min late' tail so the
+  // word 'late' never has to be read at 4.6:1 when it can be 7:1.
+  lateInk: '#9C3F57',
 } as const;
 
 /**
@@ -109,6 +116,13 @@ export const GRADIENTS = {
   sunny: ['#FFF4CE', '#FBE6A6', '#F6CF6E'] as const,
   gold: ['#FFF3C4', '#F7D069', '#EAB23F'] as const, // wordmark puff fill
 } as const;
+
+/**
+ * MIN_TOUCH — the smallest tappable height, in dp. Material and WCAG 2.5.5 both
+ * ask for 44-48; a 40 dp pill or a 36 dp text link is one she misses with a
+ * thumb. Every button-like Style reaches for this instead of a literal.
+ */
+export const MIN_TOUCH = 44;
 
 export const RADIUS = {
   card: 20,

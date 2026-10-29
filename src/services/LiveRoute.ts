@@ -21,8 +21,8 @@
 import { AppLanguage, Task, TaskLocation, TransitPlan, TransportType, UserProfile } from '../types/index';
 import { assessDrift, describeReplan } from '../utils/positionDrift';
 import { pickCoords } from '../utils/placeCoords';
-import { nextTrip, assumedOrigin, missedPlannedDeparture, nowHHMM } from '../utils/liveRoutePlan';
-import { presenceFor, isUserAtLocation } from '../utils/presence';
+import { nextTrip, assumedOrigin, missedPlannedDeparture, nowHHMM, lateBy, runningLateText, bestAlternative, alternativeLine } from '../utils/liveRoutePlan';
+import { presenceFor, isUserAtLocation, canArriveToday } from '../utils/presence';
 import {
   decideLiveReplan, describeReplanReason, ReplanReason,
 } from '../utils/liveReplanDecision';
@@ -31,9 +31,13 @@ import { rankDepartureOptions, DepartureOption } from '../utils/departureOptions
 import { addMinutes, timeToMinutes } from '../utils/timeUtils';
 import { normalizeProfile } from '../utils/profileShape';
 import { locOf, addrOf, timeOf } from '../utils/dayPlanning';
+import { isHighStakes } from '../utils/travelLadder';
 import { GoogleService } from './GoogleService';
 import { getCurrentLocation } from './LocationService';
-import { updateTaskFields } from './TaskStorage';
+import { RIDE_ICON, ridesOf } from '../utils/rideLine';
+import AsyncStorage from './EncryptedStorage';  // AES-256-GCM at rest (7.10)
+import { updateTaskFields, markTaskComplete } from './TaskStorage';
+import { arrivalDoneLine, completesOnArrival } from '../utils/arrivalDone';
 import {
   cancelTaskNotifications, cancelLeaveNags, scheduleTransitNotifications, sendImmediate,
   withTaskAlertLock,
@@ -47,6 +51,33 @@ import {
  */
 /** Trips already told "times updated" this session (see replanFromNextDeparture). */
 const notifiedLate = new Set<string>();
+/**
+ * The same "you're late" said once per trip across PROCESSES too: the closed-app
+ * check (backgroundTripCheck) starts a fresh JS run every ~15 min, where the
+ * in-memory set is empty — without this she would be buzzed on every run.
+ */
+const LATE_NOTIFIED_KEY = 'liveroute.lateNotified.v1';
+export async function lateNotifiedRecently(id: string, now: number): Promise<boolean> {
+  try {
+    const raw = await AsyncStorage.getItem(LATE_NOTIFIED_KEY);
+    const at = raw ? (JSON.parse(raw) as Record<string, number>)[id] : undefined;
+    return !!at && now - at < 12 * 3600_000;
+  } catch (e) {
+    console.warn('[LiveRoute] late-notified map unreadable', e);
+    return false;
+  }
+}
+export async function markLateNotified(id: string, now: number): Promise<void> {
+  try {
+    const raw = await AsyncStorage.getItem(LATE_NOTIFIED_KEY);
+    const map: Record<string, number> = raw ? JSON.parse(raw) : {};
+    map[id] = now;
+    for (const [k, t] of Object.entries(map)) if (now - t > 24 * 3600_000) delete map[k];
+    await AsyncStorage.setItem(LATE_NOTIFIED_KEY, JSON.stringify(map));
+  } catch (e) {
+    console.warn('[LiveRoute] late-notified map not saved', e);
+  }
+}
 const lastLiveReplanAt = new Map<string, number>();
 
 export interface LiveReplanResult {
@@ -63,7 +94,7 @@ export interface LiveReplanResult {
 /** Every route this module saves, said once at warn (see RouteGateway's twin). */
 function logSaved(where: string, trip: Task, plan: TransitPlan | undefined): void {
   console.warn(`[LiveRoute] ${where} saved ${plan?.leaveHomeAt ?? '-'}→${plan?.arriveAt ?? '-'}`
-    + ` for "${trip.text.slice(0, 30)}" at ${trip.fixedTime || trip.scheduledTime || '-'} on ${trip.date}`);
+    + ` for task ${trip.id} at ${trip.fixedTime || trip.scheduledTime || '-'} on ${trip.date}`);
 }
 
 /**
@@ -91,10 +122,18 @@ export async function replanFromNextDeparture(
     notify?: boolean;
     now?: Date;
     language?: AppLanguage;
+    /**
+     * Where she IS. "From where I am now" used to route from HOME whatever the GPS said (21.10,
+     * Koral: "'from where I am now' doesn't really work"): getDepartNowPlan reads the profile's home as
+     * the origin. With a fix, the profile's home is overridden for this one question, the same way
+     * replanNextTripFromPosition does it.
+     */
+    from?: { lat: number; lng: number } | null;
   } = {},
 ): Promise<LiveReplanResult> {
-  const profile = normalizeProfile(storedProfile) as UserProfile | null;
-  if (!profile) return { replanned: false, reason: 'no-profile' };
+  const homeProfile = normalizeProfile(storedProfile) as UserProfile | null;
+  if (!homeProfile) return { replanned: false, reason: 'no-profile' };
+  const profile = opts.from ? profileFromPoint(homeProfile, opts.from) : homeProfile;
   const dest = addrOf(trip);
   if (!dest) return { replanned: false, reason: 'no-destination' };
 
@@ -114,8 +153,9 @@ export async function replanFromNextDeparture(
     // Google routed us to the door; its end point is where this place is.
     ...(pickCoords(nextBase, plan) ?? {}),
   } as TaskLocation;
+  if (opts.from) (nextLocation.transitPlan as any) = { ...plan, startLat: opts.from.lat, startLng: opts.from.lng };
   const updated = { ...trip, location: nextLocation } as Task;
-  logSaved('next-departure', trip, plan);
+  logSaved(opts.from ? 'next-departure-from-here' : 'next-departure', trip, plan);
 
   // The old alerts belong to a departure that has gone. Replace them under the
   // per-task lock, the same way the travel chain does, so a re-plan never
@@ -143,15 +183,44 @@ export async function replanFromNextDeparture(
   const oldArrive = locOf(trip)?.transitPlan?.arriveAt;
   const arrivalShift = oldArrive && /^\d{1,2}:\d{2}$/.test(oldArrive)
     ? Math.abs(timeToMinutes(plan.arriveAt) - timeToMinutes(oldArrive)) : Infinity;
-  const worthSaying = !notifiedLate.has(trip.id) || arrivalShift >= 10;
+  const nowMs = (opts.now ?? new Date()).getTime();
+  const worthSaying = (!notifiedLate.has(trip.id) && !(await lateNotifiedRecently(trip.id, nowMs))) || arrivalShift >= 10;
   if (opts.notify && oldLeave !== plan.leaveHomeAt && worthSaying) {
     notifiedLate.add(trip.id);
-    await sendImmediate(
-      he ? '🚏 הזמנים השתנו' : '🚏 Times updated', message,
-      { taskId: trip.id, type: 'missed-departure' },
-    ).catch(() => {});
+    await markLateNotified(trip.id, nowMs);
+    // The next departure lands AFTER it starts: that is not "times updated",
+    // it is a question only she can answer (13.10).
+    const late = lateBy(timeOf(trip) ?? undefined, plan.arriveAt);
+    if (late > 0) {
+      const must = isHighStakes(trip);
+      const q = runningLateText(trip.text, plan.arriveAt, late, he, must);
+      // Late on this way: ask Google for the OTHER ways from now and say the faster one, if any.
+      const alt = await fastestOtherWay(mode, dest, profile, trip.date, opts.now, plan.arriveAt)
+        .catch((e) => { console.warn('[LiveRoute] other ways not checked', e); return null; });
+      if (alt) q.body = `${q.body}\n${alternativeLine(alt, he)}`;
+      await sendImmediate(q.title, q.body, { taskId: trip.id, type: 'running-late' },
+        must ? 'cannot-be-late' : 'running-late').catch(() => {});
+    } else {
+      await sendImmediate(
+        he ? '🚏 הזמנים השתנו' : '🚏 Times updated', message,
+        { taskId: trip.id, type: 'missed-departure' },
+      ).catch(() => {});
+    }
   }
   return { replanned: true, reason: 'missed-departure', message, plan, task: updated };
+}
+
+/** Depart-now plans for every OTHER vehicle, each from Google; the fastest one that really beats `arriveAt`. */
+async function fastestOtherWay(
+  mode: TransportType, dest: string, profile: UserProfile, date: string, now: Date | undefined, arriveAt: string,
+) {
+  const others = (['bus', 'train', 'car', 'bike'] as TransportType[])
+    .filter((m) => m !== mode && (m !== 'car' || (profile as any).hasCar !== false));
+  const plans = await Promise.all(others.map(async (m) => ({
+    mode: m, plan: await GoogleService.getDepartNowPlan(m, dest, profile, date, now).catch(() => null),
+  })));
+  const ok = plans.filter((p): p is { mode: TransportType; plan: TransitPlan } => Boolean(p.plan));
+  return bestAlternative({ arriveAt }, ok);
 }
 
 /**
@@ -417,7 +486,7 @@ export function describeNextDeparture(
  */
 export async function markArrivals(
   tasks: Task[],
-  opts: { now?: Date; current?: { lat: number; lng: number } | null } = {},
+  opts: { now?: Date; current?: { lat: number; lng: number } | null; language?: AppLanguage } = {},
 ): Promise<{ arrived: Task[] }> {
   const current = opts.current !== undefined ? opts.current : await getCurrentLocation();
   if (!current) return { arrived: [] };
@@ -428,6 +497,8 @@ export async function markArrivals(
 
   for (const task of tasks) {
     if (task.status !== 'pending' || task.verifiedArrival) continue;
+    // Only a task of TODAY can be arrived at (utils/presence.canArriveToday).
+    if (!canArriveToday(task, now)) continue;
     const loc = locOf(task);
     if (!loc || !Number.isFinite(loc.lat) || !Number.isFinite(loc.lng)) continue;
 
@@ -446,9 +517,22 @@ export async function markArrivals(
       await cancelTaskNotifications(task).catch(() => {});
       await updateTaskFields(task.id, {
         verifiedArrival: true, notificationIds: [],
-      } as any).catch(() => {});
+      } as any).catch((e) => console.warn('[LiveRoute] arrival not stamped', task.id, e));
     });
-    arrived.push({ ...task, verifiedArrival: true } as Task);
+    // She is there: it is done (16.10, Koral). Once — verifiedArrival is set
+    // above, so an untick by her is never re-ticked by the next sweep.
+    let done = false;
+    if (completesOnArrival(task)) {
+      done = await markTaskComplete(task.id, true, { byArrival: true })
+        .then(() => true)
+        .catch((e) => { console.warn('[LiveRoute] arrival did not complete the task', task.id, e); return false; });
+      if (done) {
+        const line = arrivalDoneLine(task.text, (opts.language ?? 'he') === 'he');
+        await sendImmediate(line.title, line.body, { taskId: task.id, type: 'arrival-done' })
+          .catch((e) => console.warn('[LiveRoute] arrival note not shown', e));
+      }
+    }
+    arrived.push({ ...task, verifiedArrival: true, ...(done ? { status: 'complete', completedBy: 'arrival' } : {}) } as Task);
   }
   return { arrived };
 }
@@ -524,6 +608,8 @@ export async function keepNextTripLive(
       leaveHomeBy: loc?.leaveHomeBy,
       arriveAt: plan?.arriveAt,
       appointment: timeOf(trip) ?? undefined,
+      fetchedAt: (plan as any)?.fetchedAt,
+      timetabled: ridesOf(trip).length > 0,
     },
     now,
     lastReplanAt: lastLiveReplanAt.get(trip.id),
@@ -541,6 +627,25 @@ export async function keepNextTripLive(
   const he = (opts.language ?? (profile as any).language) === 'he';
   const why = describeReplanReason(decision.reason, he);
   const fromHere = current ? profileFromPoint(storedProfile, current) : storedProfile;
+
+  // Fresh times for the same trip: the same arrive-by question again, from
+  // the same origin — and say it if the ride moved.
+  if (decision.reason === 'refresh-times') {
+    const oldRide = ridesOf(trip)[0]?.departureTime;
+    // 'auto': the same origin as the plan — a time refresh never moves where the trip starts.
+    const { task: fresh } = await replanFromOrigin(trip, storedProfile, 'auto', { language: opts.language });
+    if (!fresh) return { replanned: false, reason: decision.reason, metres: decision.metres };
+    const newRide = ridesOf(fresh)[0];
+    const moved = Boolean(oldRide && newRide?.departureTime && newRide.departureTime !== oldRide);
+    const message = moved
+      ? (he ? `${RIDE_ICON[newRide!.type] || '🚌'} עכשיו ${newRide!.departureTime} (היה ${oldRide})` : `${RIDE_ICON[newRide!.type] || '🚌'} now ${newRide!.departureTime} (was ${oldRide})`)
+      : why;
+    if (opts.notify && moved) {
+      await sendImmediate(he ? '🚆 שעת היציאה זזה' : '🚆 Departure moved', `${trip.text}: ${message}`,
+        { taskId: trip.id, type: 'live-replan' }).catch((e) => console.warn('[LiveRoute] departure-moved alert not sent', e));
+    }
+    return { replanned: true, reason: decision.reason, message, task: fresh, metres: decision.metres };
+  }
 
   // Late — by the clock or by the plan's own arithmetic. Only "when can I
   // leave now" has an answer.
@@ -604,6 +709,14 @@ export async function replanNextTripFromPosition(
       return replanFromNextDeparture(trip, storedProfile, opts);
     }
     return { replanned: false, reason: verdict.reason, metres: verdict.metres };
+  }
+
+  // The appointment has STARTED and she is somewhere else: an arrive-by plan to a deadline behind
+  // her is fiction ("leave 09:18" at 10:55). Ask Google "from here, leaving now" instead.
+  const startMin = timeToMinutes(timeOf(trip) ?? '23:59');
+  const nowD = opts.now ?? new Date();
+  if (current && startMin <= nowD.getHours() * 60 + nowD.getMinutes()) {
+    return replanFromNextDeparture(trip, storedProfile, { ...opts, from: current });
   }
 
   // Re-plan from the real fix. The destination, arrival deadline and mode are

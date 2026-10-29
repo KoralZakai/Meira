@@ -20,6 +20,7 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
+import identity_keys
 import supabase_tasks
 import user_memory
 
@@ -31,7 +32,9 @@ async def fetch_tasks_with_source(
         include_location: bool = False) -> tuple[list, str]:
     """Every saved task for this user, plus WHICH store answered.
 
-    Source is "supabase", "memory" (the JSON mirror) or "empty". Callers that
+    Source is "supabase", "memory" (the JSON mirror), "empty" (she has none) or
+    "unreachable" (Supabase failed and the mirror has nothing — NOT a free day,
+    silent-state rule 1). Callers that
     serve the app want it: "why is my list stale?" is unanswerable from the
     outside unless the response says where the rows came from.
 
@@ -42,22 +45,36 @@ async def fetch_tasks_with_source(
     Supabase, so the same user could get two different answers about the same
     tasks depending on which code path asked.
     """
+    failed = False
     try:
         uid = await supabase_tasks.user_id_for_phone(str(phone))
+        if not uid and not identity_keys.looks_like_phone(str(phone)):
+            # The agent's key for a person may be an alias of her account (a
+            # user-record id, an old phone key). 27.10 live: unresolved, the
+            # read fell through to the stale mirror and Meira recited a day of
+            # old routines while the real one held an interview.
+            # A PHONE key resolves only through its verified link (7.10); an
+            # unlinked number never falls back to the account it once had.
+            brain = identity_keys.canonical(phone)
+            if brain and brain != str(phone):
+                uid = await supabase_tasks.user_id_for_phone(brain)
         if uid:
             rows = await supabase_tasks.tasks_for_user(
                 uid, date_from, date_to, include_location=include_location)
             if rows:
                 return rows, "supabase"
     except Exception as exc:  # noqa: BLE001 — the mirror below is the fallback
-        logger.debug("supabase task read failed, using local mirror: %s", exc)
+        failed = True
+        logger.warning("supabase task read failed, using local mirror: %s", type(exc).__name__)
 
     # The mirror. Still the answer when Supabase is unreachable or has not seen
     # this user yet — stale-but-present beats an empty day.
     rows = [t for t in user_memory.tasks_for_phone(phone)
             if (not date_from or t.get("date", "") >= date_from)
             and (not date_to or t.get("date", "") <= date_to)]
-    return (rows, "memory") if rows else ([], "empty")
+    if rows:
+        return rows, "memory"
+    return [], ("unreachable" if failed else "empty")
 
 
 async def fetch_task_rows(phone: str, date_from: Optional[str] = None,

@@ -18,7 +18,7 @@
  * Pure except for storage; the matching and the winner rule are exported so
  * tests/run-place-mode.ts can drive them without AsyncStorage.
  */
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from '../services/EncryptedStorage';  // AES-256-GCM at rest (7.10)
 import { TransportType } from '../types/index';
 
 const KEY = 'lumi.placeMode.v1';

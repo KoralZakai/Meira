@@ -65,6 +65,7 @@ PROTECTED = [
     ("post",   "/agents/{phone}"),
     ("patch",  "/agents/{phone}/some-agent-id"),
     ("delete", "/agents/{phone}/some-agent-id"),
+    ("post",   "/agents/{phone}/some-agent-id/run"),
     ("get",    "/link/verify/{phone}"),
     ("post",   "/push/register"),
 ]

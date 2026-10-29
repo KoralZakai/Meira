@@ -239,8 +239,10 @@ export function describeRouteFailure(
  * `console.warn`, never `console.log`: release builds drop log, and a reason
  * that only exists in a debug build is not a reason she can ever be told.
  */
-export function failureLogLine(f: RouteFailure, destination: string): string {
-  const bits = [`no route to "${destination}"`, `kind=${f.kind}`];
+export function failureLogLine(f: RouteFailure, _destination?: string): string {
+  // The destination is NOT logged (7.10): logcat outlives the trip, and the
+  // reason — kind, status, mode — is what diagnoses a failure, not the place.
+  const bits = ['no route', `kind=${f.kind}`];
   if (f.mode) bits.push(`mode=${f.mode}`);
   if (f.status) bits.push(`status=${f.status}`);
   if (f.detail) bits.push(`detail=${f.detail}`);

@@ -31,7 +31,7 @@ let pushGate: Promise<void> | null = null;
 const Module = require('module');
 const origLoad = Module._load;
 Module._load = function patched(request: string, ...rest: any[]) {
-  if (request === '@react-native-async-storage/async-storage') {
+  if (request === '@react-native-async-storage/async-storage' || request.endsWith('/EncryptedStorage')) {
     return { __esModule: true, default: memoryAsyncStorage };
   }
   if (request === './supabaseClient' || request.endsWith('/supabaseClient')) {
@@ -44,7 +44,7 @@ Module._load = function patched(request: string, ...rest: any[]) {
     return { __esModule: true, armTaskAlerts: async () => {}, cancelTaskNotifications: async () => {} };
   }
   if (request === './supabaseRepo' || request.endsWith('/supabaseRepo')) {
-    return {
+    const mockRepo = {
       __esModule: true,
       fetchTasks: async () => [...cloudRows.values()],
       upsertTask: async (_u: string, t: any) => {
@@ -54,6 +54,8 @@ Module._load = function patched(request: string, ...rest: any[]) {
         }
         cloudRows.set(t.id, { ...t });
       },
+      // The edit path now sends changed columns only; the stub applies the whole row, as before.
+      upsertTaskChanges: async (u: string, _before: any, t: any) => (mockRepo as any).upsertTask(u, t),
       upsertTasks: async () => {}, syncAllTasks: async () => {}, deleteTaskRow: async () => {},
       // Not decoration. Without it every run printed
       //   [TaskStorage] cloud fetchSettings failed: repo.fetchSettings is not a function
@@ -62,6 +64,7 @@ Module._load = function patched(request: string, ...rest: any[]) {
       // test's own missing mock must not read as a defect in the code.
       fetchSettings: async () => null,
     };
+    return mockRepo;
   }
   return origLoad.call(this, request, ...rest);
 };

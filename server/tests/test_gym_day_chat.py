@@ -207,7 +207,10 @@ class AlreadyOnHerDay(unittest.TestCase):
                                   lambda p, t: added.append(t) or {"id": "new"}), \
                 mock.patch.object(agent_turn.user_memory, "update_task", lambda *a: None), \
                 mock.patch.object(agent_turn.supabase_tasks, "user_id_for_phone",
-                                  mock.AsyncMock(return_value=None)):
+                                  mock.AsyncMock(return_value=None)), \
+                mock.patch.object(agent_turn._tz, "today_il", lambda: __import__("datetime").date(2026, 9, 28)):
+            # Her day, told that day: 28.9 is "today" here, not a day gone
+            # (a past date with no date in the message now moves to today).
             saved = run(agent_turn.persist_agent_tasks(
                 "dup-phone", "ואחר כך הקריוקי",
                 {"tasks": [{"text": "לקריוקי", "date": "2026-09-28", "fixed_time": "20:30"}]},

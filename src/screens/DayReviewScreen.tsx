@@ -31,6 +31,7 @@ import {
   moveTasksToDate, letGoTasks, deleteTask,
 } from '../services/TaskStorage';
 import { getTodayString } from '../utils/timeUtils';
+import { WashedSky } from '../components/ui/SkyBackdrop';
 
 /** Reschedule targets, as day offsets. No date picker — three taps, no modal. */
 const MOVE_CHOICES: { days: number; en: string; he: string }[] = [
@@ -97,6 +98,7 @@ export default function DayReviewScreen({ navigation }: any) {
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
+      <WashedSky />
       <View style={styles.topBar}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}

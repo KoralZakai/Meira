@@ -95,6 +95,8 @@ export function useVoiceCapture(opts: {
   const phaseRef = useRef<CapturePhase>('idle');
   const onDone = useRef(opts.onDone);
   const hint = useRef(opts.hint);
+  // Built while she talks, so the upload does not wait for it.
+  const hintPending = useRef<Promise<string> | null>(null);
   onDone.current = opts.onDone;
   hint.current = opts.hint;
 
@@ -137,10 +139,11 @@ export function useVoiceCapture(opts: {
     setBoth('transcribing');
     let vocabulary = '';
     try {
-      vocabulary = (await hint.current?.()) ?? '';
+      vocabulary = (await (hintPending.current ?? hint.current?.())) ?? '';
     } catch (e) {
       console.warn('[VoiceCapture] hint failed — transcribing without one', e);
     }
+    hintPending.current = null;
     const res = await transcribeAudio(uri, vocabulary);
     setBoth('idle');
     onDone.current(res.ok ? { ok: true, text: res.text } : res);
@@ -172,6 +175,12 @@ export function useVoiceCapture(opts: {
       recorder.record();
       vad.current = initVad(Date.now());
       finishing.current = false;
+      hintPending.current = hint.current
+        ? Promise.resolve(hint.current()).catch((e) => {
+          console.warn('[VoiceCapture] hint failed — transcribing without one', e);
+          return '';
+        })
+        : null;
       setBoth('listening');
     } catch (e) {
       console.warn('[VoiceCapture] could not start recording', e);

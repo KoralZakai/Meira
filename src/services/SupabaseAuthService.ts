@@ -137,8 +137,13 @@ export async function getVerifiedUser(): Promise<{ id: string; email?: string } 
   }
 }
 
-/** Subscribe to sign-in/out changes. Returns an unsubscribe function. */
-export function onAuthChange(callback: (session: Session | null) => void): () => void {
-  const { data } = supabase.auth.onAuthStateChange((_event, session) => callback(session));
+/**
+ * Subscribe to sign-in/out changes. Returns an unsubscribe function.
+ * `event` is Supabase's own (INITIAL_SESSION, SIGNED_IN, TOKEN_REFRESHED,
+ * SIGNED_OUT, …). Note SIGNED_IN also fires at launch when a stored session
+ * is restored — it does not by itself mean "she just signed in".
+ */
+export function onAuthChange(callback: (session: Session | null, event: string) => void): () => void {
+  const { data } = supabase.auth.onAuthStateChange((event, session) => callback(session, event));
   return () => data.subscription.unsubscribe();
 }

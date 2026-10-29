@@ -75,6 +75,19 @@ check('the same class on two different days is not a duplicate', () => {
   const b = task({ text: 'חוג יוגה במרכז', category: 'hobby_class' as any, fixedTime: '19:00', date: '2026-09-08' });
   assert.equal(looksLikeSameThing(a, b), null);
 });
+check('a calendar meeting and her own row at the same minute are one question (6.10)', () => {
+  const cal = task({ id: 'gcal-dd', text: 'Meira <> Datadog Intro', category: 'meeting' as any, fixedTime: '15:00', durationMinutes: 30 });
+  const hers = task({ id: 'u-dd', text: 'שיחה עם data dag', category: 'call' as any, fixedTime: '15:00' });
+  assert.ok(looksLikeSameThing(cal, hers), 'not asked about');
+  assert.strictEqual(findSameThingGroups([cal, hers]).length, 1);
+});
+
+check('two of her own calls at the same minute are not guessed at', () => {
+  const a = task({ id: 'u-1', text: 'שיחה עם דנה', category: 'call' as any, fixedTime: '15:00' });
+  const b = task({ id: 'u-2', text: 'זום עם הצוות', category: 'zoom' as any, fixedTime: '15:00' });
+  assert.strictEqual(looksLikeSameThing(a, b), null);
+});
+
 check('two different categories are never the same thing', () => {
   const a = task({ text: 'ראיון עבודה', fixedTime: '13:00' });
   const b = task({ text: 'ראיון עבודה — להתכונן', category: 'course' as any, fixedTime: '09:00' });

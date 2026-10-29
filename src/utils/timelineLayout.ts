@@ -114,7 +114,8 @@ export function layoutDay(
     .map((task) => {
       const start = startOf(task)!;
       const startMin = timeToMinutes(start);
-      const endMin = timeToMinutes(addMinutes(start, task.durationMinutes || 30));
+      // Not addMinutes: it wraps at midnight, so 21:00 + 3h became minute 0 and the block was dropped below.
+      const endMin = startMin + (task.durationMinutes || 30);
       return { task, startMin, endMin };
     })
     .filter((b) => Number.isFinite(b.startMin) && b.endMin > b.startMin)

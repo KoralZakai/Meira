@@ -132,10 +132,10 @@ class TheTurn(unittest.TestCase):
 class TheMicTurn(unittest.TestCase):
     """voice_plan: understand → act → the agent is TOLD, and saves nothing twice."""
 
-    def test_saved_once_and_the_agent_knows(self):
+    def _turn(self, message):
         seen, added = {}, []
 
-        async def agent(stamped, user, learned, here=None):
+        async def agent(stamped, user, learned, here=None, tier=None):
             seen["stamped"] = stamped
             # The agent saves the same call again, as it would.
             return {"text": "נקבע ✓", "tasks": [{"text": "שיחת זום עם דותן",
@@ -156,13 +156,95 @@ class TheMicTurn(unittest.TestCase):
                 mock.patch.object(agent_turn.user_memory, "update_task", lambda *a: None), \
                 mock.patch.object(agent_turn.supabase_tasks, "user_id_for_phone",
                                   mock.AsyncMock(return_value=None)), \
-                mock.patch.object(agent_turn.session, "set_active_task", lambda *a: None):
-            out = run(agent_turn.run_turn("mic-phone", "תוסיפי לי שיחה עם דותן בזום 5.",
+                mock.patch.object(agent_turn.session, "set_active_task", lambda *a: None), \
+                mock.patch.object(agent_turn.session, "set_last_saved", lambda *a: None):
+            out = run(agent_turn.run_turn("mic-phone", message,
                                           {"id": "mic-phone"}, mode="voice_plan"))
+        return seen, added, out
+
+    def test_saved_once_and_the_agent_is_not_asked_to_repeat_it(self):
+        # 19.10: a mic message the understanding fully did no longer runs the
+        # agent just to say "saved" — and it is still saved exactly once.
+        seen, added, out = self._turn("תוסיפי לי שיחה עם דותן בזום 5.")
+        self.assertEqual(len(added), 1)
+        self.assertNotIn("stamped", seen)
+        self.assertEqual([t["text"] for t in out["tasks"]], ["שיחת זום עם דותן"])
+        self.assertIn("שיחת זום עם דותן", out["text"])
+
+    def test_saved_once_and_the_agent_knows_when_it_is_still_needed(self):
+        seen, added, out = self._turn("תוסיפי לי שיחה עם דותן בזום 5 ותזכירי לי לפני.")
         self.assertEqual(len(added), 1)
         self.assertIn("ALREADY DONE", seen["stamped"])
         self.assertIn("שיחת זום עם דותן", seen["stamped"])
         self.assertEqual([t["text"] for t in out["tasks"]], ["שיחת זום עם דותן"])
+
+
+class AQuestionIsAnswered(unittest.TestCase):
+    """7.10: "what's the fastest beach by car from home?" on the mic came back as
+    "which beach?" and then "where do you live?". A question is Meira's to
+    answer — this step must not bounce it back, and must not save it."""
+    SAID = "מה החוף הכי מהיר להגיע אליו באוטו מהבית?"
+
+    def test_a_question_carries_no_ask_even_if_the_model_writes_one(self):
+        with _model_says({"understood": "החוף הכי מהיר באוטו", "kind": "question",
+                          "ask": "לאיזה חוף?", "actions": []}):
+            out = run(understand.understand(self.SAID, [], []))
+        self.assertEqual(out["kind"], "question")
+        self.assertIsNone(out["ask"])
+        self.assertEqual(out["actions"], [])
+
+    def test_a_missing_kind_is_read_from_the_actions(self):
+        with _model_says({"understood": "x", "actions": [{"do": "add", "title": "אימון"}]}):
+            self.assertEqual(run(understand.understand("אימון", [], []))["kind"], "do")
+        with _model_says({"understood": "תודה", "actions": []}):
+            self.assertEqual(run(understand.understand("תודה", [], []))["kind"], "chat")
+
+    def test_it_is_told_where_she_lives_and_is(self):
+        about = understand.about_her({"homeAddress": "יגאל אלון 94", "transportType": "car"},
+                                     {"lat": 32.07, "lng": 34.79, "label": "רוטשילד"})
+        self.assertIn("יגאל אלון 94", about)
+        self.assertIn("car", about)
+        self.assertIn("רוטשילד", about)
+        self.assertIn("not saved", understand.about_her({}, None))
+        reply = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(
+            content=json.dumps({"understood": "", "kind": "question", "actions": []})))], usage=None)
+        client = mock.MagicMock()
+        client.chat.completions.create = mock.AsyncMock(return_value=reply)
+        with mock.patch.object(understand, "_client", lambda: client):
+            run(understand.understand(self.SAID, [], [], about=about))
+        sent = client.chat.completions.create.call_args.kwargs["messages"][-1]["content"]
+        self.assertIn("ABOUT HER", sent)
+        self.assertIn("יגאל אלון 94", sent)
+
+    def test_the_mic_answers_and_saves_nothing(self):
+        seen, added = {}, []
+
+        async def agent(stamped, user, learned, here=None, tier=None):
+            seen["stamped"] = stamped
+            return {"text": "🏖️ חוף הילטון — ~23 דק׳", "tasks": []}
+
+        with _model_says({"understood": "החוף הכי מהיר", "kind": "question",
+                          "ask": "לאיזה חוף?", "actions": []}), \
+                mock.patch.object(agent_turn, "handle_whatsapp_message", agent), \
+                mock.patch.object(agent_turn, "_her_days", mock.AsyncMock(return_value=[])), \
+                mock.patch.object(agent_turn, "clash_note", mock.AsyncMock(return_value="")), \
+                mock.patch.object(agent_turn, "meira_just_asked", lambda k: False), \
+                mock.patch.object(agent_turn.conversation, "get_history", lambda k: []), \
+                mock.patch.object(agent_turn.user_profile, "get_profile",
+                                  lambda k: {"homeAddress": "יגאל אלון 94"}), \
+                mock.patch.object(agent_turn.user_memory, "tasks_for_phone", lambda p: []), \
+                mock.patch.object(agent_turn.user_memory, "add_task",
+                                  lambda p, t: added.append(t) or {"id": "x"}), \
+                mock.patch.object(agent_turn, "rescue_turn",
+                                  mock.AsyncMock(side_effect=AssertionError("rescue ran"))):
+            out = run(agent_turn.run_turn("mic-phone", self.SAID, {"id": "mic-phone"},
+                                          mode="voice_plan"))
+        self.assertEqual(added, [])
+        self.assertIn("SHE ASKED A QUESTION", seen["stamped"])
+        self.assertNotIn("PLAN TODAY", seen["stamped"])
+        self.assertEqual(out["type"], "answer")
+        self.assertNotIn("?", out["text"])
+        self.assertEqual(out["tasks"], [])
 
 
 class TheFallbackTitle(unittest.TestCase):
@@ -174,3 +256,38 @@ class TheFallbackTitle(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AQuestionAboutHerPast(unittest.TestCase):
+    """'כמה פעמים התאמנתי השבוע?' names a workout and is not one. Even when the
+    model files it as an add, nothing is saved (Feature 2, 20.10)."""
+
+    def test_a_count_of_her_past_is_never_saved(self):
+        wrong = {"understood": "אימון", "kind": "do", "ask": None, "lookup": None,
+                 "actions": [{"do": "add", "title": "אימון", "start": None, "end": None,
+                              "date_expression": "השבוע", "place": None}]}
+        with _model_says(wrong):
+            out = run(understand.understand("כמה פעמים התאמנתי השבוע?", [], []))
+        self.assertEqual(out["kind"], "question")
+        self.assertEqual(out["actions"], [])
+
+    def test_adding_a_workout_still_adds(self):
+        add = {"understood": "אימון", "kind": "do", "ask": None, "lookup": None,
+               "actions": [{"do": "add", "title": "אימון", "start": "19:00", "end": None,
+                            "date_expression": "מחר", "place": None}]}
+        with _model_says(add):
+            out = run(understand.understand("תוסיפי אימון מחר ב-19", [], []))
+        self.assertEqual(out["kind"], "do")
+        self.assertEqual(len(out["actions"]), 1)
+
+
+class RenameTests(unittest.TestCase):
+    def test_an_update_can_rename_and_keeps_the_rest(self):
+        import understand
+        patch = understand.patch_from({"do": "update", "task_id": "x", "title": "יוגה"})
+        self.assertEqual(patch, {"text": "יוגה"})          # place, hour, way stay as they were
+
+    def test_the_prompt_teaches_the_replacement(self):
+        import understand
+        self.assertIn('"title"', understand._SYSTEM)
+        self.assertIn("REPLACES or RENAMES", understand._SYSTEM)

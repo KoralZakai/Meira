@@ -35,6 +35,7 @@ from typing import Optional
 from openai import AsyncOpenAI
 
 import categorize
+import ai_gate
 import config
 import model_router
 import day_schedule
@@ -289,6 +290,32 @@ def _range_of(m: re.Match) -> Optional[dict]:
             "minutes": minutes}
 
 
+# Asking words and fillers: what is left after them is the actual task.
+_ASK_WORDS = {
+    "תקבעי", "תקבע", "קבעי", "תוסיפי", "תוסיף", "הוסיפי", "תשמרי", "שמרי", "תרשמי", "תזכירי",
+    "תכניסי", "לי", "לנו", "בבקשה", "את", "עוד", "חדשה", "חדש", "אחת", "אחד",
+    "add", "set", "schedule", "book", "make", "create", "save", "remind", "me", "a", "an",
+    "new", "please", "up", "my", "for",
+}
+# A task that is only one of these says nothing: no what, no who, no when.
+_GENERIC_NOUNS = {
+    "פגישה", "משימה", "תזכורת", "שיחה", "אירוע", "תור", "דבר", "משהו",
+    "meeting", "task", "reminder", "call", "event", "appointment", "something", "thing",
+}
+
+
+def too_vague(message: str) -> bool:
+    """Is the message a request to save with nothing to save?
+
+    20.10 live eval: "תקבעי לי פגישה" saved a task called "פגישה" with no hour,
+    no day and no person, then asked when — a placeholder she has to find and
+    delete. Any digit, any other word (a person, a place, "מחר") makes it real.
+    """
+    words = re.findall(r"[א-תA-Za-z]+|\d", (message or "").lower())
+    rest = [w for w in words if w not in _ASK_WORDS]
+    return bool(words) and len(rest) <= 1 and all(w in _GENERIC_NOUNS for w in rest)
+
+
 def parse_clock_time(text: str) -> Optional[str]:
     """The clock time stated in `text` as HH:MM, or None. Hebrew and English."""
     text = spoken_hours(text)
@@ -322,7 +349,7 @@ def parse_clock_time(text: str) -> Optional[str]:
 def _get_client() -> AsyncOpenAI:
     global _client
     if _client is None:
-        _client = AsyncOpenAI(api_key=config.LLM_API_KEY, base_url=config.LLM_ENDPOINT)
+        _client = ai_gate.client()
     return _client
 
 
@@ -337,7 +364,7 @@ def _resolve_date(expression: Optional[str], text: str, today: _date) -> str:
         source = match.group(0) if match else (candidate if candidate is expression else None)
         if not source:
             continue
-        resolved = _tz.resolve_date(source, today)
+        resolved = _tz.resolve_date_at(source, today)
         if resolved:
             return resolved.isoformat()
     return today.isoformat()

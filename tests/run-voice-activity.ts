@@ -50,6 +50,23 @@ section('1. a sentence with a pause in it is one recording');
     'stops within SILENCE_MS of the last word');
 }
 
+section('1b. a two-second thinking pause mid-sentence is not the end (29.10)');
+{
+  const r = run([[ROOM, 600], [VOICE, 2500], [ROOM, 2000], [VOICE, 1500], [ROOM, 4000]]);
+  ok(r.stopAt !== null && r.stopAt > 600 + 2500 + 2000 + 1500,
+    `"…אני ביום שני בזומבה, ב..." is not cut at the breath (stopped at ${r.stopAt} ms)`);
+}
+
+section('1c. "I want to schedule… hmm…" — a short opening then a 3.5 s think is not the end');
+{
+  const r = run([[ROOM, 600], [VOICE, 1200], [ROOM, 3500], [VOICE, 2500], [ROOM, 5000]]);
+  ok(r.stopAt !== null && r.stopAt > 600 + 1200 + 3500 + 2500,
+    `waits through the hesitation after a short opening (stopped at ${r.stopAt} ms)`);
+  const long = run([[ROOM, 600], [VOICE, 4000], [ROOM, 5000]]);
+  ok(long.stopAt !== null && long.stopAt - 4600 <= VAD.SILENCE_MS + 120,
+    'after a full sentence it still ends at SILENCE_MS');
+}
+
 section('2. nobody spoke → stop, and send nothing');
 {
   const r = run([[ROOM, 12000]]);
@@ -64,7 +81,7 @@ section('3. the threshold follows the room');
   const noisy = run([[FAN, 9000]]);
   ok(noisy.reason === 'no_speech', 'a steady fan is not speech');
   // ...and speech above the fan still is.
-  const talk = run([[FAN, 500], [FAN + 16, 1500], [FAN, 3000]]);
+  const talk = run([[FAN, 500], [FAN + 16, 1500], [FAN, 5000]]);
   ok(talk.reason === 'silence_after_speech', 'speech over the fan is heard and ends normally');
 }
 
@@ -72,7 +89,7 @@ section('4. a word in the first 400 ms does not become "silence"');
 {
   // She starts talking immediately. The floor must come from the quietest
   // sample, so the speech that follows still reads as speech.
-  const r = run([[VOICE, 200], [ROOM, 200], [VOICE, 1500], [ROOM, 2500]]);
+  const r = run([[VOICE, 200], [ROOM, 200], [VOICE, 1500], [ROOM, 5000]]);
   ok(r.reason === 'silence_after_speech', `an early start still ends on silence (${r.reason})`);
   ok(heardSpeech(r.state), 'and it is sent');
 }
@@ -109,7 +126,7 @@ section('5. a phone that reports no levels waits for her tap');
 
 section('6. the recorder\'s "no signal" value is not a room');
 {
-  const r = run([[-160, 3000], [ROOM, 600], [VOICE, 1500], [ROOM, 2500]]);
+  const r = run([[-160, 3000], [ROOM, 600], [VOICE, 1500], [ROOM, 5000]]);
   ok(r.reason === 'silence_after_speech', `-160 readings are ignored (${r.reason})`);
 }
 

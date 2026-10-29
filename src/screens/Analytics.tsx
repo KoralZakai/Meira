@@ -6,17 +6,21 @@ import React, { useState, useEffect } from 'react';
 import { View, ScrollView, StyleSheet, Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BRAND, CATEGORY_META, LEVELS, FONTS, RADIUS, SHADOWS } from '../constants/theme';
-import { loadStats } from '../services/TaskStorage';
+import { getSettings, loadStats } from '../services/TaskStorage';
+import MyWeekCard from '../components/MyWeekCard';
 import { UserStats, TaskCategory } from '../types';
 import { useWeeklyStats } from '../hooks/useWeeklyStats';
+import { WashedSky } from '../components/ui/SkyBackdrop';
 
 export default function Analytics() {
   const insets = useSafeAreaInsets();
   const weekly = useWeeklyStats();
   const [stats, setStats] = useState<UserStats | null>(null);
+  const [he, setHe] = useState(true);
 
   useEffect(() => {
     loadStats().then(setStats);
+    getSettings().then((st) => setHe(st.language !== 'en')).catch((e) => console.warn('[Analytics] settings', e));
   }, []);
 
   if (!stats) return <View style={[styles.root, { paddingTop: insets.top }]} />;
@@ -35,7 +39,11 @@ export default function Analytics() {
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
+      <WashedSky />
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+
+        {/* My week (Feature 2, option A): her opt-in history, this week vs last. */}
+        <MyWeekCard he={he} />
 
         {/* Level card */}
         <View style={styles.levelCard}>

@@ -28,7 +28,7 @@ CEVA = {
     "date": "2026-09-17", "time": "11:00",
     "organizer": "scheduler@comeet-notifications.com",
     "description": ("Position:C++ Software Engineer – AI & DSP Processor Simulators\n"
-                    "Interview with Dana Levi (Core Simulator and Debugger Team Leader)"),
+                    "Interview with Marika Klubakov (Core Simulator and Debugger Team Leader)"),
 }
 
 
@@ -36,7 +36,7 @@ class SubjectTests(unittest.TestCase):
     def test_pulls_company_person_and_role_from_an_ats_invite(self):
         s = meeting_brief.subjects(CEVA)
         self.assertEqual(s["company"], "Ceva")
-        self.assertEqual(s["person"], "Dana Levi")
+        self.assertEqual(s["person"], "Marika Klubakov")
         self.assertIn("Core Simulator", s["person_role"])
         self.assertIn("C++", s["role_title"])
 
@@ -183,3 +183,18 @@ class GmailHistoryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AtsVendorIsNotTheEmployerTests(unittest.TestCase):
+    """2026-10-17: a Workday invite made the brief research 'Workday'."""
+
+    def test_workday_sender_is_not_the_company(self):
+        s = meeting_brief.subjects({"title": "Interview", "organizer": "noreply@wd3.myworkday.com",
+                                    "description": "Company: Acme\nPosition: R-104233"})
+        self.assertEqual(s["company"], "Acme")
+        self.assertEqual(s["role_title"], "")   # a requisition number is not a title
+
+    def test_interviewer_is_not_the_company(self):
+        s = meeting_brief.subjects({"title": "Interview with Dana Cohen (Recruiter)",
+                                    "organizer": "x@myworkday.com"})
+        self.assertEqual(s["company"], "")

@@ -11,7 +11,7 @@
  * Trigger (CLAUDE.md rule 7): Today asks for the pill's task whenever it
  * changes; the card is one tap from the pill.
  */
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from './EncryptedStorage';  // AES-256-GCM at rest (7.10)
 import { taskPrep, TaskPrepResult } from './LumiServer';
 import { Task } from '../types/index';
 import { addrOf } from '../utils/dayPlanning';
@@ -66,7 +66,7 @@ export async function prepForTask(task: Task, force = false): Promise<TaskPrepRe
   });
   if (!res) return null;            // no server / signed out / offline — not cached
   if (!res.ok && res.reason !== 'nothing_to_prepare') {
-    console.warn('[TaskPrep] no prep:', res.reason, 'for', task.text);
+    console.warn('[TaskPrep] no prep:', res.reason, 'for task', task.id);
   }
   cache[key] = { prep: res, at: Date.now() };
   await writeCache(cache);

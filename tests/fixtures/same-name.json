@@ -1,0 +1,15 @@
+[
+  {"a": "שיחה עם סגית", "b": "Sagit/Koral- intro", "same": true},
+  {"a": "פגישה עם קורל", "b": "Koral sync", "same": true},
+  {"a": "Coffee with Dana", "b": "קפה עם דנה", "same": true},
+  {"a": "שיחה עם מיכל", "b": "Call with Michal", "same": true},
+  {"a": "ראיון עם חן", "b": "Interview — Chen", "same": true},
+  {"a": "לשיחה עם סגית", "b": "Sagit", "same": true},
+  {"a": "שיחה עם שירה", "b": "Shira 1:1", "same": true},
+  {"a": "Team standup", "b": "פגישת צוות", "same": false},
+  {"a": "שיחה עם סגית", "b": "שיחה עם דנה", "same": false},
+  {"a": "Zoom call", "b": "שיחת זום", "same": false},
+  {"a": "Dentist", "b": "Nebius meeting", "same": false},
+  {"a": "intro call", "b": "שיחת היכרות", "same": false},
+  {"a": "Lunch", "b": "ארוחת צהריים", "same": false}
+]

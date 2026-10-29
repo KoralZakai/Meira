@@ -1,0 +1,45 @@
+id,name,kind,lat,lng,address,google_place_id
+1,Google Tel Aviv (Electra Tower),work,32.0699893,34.7941969,"Yigal Alon St 98, Tel Aviv-Yafo",ChIJUX1rEJ9LHRURNRfNHgdoOV0
+2,Microsoft Israel R&D,work,32.1564051,34.8052176,"Alan Turing St 3, Herzliya",ChIJkVMYTwRJHRURcpdO2CIMNZ0
+3,NVIDIA (Mellanox) Yokneam,work,32.6649462,35.1051593,"HaKidma St 26, Yokne'am Illit",ChIJB_r-Kf1IHRUR_Dw8rV5Q-DU
+4,Mobileye Campus Jerusalem,work,31.8014526,35.2077445,"Shlomo Momo ha-Levi St 1, Jerusalem",ChIJjSErQN7XAhUR0ICGgBGakps
+5,Wix,work,32.1422819,34.8000302,"Yunitsman St 5, Tel Aviv-Yafo",ChIJ700OCwpMHRURGkbNeeevThk
+6,monday.com,work,32.0653986,34.7849369,"Yitzhak Sadeh St 6, Tel Aviv-Yafo",ChIJxZIdp3tLHRUROxQKhi5NsHI
+7,Intel Haifa,work,32.7898165,34.9589649,"Andrei Sakharov St 9, Haifa",ChIJnRqKgl27HRURtMlNjkZ38AY
+8,Nebius Israel,work,32.064921,34.7855908,"Yitzhak Sadeh St 8, Tel Aviv-Yafo",ChIJ8_OlRMtLHRURKmBD0JkDy2U
+9,Apple Israel,work,32.1656131,34.8113118,"Maskit St 12, Herzliya",ChIJg6wvFIxIHRUR_tASqvQfcsE
+10,Amazon TLV14,work,32.0719761,34.7888707,"Menachem Begin Rd 121, Tel Aviv-Yafo",ChIJ5RsWX8pLHRURCDiqLn-WD34
+11,Check Point Software,work,32.069815,34.7953983,"Shlomo Kaplan St 5, Tel Aviv-Yafo",ChIJvS9xZZ9LHRUR9dg5RUSPkUU
+12,Hailo,work,32.0665045,34.7930845,"Yigal Alon St 82, Tel Aviv-Yafo",ChIJLb9TOvRLHRUR8TS944GQD6I
+13,Qualcomm Israel,work,32.7845289,34.9619257,"Nahum Het St 1, Tirat Carmel",ChIJzSBhrly7HRURswgWdLCFpIw
+14,Tel Aviv University,school,32.113496,34.803609,"Chaim Levanon St 55, Tel Aviv-Yafo",ChIJ-wt232VJHRUR721e4jwavVk
+15,Technion,school,32.7767783,35.0231271,"Technion City, Haifa",ChIJU_GqGJK6HRURnMB5PmvE7Zo
+16,Reichman University,school,32.1758874,34.8377729,"HaUniversita St 8, Herzliya",ChIJDT9EwsJHHRURqYQ3HxK6ggs
+17,Weizmann Institute of Science,school,31.9037541,34.8080315,"Herzl St 234, Rehovot",ChIJnSqNoQK3AhURRalOgGxgE2c
+18,Ichilov (Sourasky Medical Center),clinic,32.0801258,34.7898816,"Weizmann St 6, Tel Aviv-Yafo",ChIJtR_MkwNHHRURITSgMvUeCMQ
+19,Sheba Medical Center,clinic,32.0462827,34.8435342,"Derech Sheba 2, Ramat Gan",ChIJoSmTevVKHRURMGzMyl0H0YE
+20,Holmes Place Dizengoff,gym,32.0753344,34.7750259,"Dizengoff Center, Dizengoff St 50, Tel Aviv",ChIJWaKyYYBLHRUR_yATZSVmODA
+21,Azrieli Center,other,32.0740769,34.7922028,"Menachem Begin Rd 132, Tel Aviv-Yafo",ChIJk_oKbZlLHRURHIGMQNqds_c
+22,Sarona Market,cafe,32.0712912,34.7871708,"Aluf Kalman Magen St 3, Tel Aviv-Yafo",ChIJu_9NFJ1LHRURqnCPWAarsj0
+23,Cafe Xoho,cafe,32.0809187,34.7702554,"Ben Yehuda St 73, Tel Aviv-Yafo",ChIJqT1ArXlMHRURc65-yk0QQlA
+24,Rabin Square,other,32.0804846,34.7806198,"Rabin Square, Tel Aviv-Yafo",ChIJhywZgolLHRURtuZUy9ew5ME
+25,Tel Aviv Savidor Center station,station,32.0837128,34.7969141,Tel Aviv Savidor Center railway station,ChIJkw9Fzb9LHRUR5DIRxi_WtxM
+26,Tel Aviv HaHagana station,station,32.054062,34.7847899,Tel Aviv HaHagana railway station,ChIJp9_SHmZLHRURXBzmYEszCh0
+27,Herzliya station,station,32.1639678,34.8173587,Herzliya railway station,ChIJsUh7EYpIHRURS9-6UcS8Px0
+28,Haifa Hof HaCarmel station,station,32.7934585,34.957451,Haifa Hof HaCarmel railway station,ChIJYe3m3Ga7HRUR1UqoMqL1qfQ
+29,Jerusalem Yitzhak Navon station,station,31.7879543,35.2029925,"Shderot Shazar 2, Jerusalem",ChIJCV9TFjDWAhURGRo-XUas2qg
+30,Gav-Yam Negev Tech Park,work,31.264334,34.814222,"Gav-Yam Negev Advanced Technologies Park, Be'er Sheva",ChIJd8sLlf5mAhURoSpjFYmYhlI
+31,Ben-Gurion University,school,31.261426,34.7995546,"David Ben Gurion Blvd 1, Be'er Sheva",ChIJG8cBLl9mAhURk7hAwbBNyhU
+32,Caesarea Business Park,work,32.4774644,34.9452353,"HaEshel St 2, Caesarea",ChIJTY7__t0NHRURctogbsn_XJY
+33,Elbit Systems Netanya,work,32.2875284,34.8640206,"HaMahshev St 2, Netanya",ChIJtx3D7IA_HRURin2yoCbF358
+34,Rafael Advanced Defense Systems,work,32.8689212,35.092852,"Rafael, Haifa",ChIJrxt8cTe2HRUR62VYSn4ynYw
+35,Port of Ashdod,work,31.828191,34.644543,Port of Ashdod,ChIJS5fQJXmjAhURxtGl0-gPbZU
+36,Ben-Gurion Airport T3,other,32.001652,34.867584,"Derekh ha-Terminal, Ben-Gurion Airport",ChIJEU3Sg6vKAhUR179hU80KIJ4
+37,Diamond Exchange Ramat Gan,work,32.0833532,34.8010957,"Zisman Shalom St 12, Ramat Gan",ChIJG0o_N79LHRURBiNRNg_3IrY
+38,Kiryat Arye station,station,32.1060731,34.863122,"Kiryat Arye railway station, Petah Tikva",ChIJw8xpEiA2HRURdI0P2GeL9OE
+39,Rishon LeZion Moshe Dayan station,station,31.987797,34.7573609,"Moshe Dayan St, Rishon LeZion",ChIJMzkATZezAhURrkKzzq89T50
+40,WeWork Sarona,work,32.0708143,34.7871036,"Aluf Kalman Magen St 3, Tel Aviv-Yafo",ChIJG0JrGJ1LHRURc_luYPsSvOA
+41,Dizengoff Center,other,32.0751211,34.7749342,"Dizengoff St 50, Tel Aviv-Yafo",ChIJHVPHZIBLHRUR39I7WNDlIVU
+42,Kfar Saba station,station,32.1673781,34.9172038,Kfar Saba railway station,ChIJTdRyA8g5HRURve8rvKqq3XI
+43,Lod Gane Aviv station,station,31.966984,34.878647,Lod Gane Aviv railway station,ChIJ2TjCoY7KAhURf1TRAp1qCbI
+44,Netanya Poleg Park,work,32.276162,34.8630306,"Beni Ga'on St 12, Netanya",ChIJe52fcn0_HRURFJ4yDvQ4hmQ

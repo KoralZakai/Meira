@@ -10,7 +10,7 @@
  * Mirrors the storage pattern in TaskStorage.ts: the local cache is the source
  * of truth for the UI; the cloud write never blocks or breaks the flow.
  */
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from './EncryptedStorage';  // AES-256-GCM at rest (7.10)
 import { QuizProgress } from '../types';
 import { isSupabaseConfigured } from './supabaseClient';
 import { fetchQuizProgress, upsertQuizProgress } from './supabaseRepo';

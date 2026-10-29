@@ -35,6 +35,21 @@ def address_of(task: dict) -> Optional[str]:
         addr = None
     if not addr or _LINK_RE.search(addr):
         return None
+    return without_appended_street(addr)
+
+
+_STREET_END = re.compile(r"(?:^|\s)(?:street|st\.?|road|rd\.?|avenue|ave\.?|boulevard|blvd\.?|רחוב|רח')$", re.I)
+
+
+def without_appended_street(addr: str) -> str:
+    """Undo the phone's old cityOf (13.10): it read the STREET of a home written
+    "21, Mordei ha-Geta'ot Street, Tel Aviv-Yafo" as the city and glued it onto
+    venues — "רפאל מכון דוד, Mordei ha-Geta'ot Street" could not be found
+    (route_failed: destination). A last segment that is a bare street name is
+    never how a place ends. Mirrors utils/addressCompletion.withoutAppendedStreet."""
+    parts = [p.strip() for p in str(addr).split(",")]
+    if len(parts) >= 2 and not re.search(r"\d", parts[-1]) and _STREET_END.search(parts[-1]):
+        return ", ".join(parts[:-1])
     return addr
 
 
@@ -97,3 +112,18 @@ def needs_replan(task: dict, origin: str, home_address: str) -> bool:
         # the chain now says the trip starts somewhere else.
         return origin != home_address
     return rec != origin
+
+
+def chosen_mode(row: Optional[dict]) -> Optional[str]:
+    """The vehicle SHE picked for a saved appointment on her phone (the card's chips,
+    or the evening-before question), or None.
+
+    18.10: the chat planned a bus while the task stood on a car — the phone's choice
+    is hers, and the chat must say the same. A stored vehicle with no `transportTypeBy`
+    predates the ladder: it was hers too. A ladder's own pick is not a choice."""
+    loc = (row or {}).get("location")
+    if not isinstance(loc, dict):
+        return None
+    mode = loc.get("transportType")
+    by = loc.get("transportTypeBy")
+    return mode if mode in ("bus", "train", "car", "walk", "bike") and by in (None, "her") else None

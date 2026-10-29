@@ -86,7 +86,7 @@ const styles = StyleSheet.create({
   rtl: { writingDirection: 'rtl', textAlign: 'right' },
   pillLate: { backgroundColor: BRAND.danger },
   onLate: { color: BRAND.white },
-  when: { fontFamily: FONTS.bodyBold, fontSize: 12, color: '#7A5A18' },
+  when: { fontFamily: FONTS.bodyBold, fontSize: 12, color: BRAND.goldInk },
   chev: { fontFamily: FONTS.bodyHeavy, fontSize: 16, color: BRAND.onGold, marginLeft: 2 },
   brief: { paddingTop: 6, paddingHorizontal: 14 },
   briefText: { fontFamily: FONTS.bodyHeavy, fontSize: 12, color: BRAND.goldInk },

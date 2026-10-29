@@ -12,7 +12,10 @@ export type RootStackParamList = {
   Stats: undefined;
   Trips: undefined;
   Analytics: undefined;
-  AddTask: { initialTime?: string; initialDate?: string } | undefined;
+  /** Find time together (Feature 3): no groupId = her groups + new; with = one group. */
+  FindTime: { groupId?: string } | undefined;
+  /** initialText: a suggestion picked on Today, put in the box for her to confirm. */
+  AddTask: { initialTime?: string; initialUntil?: string; initialDate?: string; initialText?: string } | undefined;
   TaskDetail: { taskId: string };
   CheckIn: {
     type: CheckInType;
@@ -33,7 +36,10 @@ export type RootStackParamList = {
 };
 
 export type MainTabsParamList = {
-  Today: undefined;
+  /** The chat with Meira IS home (v3, 27.10). */
+  Meira: undefined;
+  /** From the home tiles: which day to open, and a nonce so the same tile works twice. */
+  Today: { day?: 'today' | 'tomorrow' | 'pick'; nonce?: number } | undefined;
   Tasks: undefined;
   Trips: undefined;
 };

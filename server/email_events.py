@@ -24,6 +24,7 @@ from typing import Optional
 
 from openai import AsyncOpenAI
 
+import ai_gate
 import config
 import model_router
 import llm_usage
@@ -59,7 +60,7 @@ def _system(today: str) -> str:
 def _get_client() -> AsyncOpenAI:
     global _client
     if _client is None:
-        _client = AsyncOpenAI(api_key=config.LLM_API_KEY, base_url=config.LLM_ENDPOINT)
+        _client = ai_gate.client()
     return _client
 
 

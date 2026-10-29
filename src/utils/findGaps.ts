@@ -70,6 +70,12 @@ export interface FindGapsOptions {
    * Default 5 — the same figure buildWayHome uses.
    */
   packUpMinutes?: number;
+  /**
+   * The window is for work she can do wherever she already is (a laptop after
+   * coffee in Herzliya), so no ride home is taken off its start. Default false:
+   * a free window is otherwise counted from when she is back.
+   */
+  stayOut?: boolean;
 }
 
 /** What a trip costs when nothing has computed the real route yet. */
@@ -153,7 +159,7 @@ export function findDayGaps(tasks: Task[], opts: FindGapsOptions = {}): DayGap[]
   const push = (start: string, end: string, before?: Task, after?: Task) => {
     // The trip back from wherever `before` was. Nothing in this window can
     // begin until it is over.
-    const travelHome = returnTravelMinutes(before, opts.packUpMinutes);
+    const travelHome = opts.stayOut ? 0 : returnTravelMinutes(before, opts.packUpMinutes);
     const usableStart = travelHome ? addMinutes(start, travelHome) : start;
     const from = timeToMinutes(usableStart) < timeToMinutes(floor) ? floor : usableStart;
     const to = timeToMinutes(end) > timeToMinutes(dayEnd) ? dayEnd : end;
@@ -205,6 +211,47 @@ export function fitsInDay(
   return gaps
     .filter((g) => g.minutes >= needed)
     .sort((a, b) => b.minutes - a.minutes);
+}
+
+/** The shortest window the ＋ will name. Shorter than this is a coffee, not a block. */
+export const PLUS_MIN_MINUTES = 10;
+/** …and the next window is worth announcing from this length up, if there is one. */
+const PLUS_NEXT_WORTH = 30;
+/** A block added by the ＋ is never longer than this by default — an empty evening is not one task. */
+export const PLUS_DEFAULT_MINUTES = 60;
+
+export interface PlusSlot {
+  /** The window itself, as findDayGaps drew it (start is the real minute, not rounded). */
+  gap: DayGap;
+  /** She is inside it right now. False: it is the next one that opens. */
+  startsNow: boolean;
+  /** Where a task added by the ＋ begins — the next 5 minutes, unless that leaves no room. */
+  from: string;
+  /** Where it ends by default: the next event (or the leave for it), capped at an hour. */
+  until: string;
+}
+
+/**
+ * What the ＋ under the now line offers (Koral, 18.10: "it needs to be smart
+ * from now until the next event"). Callers pass windows found with
+ * PLUS_MIN_MINUTES — a 29-minute stretch before an 11:00 call is real, and the
+ * 45-minute floor of the timeline rows used to hide it, so the + said only
+ * "Add something" and its list said "no free window today".
+ *
+ * Inside a window → that window, from the next 5 minutes to where it closes.
+ * Otherwise → the next one worth naming (30 min and up, else the first).
+ */
+export function plusSlot(gaps: DayGap[], now: string): PlusSlot | null {
+  const first = gaps[0];
+  if (!first) return null;
+  const inside = timeToMinutes(first.start) <= timeToMinutes(now);
+  const gap = inside ? first : (gaps.find((g) => g.minutes >= PLUS_NEXT_WORTH) ?? first);
+  const rounded = roundSlotStart(gap.start);
+  // Rounding up must not eat the window: 10:52 → 11:00 would leave nothing.
+  const from = timeToMinutes(gap.end) - timeToMinutes(rounded) >= PLUS_MIN_MINUTES ? rounded : gap.start;
+  const cap = addMinutes(from, PLUS_DEFAULT_MINUTES);
+  const until = timeToMinutes(gap.end) < timeToMinutes(cap) ? gap.end : cap;
+  return { gap, startsNow: inside, from, until };
 }
 
 /** "12:00–13:00 · 1h free" — one line for a gap row. */

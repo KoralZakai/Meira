@@ -133,7 +133,34 @@ Full PR outline: [docs/pr-backend-consolidation.md](docs/pr-backend-consolidatio
 
 ### 🟡 Quality, cost and hygiene
 
-- [ ] **Add CI.** 390 tests (362 Python + 28 TS) all run by hand; every push to master auto-deploys with no gate.
+- [x] **Add CI.** ✅ 2026-09-21. `.github/workflows/tests.yml` runs the Python
+  suite, the TypeScript suites and a clash-golden freshness check on every push
+  and PR, and `fly-deploy.yml` now `needs:` it — a red suite stops the deploy.
+  The manual override is a visible `skip_tests` input, not the default.
+
+  Four things were found by turning it on, all the same shape — *the suite's
+  greenness was a fact about the machine, not the code*:
+
+  - **`pytest-asyncio` was declared nowhere.** On a clean checkout the four
+    GDPR account-erase tests failed. `server/requirements-dev.txt` declares it.
+  - **`tsx` was not a dependency either.** All 64 TypeScript suites ran through
+    whatever version `npx` fetched from the registry at that moment. Now a
+    pinned devDependency, resolved from `node_modules/.bin` — which also took
+    the suite from 26 s to **8.2 s** (it was ~79 s before concurrency).
+  - **11 of 68 test scripts were never invoked.** `test:all` was a hand-written
+    57-link `&&` chain. `tests/run-clash-parity.ts` had no script at all.
+    `scripts/run-ts-tests.mjs` discovers `tests/run-*.ts` instead, so a suite
+    cannot be forgotten, and it reports ALL failures rather than stopping at
+    the first.
+  - **`test:wake` had been red for a week.** It asserted the retired
+    `'earlier-than-usual'` alarm rule; the shipped default is `'every-morning'`
+    (`1c1c273`). Nobody saw it because the chain never ran it.
+
+  Removed: `tests/run-edd.ts`, `tests/edd-evaluator.ts` and their exclusive
+  fixtures. The harness imported `services/TaskParser`, which pulls
+  react-native and cannot load under tsx — it had never been runnable.
+  `nebius/job-eval/evaluate.py` is a self-contained Python port and is
+  unaffected; the docs that pointed at the deleted files were corrected.
 - [ ] Crash reporting and an uptime monitor — if the reminder poller dies silently, nobody finds out.
 - [ ] Product analytics — zero telemetry today; cannot answer "does anyone finish onboarding".
 - [ ] Clear the 29 accepted TypeScript errors.
@@ -161,5 +188,6 @@ Full PR outline: [docs/pr-backend-consolidation.md](docs/pr-backend-consolidatio
 3. ~~Task 1 step 2~~ — deterministic Python
 4. ~~Task 2~~ — the HR agent is gone
 5. ~~Task 1 step 3~~ — Supabase + pgvector, applied and backfilled
-6. ~~Fix `fly.toml`~~ — done. Next: CI
-7. Phase 3 (3.3) — dedicated session
+6. ~~Fix `fly.toml`~~ — done
+7. ~~CI~~ — done: tests gate the deploy (see above)
+8. Phase 3 (3.3) — dedicated session

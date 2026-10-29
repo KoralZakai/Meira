@@ -34,6 +34,7 @@ import re
 from typing import Callable, Optional
 
 import day_schedule as _ds
+import task_shape
 
 # Someone else is in the room, so the END of the slot is not hers to pick. You
 # cannot tell an interviewer or a doctor you are leaving at half time.
@@ -73,16 +74,43 @@ def is_meeting_link(text) -> bool:
     return bool(text) and bool(_URL_RE.search(str(text).strip()))
 
 
+#: "Microsoft Teams Meeting" names a video service, not a place. Same list as
+#: src/utils/meetingLink.ts ONLINE_PLACE_RE.
+_ONLINE_PLACE_RE = re.compile(
+    r"^\s*(?:(?:on|via|by|over)\s+|ב[-־]?|דרך\s+)?"  # "בזום", "on Zoom", "via Teams"
+    r"(microsoft\s+teams(\s+meeting)?|teams(\s+meeting)?|zoom(\s+meeting)?|google\s+meet|webex"
+    r"|skype(\s+meeting)?|online|virtual|remote|phone|video(\s+call)?|אונליין|זום|טימס|מקוון|טלפון|וידאו)\s*$", re.IGNORECASE)
+
+
+def is_online_only_place(text) -> bool:
+    return bool(text) and (bool(_ONLINE_PLACE_RE.match(str(text))) or is_meeting_link(text))
+
+
+def _physical_place(task: dict) -> str:
+    """A place she would have to travel to — '' for none, a link, or "Teams Meeting"."""
+    location = _get(task, "location")
+    if isinstance(location, dict):
+        location = location.get("address") or location.get("displayName") or ""
+    text = str(location or "").strip()
+    return "" if not text or is_online_only_place(text) else text
+
+
 def is_remote_task(task: dict) -> bool:
     """Can this be done from anywhere? A task with a video link needs no travel,
     which is what makes it the flexible half of a clash: the call can happen on
-    the way to the thing that does need a place."""
+    the way to the thing that does need a place.
+
+    A 'call'/'zoom' CATEGORY only counts when nothing says otherwise — the
+    category is a guess, an address is a fact. 30.9's "AI Performance
+    Engineering meetup" was filed as a call with Sarona Market as its place."""
     if _get(task, "meeting_url", "meetingUrl"):
         return True
     location = _get(task, "location")
     if isinstance(location, str) and is_meeting_link(location):
         return True
-    return str(_get(task, "category", default="")) in ("zoom", "call")
+    if str(_get(task, "category", default="")) in ("zoom", "call"):
+        return not _physical_place(task)
+    return False
 
 
 def can_leave_early(task: dict) -> bool:
@@ -172,8 +200,85 @@ def _hhmm(minutes: int) -> str:
     return f"{minutes // 60:02d}:{minutes % 60:02d}"
 
 
+# ── What KIND of problem — src/utils/resolveClashes.ts clashKind, rule for rule ──
+
+#: Placeless work sharing this much of an appointment is not riding along, when
+#: the appointment is short enough to have no slack to lend (overlapKind.ts).
+OCCUPIED_OVERLAP_MINUTES = 30
+SHORT_HOST_MINUTES = 120
+#: Her own work that needs her attention — a call cannot ride along with it.
+FOCUS_CATEGORIES = ("course", "work")
+
+
+def _settled(task: dict) -> bool:
+    return str(_get(task, "status", default="")) in ("complete", "moved")
+
+
+def _floating(task: dict) -> bool:
+    return is_remote_task(task) or not _place(task)
+
+
+def _departure_of(task: dict) -> Optional[int]:
+    """The minute she has to walk out for this task (overlapKind.departureOf)."""
+    start = start_of(task)
+    if not start or not _place(task) or is_remote_task(task):
+        return None
+    location = _get(task, "location")
+    if isinstance(location, dict):
+        plan = location.get("transitPlan") if isinstance(location.get("transitPlan"), dict) else {}
+        leave = location.get("leaveHomeBy") or plan.get("leaveHomeAt")
+        if leave:
+            return _ds.time_to_minutes(leave)
+        travel = plan.get("totalDurationMinutes")
+        if travel is None:
+            travel = location.get("travelMinutes")
+    else:
+        travel = None
+    travel = travel if isinstance(travel, (int, float)) and travel > 0 else UNKNOWN_TRAVEL_MINUTES
+    return _ds.time_to_minutes(start) - int(travel)
+
+
+def _covers(task: dict, minute: int) -> bool:
+    return _ds.time_to_minutes(start_of(task)) < minute < _ds.time_to_minutes(end_of(task))
+
+
+def clash_kind(a: dict, b: dict, overlap: int) -> str:
+    """travel | overlap | double | spatial | parallel — see resolveClashes.ts.
+
+    On 30.9 the server reported the 18:30 business-plan-over-meetup and the
+    phone hid it. Both now reach the verdict through this one rule."""
+    if overlap <= 0:
+        return "travel"
+    if task_shape.is_flexible(a) and task_shape.is_flexible(b):
+        return "parallel"
+    if _settled(a) or _settled(b):
+        return "parallel"
+    # Her own work during a call: a call rides along with a place, not with
+    # work that needs her (6.10 — the mock-interview prep ran over the 15:00
+    # Datadog call and nothing asked). Phone twin: overlapKind.ts, rule 0.
+    for work, call in ((a, b), (b, a)):
+        if (is_remote_task(call) and not is_remote_task(work) and not _place(work)
+                and task_shape.is_flexible(work)
+                and (str(work.get("category") or "") in FOCUS_CATEGORIES
+                     or task_shape.classify_shape(work).get("reason") == "study")
+                and overlap >= OCCUPIED_OVERLAP_MINUTES):
+            return "overlap"
+    if is_remote_task(a) or is_remote_task(b):
+        return "parallel"
+    for floating, other in ((a, b), (b, a)):
+        if _floating(floating) and not _floating(other):
+            departure = _departure_of(other)
+            if departure is not None and _covers(floating, departure):
+                return "overlap"
+            if overlap >= OCCUPIED_OVERLAP_MINUTES and _ds.duration_of(other) <= SHORT_HOST_MINUTES:
+                return "overlap"
+            return "parallel"
+    return "double" if _place(a) == _place(b) else "spatial"
+
+
 def resolve_clashes(tasks, day_end: str = "23:00",
-                    leg_lookup: Optional[Callable[[dict, dict], Optional[int]]] = None) -> list:
+                    leg_lookup: Optional[Callable[[dict, dict], Optional[int]]] = None,
+                    now: Optional[str] = None) -> list:
     """Every genuine collision in the day, each with what could be done about it.
 
     Options are ordered best-first: attend-remotely (one side needs no place),
@@ -183,6 +288,16 @@ def resolve_clashes(tasks, day_end: str = "23:00",
     """
     day = timed(tasks)
     out = []
+    # `now` (HH:MM, today only): nothing is offered before it — a slot that has
+    # already gone is not free, and "leave at 14:30" at 15:00 is advice about
+    # the past. Parity with resolveClashes.ts.
+    now_m = _ds.time_to_minutes(now) if now else None
+
+    def not_past(m: int) -> bool:
+        return now_m is None or m >= now_m
+
+    def from_now(hhmm: str) -> str:
+        return now if now_m is not None and _ds.time_to_minutes(hhmm) < now_m else hhmm
 
     for i in range(len(day)):
         for j in range(i + 1, len(day)):
@@ -211,7 +326,7 @@ def resolve_clashes(tasks, day_end: str = "23:00",
             for flexible, other in ((a, b), (b, a)):
                 if _get(flexible, "is_fixed", "isFixed"):
                     continue
-                slot = first_free_slot(day, _ds.duration_of(flexible), end_of(other), day_end)
+                slot = first_free_slot(day, _ds.duration_of(flexible), from_now(end_of(other)), day_end)
                 if slot:
                     options.append({
                         "kind": "move",
@@ -227,7 +342,8 @@ def resolve_clashes(tasks, day_end: str = "23:00",
             # honest versions, and which is right depends on what matters to her
             # today, so offer both and never choose silently.
             must_end_by = _ds.time_to_minutes(start_of(second)) - travel_needed
-            if can_leave_early(first) and must_end_by - _ds.time_to_minutes(start_of(first)) >= 15:
+            if (can_leave_early(first) and must_end_by - _ds.time_to_minutes(start_of(first)) >= 15
+                    and not_past(must_end_by)):
                 trip = (f' — {travel_needed} min to "{_get(second, "text")}"',
                         f' — {travel_needed} דק\' ל"{_get(second, "text")}"') if travel_needed > 0 else \
                        (f' — in time for "{_get(second, "text")}"',
@@ -240,7 +356,7 @@ def resolve_clashes(tasks, day_end: str = "23:00",
                     "labelHe": f'להספיק את שתיהן — לצאת מ"{_get(first, "text")}" ב-{_hhmm(must_end_by)}{trip[1]}',
                 })
             new_start = _ds.time_to_minutes(end_of(first)) + travel_needed
-            if can_start_later(second) and new_start < _ds.time_to_minutes(day_end):
+            if can_start_later(second) and new_start < _ds.time_to_minutes(day_end) and not_past(new_start):
                 options.append({
                     "kind": "delay-next",
                     "taskId": _get(second, "id"),
@@ -255,7 +371,7 @@ def resolve_clashes(tasks, day_end: str = "23:00",
                     continue
                 if any(o["kind"] == "move" and o["taskId"] == _get(flexible, "id") for o in options):
                     continue
-                start = end_of(other)
+                start = from_now(end_of(other))
                 left = _ds.time_to_minutes(day_end) - _ds.time_to_minutes(start)
                 if left >= 30 and left < _ds.duration_of(flexible):
                     options.append({
@@ -280,18 +396,23 @@ def resolve_clashes(tasks, day_end: str = "23:00",
                 ]
 
             both = f'"{_get(a, "text")}" & "{_get(b, "text")}"'
-            if options[0]["kind"] == "choose":
+            # A journey that does not fit is worded as one — it used to read
+            # "overlap by 0 min" (30.9, Nebius → Dana). Same order as the TS.
+            if mins <= 0:
+                question_en = (f'"{_get(first, "text")}" ends at {end_of(first)} and "{_get(second, "text")}" '
+                               f'starts at {start_of(second)} — {travel_needed} min apart. Which gives?')
+                question_he = (f'"{_get(first, "text")}" נגמרת ב-{end_of(first)} ו"{_get(second, "text")}" '
+                               f'מתחילה ב-{start_of(second)}, {travel_needed} דק\' נסיעה משם. מה מוותר?')
+            elif options[0]["kind"] == "choose":
                 question_en = f"{both} overlap by {mins} min and neither can move. Which matters more today?"
                 question_he = f"{both} חופפות ב-{mins} דק' ואי אפשר להזיז אף אחת. מה יותר חשוב לך היום?"
-            elif mins <= 0:
-                question_en = f'"{_get(first, "text")}" ends when "{_get(second, "text")}" starts, but they are {travel_needed} min apart. Which gives?'
-                question_he = f'"{_get(first, "text")}" נגמרת כש"{_get(second, "text")}" מתחילה, אבל יש ביניהן {travel_needed} דק\' נסיעה. מה מוותר?'
             else:
                 question_en = f"{both} overlap by {mins} min."
                 question_he = f"{both} חופפות ב-{mins} דק'."
 
             out.append({
                 "a": a, "b": b,
+                "kind": clash_kind(a, b, mins),
                 "overlapMinutes": mins,
                 "travelShortfall": shortfall or None,
                 "options": options,

@@ -1,0 +1,13 @@
+id,name,persona,transportation_type,home_address,home_lat,home_lng,timezone,morning_routine_minutes,buffer_minutes,avg_lateness_minutes,earliest_wake_time
+1,Maya Test,feasibility-test user (hand-built edge cases),bus,"Florentin, Tel Aviv (approx.)",32.0565,34.77,Asia/Jerusalem,45,10,6.0,06:00
+2,Noa Levi,punctual TAU student,bike,"Old North, Tel Aviv (approx.)",32.093,34.778,Asia/Jerusalem,30,5,-2.0,06:30
+3,Yossi Cohen,"chronically late, drives",car,Ramat Gan centre (approx.),32.0823,34.8106,Asia/Jerusalem,25,5,14.0,06:00
+4,Dana Mizrahi,"job-seeker, many interviews, train commuter",train,"Merkaz HaCarmel, Haifa (approx.)",32.804,34.989,Asia/Jerusalem,40,15,3.0,05:45
+5,Amit Shapiro,"Herzliya engineer, scooter",scooter,Herzliya centre (approx.),32.1663,34.8436,Asia/Jerusalem,20,5,1.0,06:30
+6,Tamar Friedman,"Jerusalem, commutes to TLV twice a week",train,"German Colony, Jerusalem (approx.)",31.763,35.221,Asia/Jerusalem,50,20,8.0,05:30
+7,Omer Katz,"walker, lives near work",walk,Givatayim (approx.),32.0722,34.812,Asia/Jerusalem,35,10,0.0,06:30
+8,Shira Avraham,"Rehovot researcher, drives",car,Rehovot centre (approx.),31.8948,34.8113,Asia/Jerusalem,40,10,4.0,06:00
+9,Eitan Ben-David,"Petah Tikva, bus only, underestimates tasks",bus,Petah Tikva centre (approx.),32.0871,34.8875,Asia/Jerusalem,30,10,11.0,06:00
+10,Lior Peretz,"Holon, early bird, gym daily",car,Holon centre (approx.),32.0158,34.7874,Asia/Jerusalem,30,5,-5.0,04:30
+11,Roni Gabay,"Kfar Saba, hybrid worker",car,Kfar Saba centre (approx.),32.175,34.907,Asia/Jerusalem,35,10,2.0,06:00
+12,Gal Hadad,"Rishon LeZion, student + part-time job",bus,Rishon LeZion centre (approx.),31.973,34.7925,Asia/Jerusalem,30,10,7.0,06:30

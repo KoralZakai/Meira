@@ -54,57 +54,57 @@ class PreferenceTests(unittest.TestCase):
         self._tmp.cleanup()
 
     def test_nothing_learned_means_still_ask(self):
-        self.assertIsNone(tp.preferred("972500000009", "יגאל אלון 94", "gym"))
+        self.assertIsNone(tp.preferred("972542902729", "יגאל אלון 94", "gym"))
 
     def test_one_confirmation_is_enough_to_act_on(self):
         # Because the reply always states the assumption, a wrong memory costs
         # one correction — cheaper than a missing alarm.
-        tp.remember("972500000009", "bike", "יגאל אלון 94", "gym")
-        self.assertEqual(tp.preferred("972500000009", "יגאל אלון 94", "gym"), "bike")
+        tp.remember("972542902729", "bike", "יגאל אלון 94", "gym")
+        self.assertEqual(tp.preferred("972542902729", "יגאל אלון 94", "gym"), "bike")
 
     def test_the_place_is_found_from_the_geocoded_address_too(self):
-        tp.remember("972500000009", "bike", "יגאל אלון 94", "gym")
+        tp.remember("972542902729", "bike", "יגאל אלון 94", "gym")
         self.assertEqual(
-            tp.preferred("972500000009", "יגאל אלון 94, תל אביב-יפו, מחוז תל אביב", "gym"),
+            tp.preferred("972542902729", "יגאל אלון 94, תל אביב-יפו, מחוז תל אביב", "gym"),
             "bike")
 
     def test_category_carries_to_a_gym_she_has_never_been_to(self):
-        tp.remember("972500000009", "bike", "יגאל אלון 94", "gym")
-        self.assertEqual(tp.preferred("972500000009", "רחוב אחר 5", "gym"), "bike")
+        tp.remember("972542902729", "bike", "יגאל אלון 94", "gym")
+        self.assertEqual(tp.preferred("972542902729", "רחוב אחר 5", "gym"), "bike")
 
     def test_the_place_beats_the_category(self):
         # She cycles to the gym generally, but drives to this one.
-        tp.remember("972500000009", "bike", "יגאל אלון 94", "gym")
-        tp.remember("972500000009", "bike", "יגאל אלון 94", "gym")
-        tp.remember("972500000009", "car", "הרצליה 20", "gym")
-        self.assertEqual(tp.preferred("972500000009", "הרצליה 20", "gym"), "car")
-        self.assertEqual(tp.preferred("972500000009", "יגאל אלון 94", "gym"), "bike")
+        tp.remember("972542902729", "bike", "יגאל אלון 94", "gym")
+        tp.remember("972542902729", "bike", "יגאל אלון 94", "gym")
+        tp.remember("972542902729", "car", "הרצליה 20", "gym")
+        self.assertEqual(tp.preferred("972542902729", "הרצליה 20", "gym"), "car")
+        self.assertEqual(tp.preferred("972542902729", "יגאל אלון 94", "gym"), "bike")
 
     def test_a_correction_outvotes_the_old_habit(self):
-        tp.remember("972500000009", "bus", "יגאל אלון 94", "gym")
-        tp.remember("972500000009", "bike", "יגאל אלון 94", "gym")
-        tp.remember("972500000009", "bike", "יגאל אלון 94", "gym")
-        self.assertEqual(tp.preferred("972500000009", "יגאל אלון 94", "gym"), "bike")
+        tp.remember("972542902729", "bus", "יגאל אלון 94", "gym")
+        tp.remember("972542902729", "bike", "יגאל אלון 94", "gym")
+        tp.remember("972542902729", "bike", "יגאל אלון 94", "gym")
+        self.assertEqual(tp.preferred("972542902729", "יגאל אלון 94", "gym"), "bike")
 
     def test_local_and_international_phone_are_the_same_person(self):
         # Same bug shape as the pending-mirror flush.
-        tp.remember("0500000009", "bike", "יגאל אלון 94", "gym")
-        self.assertEqual(tp.preferred("972500000009", "יגאל אלון 94", "gym"), "bike")
+        tp.remember("0542902729", "bike", "יגאל אלון 94", "gym")
+        self.assertEqual(tp.preferred("972542902729", "יגאל אלון 94", "gym"), "bike")
 
     def test_another_persons_habits_never_leak(self):
-        tp.remember("972500000009", "bike", "יגאל אלון 94", "gym")
+        tp.remember("972542902729", "bike", "יגאל אלון 94", "gym")
         self.assertIsNone(tp.preferred("972501234567", "יגאל אלון 94", "gym"))
 
     def test_junk_modes_are_refused(self):
-        tp.remember("972500000009", "teleport", "יגאל אלון 94", "gym")
-        self.assertIsNone(tp.preferred("972500000009", "יגאל אלון 94", "gym"))
+        tp.remember("972542902729", "teleport", "יגאל אלון 94", "gym")
+        self.assertIsNone(tp.preferred("972542902729", "יגאל אלון 94", "gym"))
 
     def test_work_by_car_and_gym_by_bike_coexist(self):
         # Her original ask, stated exactly.
-        tp.remember("972500000009", "car", "רוטשילד 1", "work")
-        tp.remember("972500000009", "bike", "יגאל אלון 94", "gym")
-        self.assertEqual(tp.preferred("972500000009", None, "work"), "car")
-        self.assertEqual(tp.preferred("972500000009", None, "gym"), "bike")
+        tp.remember("972542902729", "car", "רוטשילד 1", "work")
+        tp.remember("972542902729", "bike", "יגאל אלון 94", "gym")
+        self.assertEqual(tp.preferred("972542902729", None, "work"), "car")
+        self.assertEqual(tp.preferred("972542902729", None, "gym"), "bike")
 
     def test_the_assumption_is_always_stated(self):
         for mode in tp.VALID_MODES:
@@ -116,7 +116,7 @@ class PreferenceTests(unittest.TestCase):
     def test_a_corrupt_store_does_not_crash_the_route(self):
         with open(tp._PATH, "w", encoding="utf-8") as f:
             f.write("{ this is not json")
-        self.assertIsNone(tp.preferred("972500000009", "יגאל אלון 94", "gym"))
+        self.assertIsNone(tp.preferred("972542902729", "יגאל אלון 94", "gym"))
 
 
 if __name__ == "__main__":

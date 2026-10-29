@@ -96,3 +96,104 @@ export function missedPlannedDeparture(
   return nowMins > leaveMins + graceMinutes && nowMins - leaveMins < 12 * 60;
 }
 
+
+/**
+ * Minutes she will be late if she leaves on the next departure; 0 = in time.
+ *
+ * 13.10, Koral: "if you see I haven't left — ask me: you're late, are you
+ * still going? reschedule? cancel? keep options!" The missed-departure re-plan
+ * said "Times updated · arrive 13:42" for a 13:00 interview and nothing else:
+ * a new arrival that is already a no-show, reported as an update.
+ */
+export function lateBy(startsAt: string | undefined, arriveAt: string | undefined): number {
+  const m = (t?: string) => (t && /^\d{1,2}:\d{2}$/.test(t) ? Number(t.split(':')[0]) * 60 + Number(t.split(':')[1]) : null);
+  const s = m(startsAt);
+  const a = m(arriveAt);
+  if (s === null || a === null) return 0;
+  return Math.max(0, a - s);
+}
+
+/** The question, in her language — the late arrival, and her three choices. */
+export function runningLateText(
+  taskText: string, arriveAt: string, minutesLate: number, he: boolean,
+  /** An interview, a doctor, a must: late is not an option, so the question is what happened. */
+  mustBeOnTime = false,
+): { title: string; body: string } {
+  // 13.10, Koral: "to an interview I cannot be late! If it's nearly 13:00 and
+  // I'm still at home I haven't left — why? Cancelled? Changed? To when?"
+  if (mustBeOnTime) {
+    return he
+      ? {
+        title: `⏰ לא תגיעי בזמן ל${taskText}`,
+        body: `אם יוצאים עכשיו מגיעים ב-${arriveAt}, ${minutesLate} דק׳ איחור — ולזה אי אפשר לאחר. מה קרה? בוטל? הוזז — למתי?`,
+      }
+      : {
+        title: `⏰ You won't make ${taskText} on time`,
+        body: `Leaving now you arrive at ${arriveAt}, ${minutesLate} min late — and this one can't be late. What happened? Cancelled? Moved — to when?`,
+      };
+  }
+  return he
+    ? {
+      title: `⏰ את מאחרת ל${taskText}`,
+      body: `אם יוצאים עכשיו מגיעים ב-${arriveAt} — ${minutesLate} דק׳ איחור. עדיין הולכת? לדחות? לבטל?`,
+    }
+    : {
+      title: `⏰ You're running late for ${taskText}`,
+      body: `Leaving now you arrive at ${arriveAt} — ${minutesLate} min late. Still going? Reschedule? Cancel?`,
+    };
+}
+
+/** A meeting from her calendar (Google / phone / Outlook) — not Meira's to move. */
+export const isFromCalendar = (id: string) => /^(gcal|dcal|ocal)-/.test(id);
+
+/** The open task left when there is no new time yet (13.10: "keep it in the open tasks to do"). */
+export function followUpTitle(taskText: string, he: boolean): string {
+  return he ? `לקבוע מועד חדש: ${taskText}` : `Set a new time: ${taskText}`;
+}
+
+/** The original task's text when this is such a follow-up ("לקבוע מועד חדש: X" → "X"), else null. */
+export function followUpOriginal(text: string | undefined): string | null {
+  const m = /^(?:לקבוע מועד חדש|Set a new time):\s*(.+)$/.exec(String(text ?? '').trim());
+  return m ? m[1].trim() : null;
+}
+
+/**
+ * She is late on the planned way: is another way, from NOW, really faster? (21.10, Koral: "when she
+ * does not leave in time, Meira finds the next fastest way at once, and says so clearly".)
+ *
+ * `options` are depart-now plans for the other vehicles, each from Google. The pick is the one
+ * that ARRIVES first, and only when it beats the way she is on by at least `minGainMin` — a
+ * two-minute gain is not worth a different vehicle and a new decision. Pure.
+ */
+export function bestAlternative(
+  current: { arriveAt: string },
+  options: Array<{ mode: string; plan: { arriveAt: string; leaveHomeAt: string; totalDurationMinutes: number } }>,
+  minGainMin = 5,
+): { mode: string; plan: { arriveAt: string; leaveHomeAt: string; totalDurationMinutes: number }; gain: number } | null {
+  const mins = (s: string) => {
+    const [h, m] = (s || '').split(':').map(Number);
+    return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : NaN;
+  };
+  const cur = mins(current.arriveAt);
+  if (!Number.isFinite(cur)) return null;
+  const ranked = options
+    .map((o) => ({ ...o, at: mins(o.plan.arriveAt) }))
+    .filter((o) => Number.isFinite(o.at))
+    .sort((a, b) => a.at - b.at);
+  const best = ranked[0];
+  if (!best || cur - best.at < minGainMin) return null;
+  return { mode: best.mode, plan: best.plan, gain: cur - best.at };
+}
+
+/** The clear, true sentence: what is faster, when she arrives, how much sooner. */
+export function alternativeLine(
+  alt: { mode: string; plan: { arriveAt: string; totalDurationMinutes: number }; gain: number }, he: boolean,
+): string {
+  const icon = ({ bus: '🚌', train: '🚆', car: '🚗', bike: '🚴', walk: '🚶' } as Record<string, string>)[alt.mode] ?? '';
+  const name = he
+    ? ({ bus: 'אוטובוס', train: 'רכבת', car: 'רכב', bike: 'אופניים', walk: 'הליכה' } as Record<string, string>)[alt.mode] ?? alt.mode
+    : alt.mode;
+  return he
+    ? `${icon} מהר יותר: ${name} — מגיעים ב-${alt.plan.arriveAt} (${alt.gain} דק׳ מוקדם יותר, לפי גוגל)`
+    : `${icon} Faster: ${name} — arrive ${alt.plan.arriveAt} (${alt.gain} min sooner, per Google)`;
+}

@@ -1,0 +1,125 @@
+# Weekly LIVE evaluation: the same matrix as CI, plus the suites that spend money.
+#
+#   python -m evals --live
+#     * accuracy_live   ~30 real questions through the real model (Nemotron on
+#                       Nebius), hard checks + an LLM-as-judge rubric, including
+#                       hallucination probes ("cancel tomorrow's workout" when
+#                       there is none)
+#     * performance_live  tokens/second and real request latency, from those calls
+#     * cost_live         real token counts -> cost per request / task / person-day
+#     * rag_live          memory retrieval with the REAL embedding model
+#
+# Spend is capped at the `budget` input (default $0.20, estimated from
+# llm_usage.PRICES; the run REFUSES the next model call once it is reached).
+# Nothing here can touch production: the CLI blanks every credential except the
+# model key before the server is imported, refuses to start if Supabase or
+# WhatsApp credentials are present, and keeps all state in a temp directory.
+#
+# THE MODEL KEY IS NOT IN GITHUB YET, ON PURPOSE. CLAUDE.md: NEBIUS_API_KEY is a
+# Fly secret, "no key is ever stored on disk" — a second copy in GitHub's
+# encrypted store is the OWNER's decision, not an agent's. Until she adds a
+# repository secret called NEBIUS_API_KEY (Settings > Secrets and variables >
+# Actions), this workflow says so loudly (a warning annotation and the job
+# summary) and runs the OFFLINE suites only, so the weekly artifact still
+# exists. It never fails silently and never pretends the live suites ran.
+#
+# Optional repository variable EMBED_MODEL (default Qwen/Qwen3-Embedding-8B).
+#
+# Red (a regression past thresholds.json, or a crashed suite) fails the run, so
+# GitHub tells her. The live_* thresholds are provisional until the first
+# weekly run gives them a baseline.
+
+name: Evals (weekly, live)
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'        # Mondays 06:00 UTC
+  workflow_dispatch:
+    inputs:
+      budget:
+        description: 'Live spend cap in USD (the run stops calling the model at this estimate)'
+        required: false
+        default: '0.20'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: evals-weekly
+  cancel-in-progress: false
+
+jobs:
+  evals:
+    name: Evaluation matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r server/requirements.txt
+          pip install -r server/requirements-dev.txt
+
+      - name: Is the model key available?
+        id: key
+        env:
+          NEBIUS_API_KEY: ${{ secrets.NEBIUS_API_KEY }}
+        run: |
+          if [ -n "$NEBIUS_API_KEY" ]; then
+            echo "live=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "live=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=Live evals SKIPPED::The repository secret NEBIUS_API_KEY is not set, so only the offline suites ran. Add it under Settings > Secrets and variables > Actions to enable the live suites."
+            {
+              echo "## Live evals SKIPPED"
+              echo
+              echo "The repository secret \`NEBIUS_API_KEY\` is not set, so **no real-model suite ran**:"
+              echo "accuracy_live, performance_live (tokens/s), cost_live and rag_live are reported as"
+              echo "*NOT RUN* below. Only the offline suites were executed."
+              echo
+              echo "CLAUDE.md keeps this key as a Fly secret only; copying it to GitHub is the owner's call."
+              echo
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Evals (live + offline)
+        if: steps.key.outputs.live == 'true'
+        working-directory: server
+        env:
+          NEBIUS_API_KEY: ${{ secrets.NEBIUS_API_KEY }}
+          EMBED_MODEL: ${{ vars.EMBED_MODEL }}
+          BUDGET: ${{ github.event.inputs.budget || '0.20' }}
+        run: |
+          set +e
+          python -m evals --live --budget "$BUDGET" --quiet --out evals/out
+          rc=$?
+          cat evals/out/report.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || \
+            echo "### NO REPORT WRITTEN (python -m evals exited $rc)" >> "$GITHUB_STEP_SUMMARY"
+          exit $rc
+
+      - name: Evals (offline only - no model key)
+        if: steps.key.outputs.live != 'true'
+        working-directory: server
+        run: |
+          set +e
+          python -m evals --offline --quiet --out evals/out
+          rc=$?
+          cat evals/out/report.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || \
+            echo "### NO REPORT WRITTEN (python -m evals exited $rc)" >> "$GITHUB_STEP_SUMMARY"
+          exit $rc
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evals-report-${{ steps.key.outputs.live == 'true' && 'live' || 'offline-only' }}
+          path: |
+            server/evals/out/report.json
+            server/evals/out/report.md
+          if-no-files-found: warn
+          retention-days: 90

@@ -39,6 +39,7 @@ from datetime import date as _date
 from typing import Optional
 
 import categorize
+import name_skeleton
 import task_extract
 import task_intent
 import tz as _tz
@@ -185,7 +186,7 @@ def rescue(content: str, existing: list, default_date: Optional[str] = None) -> 
     # failure: it becomes an undated task in the general list rather than being
     # dumped on today, where it would be "late" by the evening for no reason.
     matches = re.findall(_tz.REL_DATE_RE, content or "")
-    target = _tz.resolve_date(matches[0]) if matches else None
+    target = _tz.resolve_date_at(matches[0]) if matches else None
     if target is None and default_date:
         target = _date.fromisoformat(default_date)   # the day named above this line
     if target is None and time_hhmm:
@@ -198,8 +199,8 @@ def rescue(content: str, existing: list, default_date: Optional[str] = None) -> 
         return None
 
     logger.warning(
-        "task rescue: the model saved nothing for %r — creating %r (date=%s time=%s)",
-        content[:60], title, date_iso, time_hhmm)
+        "task rescue: the model saved nothing — creating one (date=%s time=%s)",
+        date_iso, time_hhmm)
     labelled = categorize.merge(title, {})
     ranged = task_extract.parse_time_range(content or "")
     task = {
@@ -343,6 +344,11 @@ def already_planned(existing: list, task: dict) -> Optional[dict]:
     for t in existing or []:
         if str(t.get("date") or "")[:10] != date or t.get("status") in ("complete", "moved"):
             continue
+        # The same person in two scripts at the same minute is one meeting
+        # ("שיחה עם סגית" beside Google's "Sagit/Koral- intro", 1.10).
+        if at is not None and _minutes(t.get("fixed_time")) == at \
+                and name_skeleton.shares_a_name(task.get("text"), t.get("text")):
+            return t
         theirs = task_intent._tokens(t.get("text", ""))
         if not theirs or len(mine & theirs) / min(len(mine), len(theirs)) < 0.7:
             continue
@@ -353,13 +359,33 @@ def already_planned(existing: list, task: dict) -> Optional[dict]:
     return None
 
 
+_DAY_WORDS = {"ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת", "יום", "היום", "מחר",
+              "sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday",
+              "today", "tomorrow", "שבתות"}
+
+
+def hollow_title(text: Optional[str]) -> bool:
+    """A title that says WHEN and nothing else: '🗓️ שבת | |'. 18.10: a templated
+    message lost its subject, the task was saved with only the day left, and
+    every re-send matched it as a twin and never repaired it."""
+    words = re.findall(r"[^\W\d_]+", str(text or ""), re.UNICODE)
+    return not [w for w in words if w.lower() not in _DAY_WORDS]
+
+
 def changed_fields(existing_task: dict, new_task: dict) -> dict:
     """What the user just said that differs from what is stored.
 
-    Only the WHEN and WHERE — the title is what matched, so rewriting it with a
-    slightly different phrasing would churn the task for no gain.
+    The WHEN and WHERE — the title is what matched, so rewriting it with a
+    slightly different phrasing would churn the task for no gain. The one
+    exception: a stored title that names no activity at all (hollow_title) is
+    replaced by one that does.
     """
     patch = {}
+    new_text = str(new_task.get("text") or "").strip()
+    if new_text and hollow_title(existing_task.get("text")) and not hollow_title(new_text):
+        patch["text"] = new_text
+    if new_task.get("notes") and not existing_task.get("notes") and not existing_task.get("progress"):
+        patch["notes"] = new_task["notes"]
     for field in ("date", "fixed_time", "location"):
         new_value = new_task.get(field)
         if new_value and new_value != existing_task.get(field):

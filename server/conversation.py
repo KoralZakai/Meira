@@ -61,6 +61,10 @@ def append(phone: str, user_text: str, assistant_text: str) -> None:
     """
     from tz import now_il
 
+    # Where she IS is used for this turn and never kept (privacy.strip_location):
+    # history is replayed to the model later and shadowed to lumi_conversations.
+    import privacy
+    user_text = privacy.strip_location(user_text)
     data = _load()
     hist = data.get(phone, [])
     ts = now_il().isoformat(timespec="minutes")

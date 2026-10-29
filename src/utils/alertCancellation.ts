@@ -72,3 +72,16 @@ export function identifiersToCancel(
 
   return [...out];
 }
+
+/**
+ * Every scheduled morning/afternoon/evening check-in, found by its payload.
+ *
+ * Check-ins are DAILY triggers: one whose id was never remembered repeats
+ * forever, so cancelling by stored ids alone let "what did you do so far?"
+ * arrive three times a day. Task alerts (no `checkInType`) are never returned.
+ */
+export function checkInIdentifiers(scheduled: ScheduledLike[]): string[] {
+  return [...new Set(
+    scheduled.filter((n) => Boolean(n.content?.data?.checkInType)).map((n) => n.identifier),
+  )];
+}

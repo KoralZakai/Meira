@@ -1,0 +1,853 @@
+[
+  {
+    "case_id": "INS-01",
+    "kind": "insert",
+    "feasible": true,
+    "status": "OK",
+    "blocking": [],
+    "accepted_slot": {
+      "day": "2026-10-12",
+      "start_local": "11:00",
+      "end_local": "11:45",
+      "cost": 20.8,
+      "travel_in": 11,
+      "travel_out": 31,
+      "dead_min": 13,
+      "required_wake": "",
+      "reasons": [
+        "42 min travel",
+        "only 19 min slack after the previous meeting",
+        "same area as 'Site visit — Elbit Netanya'"
+      ]
+    },
+    "alternatives": []
+  },
+  {
+    "case_id": "INS-02",
+    "kind": "insert",
+    "feasible": false,
+    "status": "INFEASIBLE_TRAVEL",
+    "blocking": [
+      {
+        "from_id": 33,
+        "to_id": 35,
+        "gap_min": 0,
+        "travel_min": 63,
+        "margin_min": 10.46,
+        "status": "INFEASIBLE_TRAVEL",
+        "required_wake": ""
+      },
+      {
+        "from_id": 35,
+        "to_id": 32,
+        "gap_min": 30,
+        "travel_min": 85,
+        "margin_min": 10.46,
+        "status": "INFEASIBLE_TRAVEL",
+        "required_wake": ""
+      }
+    ],
+    "accepted_slot": null,
+    "alternatives": [
+      {
+        "day": "2026-10-15",
+        "start_local": "19:30",
+        "end_local": "21:00",
+        "cost": 5.0,
+        "travel_in": 0,
+        "travel_out": 0,
+        "dead_min": 80,
+        "required_wake": "",
+        "reasons": [
+          "80 min idle between commitments",
+          "same area as 'Site visit — Port of Ashdod'"
+        ]
+      },
+      {
+        "day": "2026-10-15",
+        "start_local": "18:00",
+        "end_local": "19:30",
+        "cost": 16.8,
+        "travel_in": 0,
+        "travel_out": 0,
+        "dead_min": 0,
+        "required_wake": "",
+        "reasons": [
+          "only 0 min slack after the previous meeting",
+          "same area as 'Site visit — Port of Ashdod'"
+        ]
+      },
+      {
+        "day": "2026-10-18",
+        "start_local": "17:00",
+        "end_local": "18:30",
+        "cost": 81.6,
+        "travel_in": 47,
+        "travel_out": 0,
+        "dead_min": 3,
+        "required_wake": "",
+        "reasons": [
+          "47 min travel",
+          "travels in rush hour",
+          "only 13 min slack after the previous meeting"
+        ]
+      }
+    ]
+  },
+  {
+    "case_id": "INS-03",
+    "kind": "insert",
+    "feasible": true,
+    "status": "OK",
+    "blocking": [],
+    "accepted_slot": {
+      "day": "2026-10-08",
+      "start_local": "11:00",
+      "end_local": "11:45",
+      "cost": 80.8,
+      "travel_in": 0,
+      "travel_out": 0,
+      "dead_min": 95,
+      "required_wake": "",
+      "reasons": [
+        "95 min idle between commitments",
+        "only 0 min slack after the previous meeting"
+      ]
+    },
+    "alternatives": []
+  },
+  {
+    "case_id": "INS-04",
+    "kind": "insert",
+    "feasible": true,
+    "status": "TIGHT",
+    "blocking": [
+      {
+        "from_id": 32,
+        "to_id": 21,
+        "gap_min": 60,
+        "travel_min": 55,
+        "margin_min": 10.46,
+        "status": "TIGHT",
+        "required_wake": ""
+      },
+      {
+        "from_id": 21,
+        "to_id": 37,
+        "gap_min": 15,
+        "travel_min": 12,
+        "margin_min": 10.46,
+        "status": "TIGHT",
+        "required_wake": ""
+      }
+    ],
+    "accepted_slot": {
+      "day": "2026-10-12",
+      "start_local": "15:00",
+      "end_local": "15:45",
+      "cost": 73.8,
+      "travel_in": 55,
+      "travel_out": 12,
+      "dead_min": 0,
+      "required_wake": "",
+      "reasons": [
+        "67 min travel",
+        "only 5 min slack after the previous meeting",
+        "same area as 'Debrief — Diamond Exchange offic'"
+      ]
+    },
+    "alternatives": []
+  },
+  {
+    "case_id": "INS-05",
+    "kind": "insert",
+    "feasible": false,
+    "status": "OVERLAP",
+    "blocking": [
+      {
+        "from_id": 40,
+        "to_id": 41,
+        "gap_min": -150,
+        "travel_min": 22,
+        "margin_min": 18.3,
+        "status": "OVERLAP",
+        "required_wake": ""
+      },
+      {
+        "from_id": 41,
+        "to_id": 5,
+        "gap_min": 45,
+        "travel_min": 54,
+        "margin_min": 18.3,
+        "status": "INFEASIBLE_TRAVEL",
+        "required_wake": ""
+      }
+    ],
+    "accepted_slot": null,
+    "alternatives": [
+      {
+        "day": "2026-10-14",
+        "start_local": "11:30",
+        "end_local": "12:15",
+        "cost": 43.0,
+        "travel_in": 43,
+        "travel_out": 0,
+        "dead_min": 0,
+        "required_wake": "09:48",
+        "reasons": [
+          "43 min travel"
+        ]
+      },
+      {
+        "day": "2026-10-14",
+        "start_local": "13:00",
+        "end_local": "13:45",
+        "cost": 43.0,
+        "travel_in": 43,
+        "travel_out": 0,
+        "dead_min": 0,
+        "required_wake": "11:18",
+        "reasons": [
+          "43 min travel"
+        ]
+      },
+      {
+        "day": "2026-10-14",
+        "start_local": "15:15",
+        "end_local": "16:00",
+        "cost": 43.0,
+        "travel_in": 43,
+        "travel_out": 0,
+        "dead_min": 0,
+        "required_wake": "13:33",
+        "reasons": [
+          "43 min travel"
+        ]
+      }
+    ]
+  },
+  {
+    "case_id": "INS-06",
+    "kind": "insert",
+    "feasible": true,
+    "status": "OK",
+    "blocking": [],
+    "accepted_slot": {
+      "day": "2026-10-07",
+      "start_local": "12:00",
+      "end_local": "13:00",
+      "cost": 44.0,
+      "travel_in": 44,
+      "travel_out": 0,
+      "dead_min": 0,
+      "required_wake": "10:17",
+      "reasons": [
+        "44 min travel"
+      ]
+    },
+    "alternatives": []
+  },
+  {
+    "case_id": "INS-07",
+    "kind": "insert",
+    "feasible": true,
+    "status": "OK",
+    "blocking": [],
+    "accepted_slot": {
+      "day": "2026-10-12",
+      "start_local": "12:15",
+      "end_local": "14:15",
+      "cost": 88.6,
+      "travel_in": 0,
+      "travel_out": 29,
+      "dead_min": 171,
+      "required_wake": "",
+      "reasons": [
+        "29 min travel",
+        "171 min idle between commitments",
+        "same area as 'Lecture — Optimization, TAU'"
+      ]
+    },
+    "alternatives": []
+  },
+  {
+    "case_id": "INS-08",
+    "kind": "insert",
+    "feasible": false,
+    "status": "INFEASIBLE_TRAVEL",
+    "blocking": [
+      {
+        "from_id": 14,
+        "to_id": 3,
+        "gap_min": 0,
+        "travel_min": 354,
+        "margin_min": 5.0,
+        "status": "INFEASIBLE_TRAVEL",
+        "required_wake": ""
+      },
+      {
+        "from_id": 3,
+        "to_id": 20,
+        "gap_min": 240,
+        "travel_min": 380,
+        "margin_min": 5.0,
+        "status": "INFEASIBLE_TRAVEL",
+        "required_wake": ""
+      }
+    ],
+    "accepted_slot": null,
+    "alternatives": []
+  },
+  {
+    "case_id": "CAN-01",
+    "kind": "cancel",
+    "cancelled": "Commissioning — Intel Haifa",
+    "freed_from": "05:50",
+    "freed_to": "12:00",
+    "freed_minutes": 370,
+    "conflicts_resolved": 1,
+    "remaining_conflicts": [],
+    "now_fits": [
+      {
+        "day": "2026-10-06",
+        "start_local": "07:30",
+        "end_local": "09:00",
+        "cost": 236.3,
+        "travel_in": 82,
+        "travel_out": 37,
+        "dead_min": 133,
+        "required_wake": "05:22",
+        "reasons": [
+          "119 min travel",
+          "133 min idle between commitments",
+          "wake at 05:22, 37 min earlier than usual"
+        ]
+      },
+      {
+        "day": "2026-10-06",
+        "start_local": "06:45",
+        "end_local": "07:45",
+        "cost": 263.0,
+        "travel_in": 36,
+        "travel_out": 110,
+        "dead_min": 135,
+        "required_wake": "05:23",
+        "reasons": [
+          "146 min travel",
+          "135 min idle between commitments",
+          "wake at 05:23, 36 min earlier than usual"
+        ]
+      }
+    ],
+    "fits_elsewhere_today": []
+  },
+  {
+    "case_id": "CAN-02",
+    "kind": "cancel",
+    "cancelled": "Office — afternoon block, WeWork Sarona",
+    "freed_from": "13:45",
+    "freed_to": "18:30",
+    "freed_minutes": 285,
+    "conflicts_resolved": 1,
+    "remaining_conflicts": [
+      "INFEASIBLE_TRAVEL"
+    ],
+    "now_fits": [
+      {
+        "day": "2026-10-13",
+        "start_local": "14:45",
+        "end_local": "15:45",
+        "cost": 192.0,
+        "travel_in": 51,
+        "travel_out": 39,
+        "dead_min": 108,
+        "required_wake": "",
+        "reasons": [
+          "90 min travel",
+          "108 min idle between commitments",
+          "only 9 min slack after the previous meeting"
+        ]
+      },
+      {
+        "day": "2026-10-13",
+        "start_local": "14:45",
+        "end_local": "15:30",
+        "cost": 210.4,
+        "travel_in": 54,
+        "travel_out": 40,
+        "dead_min": 122,
+        "required_wake": "",
+        "reasons": [
+          "94 min travel",
+          "122 min idle between commitments",
+          "only 6 min slack after the previous meeting"
+        ]
+      }
+    ],
+    "fits_elsewhere_today": []
+  },
+  {
+    "case_id": "CAN-03",
+    "kind": "cancel",
+    "cancelled": "Gym — Holmes Place",
+    "freed_from": "12:00",
+    "freed_to": "22:00",
+    "freed_minutes": 600,
+    "conflicts_resolved": 0,
+    "remaining_conflicts": [],
+    "now_fits": [
+      {
+        "day": "2026-10-12",
+        "start_local": "12:00",
+        "end_local": "13:00",
+        "cost": -5.0,
+        "travel_in": 0,
+        "travel_out": 0,
+        "dead_min": 0,
+        "required_wake": "",
+        "reasons": [
+          "only 0 min slack after the previous meeting",
+          "same area as 'Lecture — Optimization, TAU'"
+        ]
+      }
+    ],
+    "fits_elsewhere_today": []
+  },
+  {
+    "case_id": "INT-01",
+    "kind": "interview",
+    "reviewed": [
+      {
+        "day": "2026-10-07",
+        "start_local": "12:00",
+        "status": "OK",
+        "feasible": true,
+        "cost": 42.0,
+        "travel_in": 42,
+        "travel_out": 0,
+        "required_wake": "10:19",
+        "reasons": [
+          "42 min travel"
+        ],
+        "blocking": []
+      },
+      {
+        "day": "2026-10-12",
+        "start_local": "12:00",
+        "status": "OK",
+        "feasible": true,
+        "cost": 42.0,
+        "travel_in": 42,
+        "travel_out": 0,
+        "required_wake": "10:19",
+        "reasons": [
+          "42 min travel"
+        ],
+        "blocking": []
+      },
+      {
+        "day": "2026-10-13",
+        "start_local": "09:30",
+        "status": "OVERLAP",
+        "feasible": false,
+        "cost": 133.0,
+        "travel_in": 42,
+        "travel_out": 55,
+        "required_wake": "07:49",
+        "reasons": [
+          "97 min travel",
+          "62 min idle between commitments",
+          "travels in rush hour"
+        ],
+        "blocking": [
+          "OVERLAP (19 min travel, -150 min gap)",
+          "INFEASIBLE_TRAVEL (55 min travel, 45 min gap)"
+        ]
+      }
+    ],
+    "recommended": [
+      {
+        "source": "user_offered",
+        "cheaper_alternative": {
+          "day": "2026-10-08",
+          "start_local": "19:30",
+          "saves": 15.8
+        },
+        "day": "2026-10-07",
+        "start_local": "12:00",
+        "status": "OK",
+        "feasible": true,
+        "cost": 42.0,
+        "travel_in": 42,
+        "travel_out": 0,
+        "required_wake": "10:19",
+        "reasons": [
+          "42 min travel"
+        ],
+        "blocking": []
+      },
+      {
+        "source": "user_offered",
+        "cheaper_alternative": {
+          "day": "2026-10-08",
+          "start_local": "19:30",
+          "saves": 15.8
+        },
+        "day": "2026-10-12",
+        "start_local": "12:00",
+        "status": "OK",
+        "feasible": true,
+        "cost": 42.0,
+        "travel_in": 42,
+        "travel_out": 0,
+        "required_wake": "10:19",
+        "reasons": [
+          "42 min travel"
+        ],
+        "blocking": []
+      },
+      {
+        "source": "meira_suggested",
+        "day": "2026-10-08",
+        "start_local": "19:30",
+        "status": "OK",
+        "feasible": true,
+        "cost": 26.2,
+        "travel_in": 20,
+        "travel_out": 0,
+        "required_wake": "",
+        "reasons": [
+          "20 min travel",
+          "82 min idle between commitments",
+          "same area as 'Office day — WeWork Sarona'"
+        ],
+        "blocking": [],
+        "cheaper_alternative": null
+      }
+    ]
+  },
+  {
+    "case_id": "INT-02",
+    "kind": "interview",
+    "reviewed": [
+      {
+        "day": "2026-10-12",
+        "start_local": "10:30",
+        "status": "INFEASIBLE_TRAVEL",
+        "feasible": false,
+        "cost": 156.8,
+        "travel_in": 23,
+        "travel_out": 46,
+        "required_wake": "",
+        "reasons": [
+          "69 min travel",
+          "only -23 min slack after the previous meeting"
+        ],
+        "blocking": [
+          "INFEASIBLE_TRAVEL (23 min travel, 0 min gap)",
+          "INFEASIBLE_TRAVEL (46 min travel, 30 min gap)"
+        ]
+      },
+      {
+        "day": "2026-10-07",
+        "start_local": "09:30",
+        "status": "OVERLAP",
+        "feasible": false,
+        "cost": 116.2,
+        "travel_in": 58,
+        "travel_out": 35,
+        "required_wake": "07:46",
+        "reasons": [
+          "93 min travel",
+          "travels in rush hour"
+        ],
+        "blocking": [
+          "OVERLAP (37 min travel, -90 min gap)"
+        ]
+      },
+      {
+        "day": "2026-10-06",
+        "start_local": "08:30",
+        "status": "OVERLAP",
+        "feasible": false,
+        "cost": 157.6,
+        "travel_in": 58,
+        "travel_out": 71,
+        "required_wake": "06:46",
+        "reasons": [
+          "129 min travel",
+          "39 min idle between commitments",
+          "travels in rush hour"
+        ],
+        "blocking": [
+          "OVERLAP (79 min travel, -120 min gap)"
+        ]
+      }
+    ],
+    "recommended": [
+      {
+        "source": "meira_suggested",
+        "day": "2026-10-11",
+        "start_local": "16:45",
+        "status": "OK",
+        "feasible": true,
+        "cost": 64.0,
+        "travel_in": 33,
+        "travel_out": 0,
+        "required_wake": "",
+        "reasons": [
+          "33 min travel",
+          "travels in rush hour",
+          "only 12 min slack after the previous meeting"
+        ],
+        "blocking": [],
+        "cheaper_alternative": null
+      },
+      {
+        "source": "meira_suggested",
+        "day": "2026-10-11",
+        "start_local": "18:15",
+        "status": "OK",
+        "feasible": true,
+        "cost": 83.4,
+        "travel_in": 33,
+        "travel_out": 0,
+        "required_wake": "",
+        "reasons": [
+          "33 min travel",
+          "92 min idle between commitments",
+          "travels in rush hour"
+        ],
+        "blocking": [],
+        "cheaper_alternative": null
+      },
+      {
+        "source": "meira_suggested",
+        "day": "2026-10-07",
+        "start_local": "18:30",
+        "status": "OK",
+        "feasible": true,
+        "cost": 85.0,
+        "travel_in": 48,
+        "travel_out": 0,
+        "required_wake": "",
+        "reasons": [
+          "48 min travel",
+          "travels in rush hour",
+          "only 12 min slack after the previous meeting"
+        ],
+        "blocking": [],
+        "cheaper_alternative": null
+      }
+    ]
+  },
+  {
+    "case_id": "INT-03",
+    "kind": "interview",
+    "reviewed": [
+      {
+        "day": "2026-10-14",
+        "start_local": "13:00",
+        "status": "OK",
+        "feasible": true,
+        "cost": 60.0,
+        "travel_in": 19,
+        "travel_out": 41,
+        "required_wake": "",
+        "reasons": [
+          "60 min travel"
+        ],
+        "blocking": []
+      },
+      {
+        "day": "2026-10-15",
+        "start_local": "12:30",
+        "status": "OK",
+        "feasible": true,
+        "cost": 162.8,
+        "travel_in": 19,
+        "travel_out": 43,
+        "required_wake": "",
+        "reasons": [
+          "62 min travel",
+          "198 min idle between commitments"
+        ],
+        "blocking": []
+      },
+      {
+        "day": "2026-10-19",
+        "start_local": "12:30",
+        "status": "OK",
+        "feasible": true,
+        "cost": 162.8,
+        "travel_in": 19,
+        "travel_out": 43,
+        "required_wake": "",
+        "reasons": [
+          "62 min travel",
+          "198 min idle between commitments"
+        ],
+        "blocking": []
+      }
+    ],
+    "recommended": [
+      {
+        "source": "user_offered",
+        "cheaper_alternative": null,
+        "day": "2026-10-14",
+        "start_local": "13:00",
+        "status": "OK",
+        "feasible": true,
+        "cost": 60.0,
+        "travel_in": 19,
+        "travel_out": 41,
+        "required_wake": "",
+        "reasons": [
+          "60 min travel"
+        ],
+        "blocking": []
+      },
+      {
+        "source": "user_offered",
+        "cheaper_alternative": null,
+        "day": "2026-10-15",
+        "start_local": "12:30",
+        "status": "OK",
+        "feasible": true,
+        "cost": 162.8,
+        "travel_in": 19,
+        "travel_out": 43,
+        "required_wake": "",
+        "reasons": [
+          "62 min travel",
+          "198 min idle between commitments"
+        ],
+        "blocking": []
+      },
+      {
+        "source": "user_offered",
+        "cheaper_alternative": null,
+        "day": "2026-10-19",
+        "start_local": "12:30",
+        "status": "OK",
+        "feasible": true,
+        "cost": 162.8,
+        "travel_in": 19,
+        "travel_out": 43,
+        "required_wake": "",
+        "reasons": [
+          "62 min travel",
+          "198 min idle between commitments"
+        ],
+        "blocking": []
+      }
+    ]
+  },
+  {
+    "case_id": "INT-04",
+    "kind": "interview",
+    "reviewed": [
+      {
+        "day": "2026-10-07",
+        "start_local": "10:45",
+        "status": "INFEASIBLE_TRAVEL",
+        "feasible": false,
+        "cost": 159.6,
+        "travel_in": 114,
+        "travel_out": 0,
+        "required_wake": "07:52",
+        "reasons": [
+          "114 min travel",
+          "travels in rush hour"
+        ],
+        "blocking": [
+          "INFEASIBLE_TRAVEL (114 min travel, 0 min gap)"
+        ]
+      },
+      {
+        "day": "2026-10-12",
+        "start_local": "10:45",
+        "status": "INFEASIBLE_TRAVEL",
+        "feasible": false,
+        "cost": 159.6,
+        "travel_in": 114,
+        "travel_out": 0,
+        "required_wake": "07:52",
+        "reasons": [
+          "114 min travel",
+          "travels in rush hour"
+        ],
+        "blocking": [
+          "INFEASIBLE_TRAVEL (114 min travel, 0 min gap)"
+        ]
+      },
+      {
+        "day": "2026-10-14",
+        "start_local": "10:45",
+        "status": "INFEASIBLE_TRAVEL",
+        "feasible": false,
+        "cost": 159.6,
+        "travel_in": 114,
+        "travel_out": 0,
+        "required_wake": "07:52",
+        "reasons": [
+          "114 min travel",
+          "travels in rush hour"
+        ],
+        "blocking": [
+          "INFEASIBLE_TRAVEL (114 min travel, 0 min gap)"
+        ]
+      }
+    ],
+    "recommended": [
+      {
+        "source": "meira_suggested",
+        "day": "2026-10-07",
+        "start_local": "16:30",
+        "status": "OK",
+        "feasible": true,
+        "cost": 114.0,
+        "travel_in": 114,
+        "travel_out": 0,
+        "required_wake": "13:37",
+        "reasons": [
+          "114 min travel"
+        ],
+        "blocking": [],
+        "cheaper_alternative": null
+      },
+      {
+        "source": "meira_suggested",
+        "day": "2026-10-12",
+        "start_local": "16:30",
+        "status": "OK",
+        "feasible": true,
+        "cost": 114.0,
+        "travel_in": 114,
+        "travel_out": 0,
+        "required_wake": "13:37",
+        "reasons": [
+          "114 min travel"
+        ],
+        "blocking": [],
+        "cheaper_alternative": null
+      },
+      {
+        "source": "meira_suggested",
+        "day": "2026-10-14",
+        "start_local": "16:30",
+        "status": "OK",
+        "feasible": true,
+        "cost": 114.0,
+        "travel_in": 114,
+        "travel_out": 0,
+        "required_wake": "13:37",
+        "reasons": [
+          "114 min travel"
+        ],
+        "blocking": [],
+        "cheaper_alternative": null
+      }
+    ]
+  }
+]

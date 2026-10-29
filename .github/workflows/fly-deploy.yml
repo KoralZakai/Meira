@@ -16,11 +16,35 @@ name: Fly Deploy
 on:
   push:
     branches: [master]
-  workflow_dispatch: {}   # lets you deploy manually from the Actions tab
+  workflow_dispatch:      # lets you deploy manually from the Actions tab
+    inputs:
+      skip_tests:
+        description: 'Deploy without waiting for tests (emergency only)'
+        type: boolean
+        default: false
 
 jobs:
+  # THE GATE. Until this existed, every push to master ran flyctl deploy with
+  # nothing checked — 629 Python tests and 64 TypeScript suites sat in the repo
+  # and the live server never waited for one of them. A stale test had already
+  # been red for a week without anyone finding out.
+  #
+  # It is a real dependency, not a notification: `needs: tests` below means a
+  # red suite stops the deploy. The escape hatch is deliberate and visible —
+  # Actions tab → Run workflow → tick "skip_tests" — so shipping past a
+  # failure is a decision someone makes, not the default.
+  tests:
+    name: Tests
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.skip_tests) }}
+    uses: ./.github/workflows/tests.yml
+
   deploy:
     name: Deploy app
+    needs: tests
+    # `needs` alone would skip the deploy when the gate is skipped, so state the
+    # two ways through explicitly: tests passed, or they were deliberately
+    # bypassed. Any other result (failure, cancelled) does not deploy.
+    if: ${{ always() && (needs.tests.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.skip_tests)) }}
     runs-on: ubuntu-latest
     concurrency: deploy-group      # never run two deploys at once
     steps:

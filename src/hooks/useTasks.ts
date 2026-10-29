@@ -208,7 +208,7 @@ export function useTasks() {
     // `date` matters: the + button on a timeline showing TOMORROW used to add
     // the task to today, because this always wrote today's date. A screen that
     // knows which day it is drawing has to be able to say so.
-    async (text: string, extra?: { fixedTime?: string; durationMinutes?: number; date?: string }) => {
+    async (text: string, extra?: { fixedTime?: string; durationMinutes?: number; date?: string; place?: string }) => {
       const derived = inferTaskDetails(text);
       // READ THE SENTENCE. This used to take the time from the From/Until
       // pickers and nothing else, so "אימון ב 8 בערב ביגאל אלון 94" typed into
@@ -233,7 +233,13 @@ export function useTasks() {
       // Task.alarmAt was read by the alarm planner and set by no one, so the
       // only alarm possible was the one derived from a route.
       const alarmAt = parseWakeRequest(text) ?? undefined;
-      const { place, activity } = extractHebrewPlaceParts(text);
+      const typedPlace = extractHebrewPlaceParts(text);
+      // The place the Add screen's chip SHOWED wins over this Hebrew-only
+      // extractor: it reads English too ("at Rafael David Institute") and the
+      // loose Hebrew appointment form ("ברפאל מכון דוד"), so what she saw is what
+      // gets routed to.
+      const place = extra?.place?.trim() || typedPlace.place;
+      const activity = typedPlace.activity;
       // SHE ALREADY TOLD US WHERE THIS HAPPENS.
       //
       // "יוגה ב-11" names an activity and no address, and until now that meant
