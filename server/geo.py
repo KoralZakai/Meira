@@ -598,6 +598,11 @@ def format_route_message(plan: dict, pref: str = "rail", is_interview: bool = Fa
     return "\n\n".join(["\n".join(head), *blocks, tail])
 
 
+# Past this, her own legs are not a plan: public transport is (29.10).
+_SELF_POWERED_CAP = {"bike": 60, "walk": 45}
+_HE_MODE = {"bike": "אופניים", "walk": "הליכה"}
+
+
 async def plan_departure(
     destination: str,
     arrival_hhmm: str,
@@ -665,6 +670,18 @@ async def plan_departure(
                  else min(alternatives, key=lambda r: r["minutes"]) if alternatives else None)
     else:
         route = await directions(home_geo, dest_geo, transport, arrival_hhmm)
+        cap = _SELF_POWERED_CAP.get(transport)
+        if route and cap and route["minutes"] > cap:
+            # A preference is not a constraint (CLAUDE.md rule 9). 29.10, live: Tel Aviv →
+            # Haifa "by bike", 327 min, leave at 04:23. Past the cap, the plan is public
+            # transport — and it says what was asked and why it changed.
+            fallback = await plan_departure(destination, arrival_hhmm, home_address, "transit",
+                                            routine_minutes, buffer_minutes, start_address)
+            if fallback.get("ok"):
+                fallback["plan"]["fallbackFrom"] = {"transport": transport, "minutes": route["minutes"]}
+                fallback["plan"]["modeNote"] = (f"ב{_HE_MODE.get(transport, transport)} זה {route['minutes']} דק׳ — "
+                                                f"תכננתי בתחבורה ציבורית")
+                return fallback
     if not route:
         return {"ok": False, "message": "Couldn't get a route for that trip — ask the user to confirm address/mode."}
 

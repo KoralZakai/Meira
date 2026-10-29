@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   View,
+  Switch,
   Text,
   StyleSheet,
   TouchableOpacity,
@@ -15,6 +16,7 @@ import {
   Linking,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { allDayPatch, endPatch, isAllDay, lastDay, spanDays, startPatch } from '../utils/allDay';
 import { Task, AppLanguage, TaskPriority, Subtask, TaskLocation, TransportType } from '../types';
 import { BRAND, COLORS, PRIORITY_META, FONTS, RADIUS } from '../constants/theme';
 import { getCategoryMeta, allCategories, createCustomCategory, CategoryEntry } from '../constants/categories';
@@ -56,6 +58,10 @@ interface TaskDetailBottomSheetProps {
 
 const PRIORITIES: TaskPriority[] = ['must', 'have_to', 'need_to', 'nice_to_do'];
 const pad = (n: number) => String(n).padStart(2, '0');
+
+function shortDate(iso: string): string {
+  return /^\d{4}-\d{2}-\d{2}$/.test(iso || '') ? `${Number(iso.slice(8, 10))}.${Number(iso.slice(5, 7))}` : iso;
+}
 
 function deadlineToDate(value?: string): Date {
   if (value && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
@@ -160,6 +166,7 @@ export default function TaskDetailBottomSheet({
   const [titleText, setTitleText] = useState(task.text);
   const [notesText, setNotesText] = useState(task.progress ?? '');
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showEndPicker, setShowEndPicker] = useState(false);
   const [timeField, setTimeField] = useState<'from' | 'to' | null>(null);
   const [editingEmail, setEditingEmail] = useState(false);
   const [emailDraft, setEmailDraft] = useState('');
@@ -314,7 +321,14 @@ export default function TaskDetailBottomSheet({
   const onDateChange = (event: any, selected?: Date) => {
     setShowDatePicker(false);
     if (event?.type === 'dismissed' || !selected) return;
-    commit({ date: toDateStr(selected) });
+    commit(startPatch(task, toDateStr(selected)));
+  };
+
+  // The last day of an all-day range (utils/allDay). Before the first = one day.
+  const onEndDateChange = (event: any, selected?: Date) => {
+    setShowEndPicker(false);
+    if (event?.type === 'dismissed' || !selected) return;
+    commit(endPatch(task, toDateStr(selected)));
   };
 
   // From/To time pickers → set fixedTime + endTime, and derive durationMinutes.
@@ -480,6 +494,37 @@ export default function TaskDetailBottomSheet({
                         <Text style={[styles.coreValue, rtl]} numberOfLines={1}>{formatDeadline(task.date, isHe)}</Text>
                       </TouchableOpacity>
                     </View>
+                    {/* 29.10: a whole day, or from date to date — no hours (utils/allDay). */}
+                    <View style={[styles.coreRow, { flexDirection: dir, marginTop: 4 }]}>
+                      <Text style={[styles.coreValue, rtl, { flex: 1, minWidth: 0 }]} numberOfLines={1}>{isHe ? 'כל היום' : 'All day'}</Text>
+                      <Switch
+                        value={isAllDay(task)}
+                        onValueChange={(on) => commit(allDayPatch(on, task))}
+                        trackColor={{ false: BRAND.line, true: BRAND.sunGold }}
+                        thumbColor={BRAND.white}
+                        accessibilityLabel={isHe ? 'כל היום' : 'All day'}
+                      />
+                    </View>
+                    {isAllDay(task) ? (
+                      <View style={[styles.stepRow, { flexDirection: dir }]}>
+                        <TouchableOpacity style={[styles.timeBtn, styles.dateBtn]} onPress={() => setShowDatePicker(true)} accessibilityRole="button"
+                          accessibilityLabel={isHe ? 'מתאריך' : 'From date'}>
+                          <Text style={styles.timeText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>{shortDate(task.date)}</Text>
+                        </TouchableOpacity>
+                        <Text style={styles.stepArrow}>{isHe ? '←' : '→'}</Text>
+                        <TouchableOpacity style={[styles.timeBtn, styles.dateBtn]} onPress={() => setShowEndPicker(true)} accessibilityRole="button"
+                          accessibilityLabel={isHe ? 'עד תאריך' : 'To date'}>
+                          <Text style={styles.timeText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
+                            {task.endDate ? shortDate(lastDay(task)) : (isHe ? 'עד…' : 'Until…')}
+                          </Text>
+                        </TouchableOpacity>
+                        {spanDays(task) > 1 ? (
+                          <Text style={[styles.coreLabel, { flexShrink: 1 }]} numberOfLines={1}>
+                            {isHe ? `${spanDays(task)} ימים` : `${spanDays(task)} days`}
+                          </Text>
+                        ) : null}
+                      </View>
+                    ) : (
                     <View style={[styles.stepRow, { flexDirection: dir }]}>
                       <TouchableOpacity style={styles.stepBtn} onPress={() => shift(-5)} accessibilityRole="button" accessibilityLabel={isHe ? '5 דקות מוקדם יותר' : '5 minutes earlier'}>
                         <Text style={styles.stepText} numberOfLines={1}>−5</Text>
@@ -495,6 +540,7 @@ export default function TaskDetailBottomSheet({
                         <Text style={styles.stepText} numberOfLines={1}>+5</Text>
                       </TouchableOpacity>
                     </View>
+                    )}
                   </View>
 
                   {place ? (
@@ -1099,6 +1145,10 @@ export default function TaskDetailBottomSheet({
       {showDatePicker && (
         <DateTimePicker value={deadlineToDate(task.date)} mode="date" onChange={onDateChange} />
       )}
+      {showEndPicker && (
+        <DateTimePicker value={deadlineToDate(task.endDate || task.date)} minimumDate={deadlineToDate(task.date)}
+          mode="date" onChange={onEndDateChange} />
+      )}
       {timeField && (
         <DateTimePicker
           value={timeToDate(timeField === 'from' ? fromTime : toTime)}
@@ -1134,6 +1184,7 @@ const styles = StyleSheet.create({
   stepRow: { alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 10 },
   stepBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(20,27,46,0.07)', alignItems: 'center', justifyContent: 'center' },
   stepText: { fontFamily: FONTS.bodyHeavy, fontSize: 13, color: BRAND.warmInk },
+  dateBtn: { minWidth: 88 },
   timeBtn: { minWidth: 72, minHeight: 44, paddingHorizontal: 10, borderRadius: 14, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: BRAND.line, alignItems: 'center', justifyContent: 'center' },
   timeText: { fontFamily: FONTS.bodyHeavy, fontSize: 18, color: BRAND.warmInk, fontVariant: ['tabular-nums'] },
   stepArrow: { fontSize: 16, color: BRAND.inkSoft },

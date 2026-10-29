@@ -585,8 +585,17 @@ def task_from(action: dict, message: str, today: Optional[_date] = None) -> Opti
     task = task_extract.finalize(raw, title if action.get("date_expression") else message, today)
     task["text"] = title
     if not start and _truthy(action.get("all_day")):
-        task["fixed_time"] = task_extract.DAY_LONG_START
-        task["duration_minutes"] = task_extract.DAY_LONG_MINUTES
+        if task_extract.day_long(title):
+            # Reserve duty / a day at a venue: she must GET there — an hour gives
+            # it a route and a wake alarm (lumi_agent, day_long).
+            task["fixed_time"] = task_extract.DAY_LONG_START
+            task["duration_minutes"] = task_extract.DAY_LONG_MINUTES
+            return task
+        # A day off / vacation: a WHOLE day with no hour (29.10). It used to be
+        # 08:00–16:00, and Zumba was then planned at 16:15 on her Midburn day.
+        task["allDay"] = True
+        task["fixed_time"] = None
+        task["duration_minutes"] = 24 * 60
         return task
     part = str(action.get("part_of_day") or "").strip().lower()
     if not start and part in PARTS_OF_DAY:

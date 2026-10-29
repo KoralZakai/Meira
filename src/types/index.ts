@@ -283,6 +283,8 @@ export interface Task {
   /** When the physical alarm was actually set (epoch ms). Set with 'armed'. */
   alarmArmedAt?: number;
   endTime?: string;              // HH:MM — end of the from→to time range (start is fixedTime)
+  allDay?: boolean;              // a whole day, no hours (29.10) — a strip above the timeline
+  endDate?: string;              // YYYY-MM-DD, inclusive: from `date` to here (all-day ranges)
   repeatDays?: number[];         // weekdays this task repeats on: 0=Sun … 6=Sat
   location?: TaskLocation | string;
   /**
@@ -613,6 +615,10 @@ export interface CalendarEvent {
   title: string;
   startTime: string;
   endTime: string;
+  /** A whole-day event (29.10): no clock time; startDate → endDate (inclusive) instead. */
+  allDay?: boolean;
+  startDate?: string;
+  endDate?: string;
   location?: string;
   description?: string;
   attendees?: string[];

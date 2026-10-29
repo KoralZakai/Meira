@@ -14,9 +14,8 @@ import { Task } from '../types/models';
 import { arrivedOnTime, learnTravelProfileFromTask } from './MorningRoutineService';
 import { sendInstantNotification } from './NotificationService';
 import { geocodeAddress } from './LumiServer';
+import { distanceMeters, NEARBY_RADIUS_METERS, nearbyDue, nearbyMessage } from '../utils/nearbyDue';
 
-const NEARBY_RADIUS_METERS = 350;
-const MIN_REMINDER_INTERVAL_MS = 90 * 60 * 1000;
 const HOME_DEPARTURE_RADIUS_METERS = 180;
 
 type LocationModule = typeof import('expo-location');
@@ -294,23 +293,6 @@ export async function getCurrentLocationDetails(): Promise<{ label: string; lat:
   }
 }
 
-function distanceMeters(
-  left: { lat: number; lng: number },
-  right: { lat: number; lng: number },
-): number {
-  const toRadians = (degrees: number) => (degrees * Math.PI) / 180;
-  const earthRadius = 6371000;
-
-  const dLat = toRadians(right.lat - left.lat);
-  const dLng = toRadians(right.lng - left.lng);
-
-  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
-    + Math.cos(toRadians(left.lat)) * Math.cos(toRadians(right.lat))
-    * Math.sin(dLng / 2) * Math.sin(dLng / 2);
-
-  return earthRadius * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
-}
-
 /** If the user is near a pending task's location, fire an instant 'you're nearby' nudge. */
 export async function checkAndNotifyNearbyTasks(
   tasks: Task[],
@@ -338,29 +320,9 @@ export async function checkAndNotifyNearbyTasks(
     const now = Date.now();
     let reminderCount = 0;
 
-    for (const task of tasks) {
-      if (task.status !== 'pending' || !task.locationLat || !task.locationLng) {
-        continue;
-      }
-
-      if (task.lastNearbyReminderAt && now - task.lastNearbyReminderAt < MIN_REMINDER_INTERVAL_MS) {
-        continue;
-      }
-
-      const meters = distanceMeters(currentPoint, {
-        lat: task.locationLat,
-        lng: task.locationLng,
-      });
-
-      if (meters > NEARBY_RADIUS_METERS) {
-        continue;
-      }
-
-      await sendInstantNotification(
-        'Nearby task reminder',
-        `You are close to ${task.location ?? 'a task location'}. You can complete "${task.text}".`,
-        { taskId: task.id, type: 'nearby-task' },
-      );
+    for (const { task } of nearbyDue(tasks, currentPoint, now)) {
+      const msg = nearbyMessage(task);
+      await sendInstantNotification(msg.title, msg.body, { taskId: task.id, type: 'nearby-task' });
 
       await onTaskReminded(task.id, now);
       reminderCount += 1;

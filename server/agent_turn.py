@@ -53,6 +53,7 @@ import past_log
 import constraints
 import frame as _frame
 import intent_turn
+import feedback_learning
 import model_router
 import place_ranker
 import reminders
@@ -1022,6 +1023,14 @@ async def run_turn(
         logger.warning("place-reminder step failed: %s", type(exc).__name__)
         placed = None
     if placed:
+        if placed.get("contact_query"):
+            try:
+                # Her "yes — Moshe Levi" to the phone's question comes back here (intent_turn._picked).
+                session.set_pending_choice(phone, intent_turn.CONTACT_OWNER, 1, [placed["contact_query"]],
+                                           {"reminder": (placed.get("place_reminders") or [{}])[0].get("text", ""),
+                                            "he": bool(_HEBREW_RE.search(content or ""))})
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("contact question not kept: %s", type(exc).__name__)
         try:
             conversation.append(history_key, content, placed["text"])
         except Exception as exc:  # noqa: BLE001
@@ -1154,8 +1163,15 @@ async def run_turn(
             logger.warning("voice turn not kept in history: %s", exc)
     else:
         before = _profile_snapshot(history_key)
-        response = await handle_whatsapp_message(stamped, user, learned, here=here,
-                                                 tier=model_router.tier_for_frame(fr))
+        # The tier: what the message IS, then what her 👍/👎 taught (feedback_learning).
+        try:
+            tier = model_router.tier_for_frame(fr) or feedback_learning.tier_for((fr or {}).get("intent") or "UNREAD",
+                                                                         [profile_key, history_key, phone])
+            stamped = feedback_learning.avoid_block([profile_key, history_key, phone]) + stamped
+        except Exception as exc:  # noqa: BLE001 — learning is help, never a blocker
+            logger.warning("feedback learning skipped: %s", type(exc).__name__)
+            tier = model_router.tier_for_frame(fr)
+        response = await handle_whatsapp_message(stamped, user, learned, here=here, tier=tier)
         if only_promises(response.get("text")):
             # 27.10 live: "I'll fetch the forecast — give me a sec…" and the turn
             # ended. A promise is not an answer: once more, told so.
@@ -1724,6 +1740,13 @@ def said_saved_lines(saved: list, he: bool, placed: Optional[set] = None) -> lis
     lines: list = []
     by_day: dict = {}
     loose: list = []
+    for t in [t for t in saved if t.get("allDay") and t.get("date")]:
+        # A whole day / a range: said as one line, no hour (29.10).
+        span = (f"{_day_word(t['date'], he)} – {_day_word(t['endDate'], he)}" if t.get("endDate")
+                else _day_word(t["date"], he))
+        lines.append(f"קבעתי: {t.get('text')} · כל היום · {span} ✓" if he
+                     else f"Done — {t.get('text')} · all day · {span} ✓")
+    saved = [t for t in saved if not (t.get("allDay") and t.get("date"))]
     for i, t in enumerate(saved):
         (by_day.setdefault(str(t["date"])[:10], []) if t.get("date") else loose).append((i, t))
     days = sorted(by_day)
@@ -1969,6 +1992,11 @@ def tasks_of(actions: list, content: str) -> list:
         elif expr and prev_last and _understand._truthy(action.get("after_previous")):
             after = _tz.resolve_after(expr, prev_last)
             dates = [after] if after else []
+        if dates and task.get("allDay") and len(dates) > 1:
+            # "חופש משני עד שבת": ONE whole-day task across the range, not six (29.10).
+            out.append({**task, "date": dates[0].isoformat(), "endDate": dates[-1].isoformat()})
+            prev_last = dates[-1]
+            continue
         if dates:
             out += [{**task, "date": d.isoformat()} for d in dates]
             prev_last = dates[-1]

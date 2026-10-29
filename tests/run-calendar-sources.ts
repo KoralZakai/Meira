@@ -71,9 +71,15 @@ check('declined meeting is not in her day', graphEventToCalendarEvent({
 check('cancelled skipped', graphEventToCalendarEvent({
   id: 'c', subject: 'x', isCancelled: true, start: { dateTime: '2026-09-30T08:00:00', timeZone: 'UTC' },
 }) === null);
-check('all-day skipped (no invented midnight alarm)', graphEventToCalendarEvent({
+// 29.10: an all-day event is a WHOLE DAY (no hour → no invented midnight alarm), not dropped.
+const holiday = graphEventToCalendarEvent({
   id: 'a', subject: 'Holiday', isAllDay: true, start: { dateTime: '2026-09-30T00:00:00', timeZone: 'UTC' },
-}) === null);
+  end: { dateTime: '2026-10-03T00:00:00', timeZone: 'UTC' },
+});
+check('all-day Outlook event → a whole-day range, no hour', holiday?.event.allDay === true
+  && holiday?.event.startDate === '2026-09-30' && holiday?.event.endDate === '2026-10-02' && holiday?.event.startTime === '');
+const holidayTask: any = holiday && calendarEventToTask(holiday.event, holiday.date, 'outlook');
+check('…its task has no fixed time (so no alarm, no route)', holidayTask?.allDay === true && !holidayTask?.fixedTime && !holidayTask?.isFixed);
 
 console.log('\nPhone calendar (expo-calendar, Android)');
 const local = (h: number, m: number, day = 30) => new Date(2026, 8, day, h, m).toISOString();
@@ -88,9 +94,11 @@ check('address kept → journey', devTask?.location === 'Ibn Gabirol 30, Tel Avi
 check('category doctor-ish from "Dentist"', devTask?.category === 'doctor', devTask?.category);
 check('dcal- id', devTask?.id === 'dcal-412');
 check('recurring device event keyed by date', calendarTaskId('device', '77', '2026-10-06', true) === 'dcal-77@2026-10-06');
-check('all-day device event skipped', deviceEventToCalendarEvent({
-  id: '1', title: 'Birthday', startDate: local(0, 0), endDate: local(0, 0, 31), allDay: true,
-}) === null);
+const bday = deviceEventToCalendarEvent({
+  id: '1', title: 'Birthday', startDate: '2026-10-06T00:00:00.000Z', endDate: '2026-10-07T00:00:00.000Z', allDay: true,
+});
+check('all-day device event → one whole day (UTC midnight, end exclusive)', bday?.event.allDay === true
+  && bday?.date === '2026-10-06' && bday?.event.endDate === undefined);
 check('cancelled device occurrence skipped', deviceEventToCalendarEvent({
   id: '2', title: 'Class', startDate: local(9, 0), endDate: local(10, 0), status: 'CANCELED',
 }) === null);

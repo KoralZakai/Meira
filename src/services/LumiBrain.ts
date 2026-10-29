@@ -284,14 +284,38 @@ export async function brainTurn(
         placeNote = he ? '\n⚠️ לא הצלחתי לשמור את התזכורת בטלפון — נסי שוב.' : "\n⚠️ Couldn't keep the reminder on this phone — try again.";
       }
     }
+    // "…return the pc to Moshe" (29.10): WHICH Moshe is on this phone, never the server —
+    // the address book does not leave it. Asked once; her answer goes back as a reply.
+    let contactNote = '';
+    let contactReplies: string[] = [];
+    if (typeof body.contact_query === 'string' && body.contact_query.trim()) {
+      const he = /[\u0590-\u05FF]/.test(String(body.text ?? ''));
+      const who = body.contact_query.trim().slice(0, 40);
+      try {
+        const { ContactService } = await import('./ContactService');
+        const match = await ContactService.getBestContactMatch(who);
+        if (match) {
+          // Name only: the reply text travels (👍/👎 feedback), so the number stays in the address book.
+          contactNote = he
+            ? `\n👤 ${who} — זה ${match.name} מאנשי הקשר?`
+            : `\n👤 ${who} — is that ${match.name} from your contacts?`;
+          contactReplies = [he ? `כן — ${match.name}` : `Yes — ${match.name}`, he ? `לא, ${who} אחר` : `No, another ${who}`];
+        } else {
+          contactNote = he ? `\n👤 לא מצאתי את ${who} באנשי הקשר — מה השם המלא?` : `\n👤 I couldn't find ${who} in your contacts — what's the full name?`;
+        }
+      } catch (e) {
+        console.warn('[LumiBrain] contact lookup failed', e);
+        contactNote = he ? `\n👤 לא הצלחתי לבדוק באנשי הקשר מי ${who}.` : `\n👤 I couldn't check your contacts for ${who}.`;
+      }
+    }
     const profileChanges: ProfileChange[] = Array.isArray(body.profile_changes) ? body.profile_changes : [];
     const answer = asLookupAnswer(body.answer);
     const chain = asChainAnswer(body.chain);
-    const replies = Array.isArray(body.replies)
+    const replies = [...(Array.isArray(body.replies)
       ? body.replies.filter((r: unknown) => typeof r === 'string' && r.trim()).slice(0, 3).map((r: string) => r.slice(0, 40))
-      : [];
+      : []), ...contactReplies].slice(0, 3);
     return {
-      text: String(body.text ?? '') + placeNote, tasks, departures: body.departures ?? [],
+      text: String(body.text ?? '') + placeNote + contactNote, tasks, departures: body.departures ?? [],
       ...(profileChanges.length ? { profileChanges } : {}),
       ...(typeof body.type === 'string' ? { type: body.type } : {}),
       ...(answer ? { answer } : {}),

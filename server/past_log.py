@@ -225,6 +225,19 @@ def count_line(rows: list, a: str, b: str, today: date, label: str, he: bool) ->
     elif not n:
         line += (" התאמנת? כתבי למשל 'התאמנתי ביום ראשון' ואסמן." if he
                  else " Did you? Say e.g. 'I trained on Sunday' and I'll tick it.")
+    # The push (Koral 29.10): "and if you go today, it'll be 3 — you can make it :)"
+    if b >= today.isoformat():
+        tonight = sorted((r for r in rows if is_workout(r) and str(r.get("date") or "")[:10] == today.isoformat()
+                          and str(r.get("status") or "pending") in ("pending", "partial") and not is_past_titled(r)),
+                         key=lambda r: str(r.get("fixed_time") or r.get("fixedTime") or "99"))
+        if tonight:
+            r = tonight[0]
+            at = r.get("fixed_time") or r.get("fixedTime")
+            line += (f"\nואם תלכי היום ל{r.get('text')}{' ב-' + at if at else ''} — זה יהיה {n + 1}! את יכולה 💪" if he
+                     else f"\nAnd if you go to {r.get('text')} today{' at ' + at if at else ''}, that's {n + 1} — you can make it 💪")
+        elif n:
+            line += (f"\nעוד אימון היום וזה {n + 1} 💪 רוצה שאמצא לך זמן?" if he
+                     else f"\nOne more today and it's {n + 1} 💪 Want me to find you a time?")
     return line
 
 
@@ -237,7 +250,9 @@ def away_task(day_tasks: list, iso: str) -> Optional[dict]:
     """The vacation / trip / reserve duty that day, if any — a day she is not
     available (29.10: Zumba was booked on her Midburn day)."""
     for t in day_tasks:
-        if str(t.get("date") or "")[:10] == iso and _AWAY_RE.search(str(t.get("text") or "")) \
+        first = str(t.get("date") or "")[:10]
+        last = str(t.get("endDate") or first)[:10] if t.get("allDay") else first
+        if first <= iso <= max(first, last) and _AWAY_RE.search(str(t.get("text") or "")) \
                 and str(t.get("status") or "pending") not in ("complete", "cancelled", "moved", "deleted"):
             return t
     return None

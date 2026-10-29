@@ -25,6 +25,11 @@ _REMIND_EN = r"remind\s+me\s+(?:to\s+)?"
 _ARRIVE_EN = r"when\s+i\s+(?:get\s+to|arrive\s+(?:at|in)|reach|am\s+at|get\s+home)"
 _LEAVE_EN = r"when\s+i\s+(?:leave|get\s+out\s+of)"
 
+# "Remember me when I'm heading to Florentin to return the pc to Moshe" (29.10):
+# on the way there = when she LEAVES home, so the thing to bring is with her.
+_HEAD_EN = r"(?:remind|remember)\s+me\s+when\s+i(?:'?m|\s+am)?\s+(?:heading|going|on\s+my\s+way|driving|leaving)\s+(?:to|for)\s+"
+_HEAD_HE = r"(?:תזכיר(?:י|ו)?\s+לי|תזכרי\s+אותי)\s+כש(?:אני\s+)?(?:בדרך|נוסעת|נוסע|הולכת|הולך|יוצאת)\s+(?:ל|אל\s+)"
+
 _PLACE = r"(?P<place>[^,.!?]+?)"
 _WHAT = r"(?P<what>[^.!?]+?)"
 _END = r"\s*[.!?]*\s*$"
@@ -48,11 +53,31 @@ def _clean_place(p: str) -> str:
     return (p or "").strip().strip("\"'״׳")
 
 
+_HEAD_RE = [re.compile(rf"^\s*{_HEAD_EN}(?P<dest>[A-Za-z\u0590-\u05FF' .-]+?)\s+(?:to|and)\s+(?P<what>[^.!?]+?){_END}", re.I),
+            re.compile(rf"^\s*{_HEAD_HE}(?P<dest>[\u0590-\u05FF' -]+?)\s+(?P<what>ל[\u0590-\u05FF][^.!?]*?){_END}", re.I)]
+_TO_PERSON = re.compile(r"(?:\bto|\bfor|\bwith|(?<![\u0590-\u05FF])ל|(?<![\u0590-\u05FF])אל\s+|(?<![\u0590-\u05FF])עם\s+)\s*(?P<name>[A-Z][a-z]{2,}|[\u0590-\u05FF]{2,})\s*$")
+_NOT_A_NAME = {"home", "work", "him", "her", "them", "הבית", "בית", "עבודה", "אותו", "אותה"}
+
+
+def person_in(what: str) -> Optional[str]:
+    """The person at the end of the errand ("…return the pc to Moshe" → Moshe), or None."""
+    m = _TO_PERSON.search(str(what or "").strip())
+    name = m.group("name") if m else None
+    return name if name and name.lower() not in _NOT_A_NAME else None
+
+
 def parse(text: str) -> Optional[dict]:
-    """{trigger: 'arrive'|'leave', place, what} or None. "when I get home" has no separate place word."""
+    """{trigger: 'arrive'|'leave', place, what, [dest], [person]} or None.
+    "when I get home" has no separate place word."""
     t = (text or "").strip()
     if not t or len(t) > 200:
         return None
+    for rx in _HEAD_RE:
+        m = rx.match(t)
+        if m:
+            what = m.group("what").strip().strip(",")
+            dest = _clean_place(m.group("dest"))
+            return {"trigger": "leave", "place": "home", "what": what, "dest": dest, "person": person_in(what)}
     for trigger, rx in _PATTERNS:
         m = rx.match(t)
         if not m:
@@ -63,7 +88,8 @@ def parse(text: str) -> Optional[dict]:
         what = (m.group("what") or "").strip().strip(",")
         if not place or not what:
             continue
-        return {"trigger": trigger, "place": place, "what": what}
+        who = person_in(what)
+        return {"trigger": trigger, "place": place, "what": what, **({"person": who} if who else {})}
     return None
 
 
@@ -130,12 +156,18 @@ async def turn(phone: str, content: str, profile: dict) -> Optional[dict]:
                 "work": "Where do you work? Give me the address and I'll remind you there."}.get(kind or "")
                or f"I couldn't find where '{parsed['place']}' is — what's the address?")
         return {"text": ask, "type": "answer", "tasks": [], "departures": []}
-    reminder = {"id": f"pr-{uuid.uuid4().hex[:12]}", "text": parsed["what"], "trigger": parsed["trigger"],
+    what = parsed["what"] + (f" ({parsed['dest']})" if parsed.get("dest") else "")
+    reminder = {"id": f"pr-{uuid.uuid4().hex[:12]}", "text": what, "trigger": parsed["trigger"],
                 **where}
     if he:
-        text = f"אזכיר לך {he_when(parsed['trigger'], where['label'], future=True)}: {parsed['what']} ✓"
+        text = f"אזכיר לך {he_when(parsed['trigger'], where['label'], future=True)}: {what} ✓"
     else:
         verb = "when you get to " if parsed["trigger"] == "arrive" else "when you leave "
-        text = f"I'll remind you {verb}{where['label']}: {parsed['what']} ✓"
+        text = f"I'll remind you {verb}{where['label']}" + (f" on your way to {parsed['dest']}" if parsed.get("dest") else "") \
+            + f": {parsed['what']} ✓"
     logger.warning("place reminder set (%s)", parsed["trigger"])
-    return {"text": text, "type": "answer", "tasks": [], "departures": [], "place_reminders": [reminder]}
+    out = {"text": text, "type": "answer", "tasks": [], "departures": [], "place_reminders": [reminder]}
+    if parsed.get("person"):
+        # WHICH Moshe: the phone looks the name up in her contacts and asks (LumiBrain).
+        out["contact_query"] = parsed["person"]
+    return out

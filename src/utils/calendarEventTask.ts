@@ -72,6 +72,30 @@ export function calendarEventToTask(
   // somewhere you can stand. `location` keeps only a real place.
   const place = e.location && !isOnlineOnlyPlace(e.location) ? e.location : undefined;
   const id = calendarTaskId(provider, e.id, date, opts.recurring);
+  if (e.allDay) {
+    // A whole day or a range (vacation, a conference): no hour, so no route,
+    // no leave time and no wake alarm — a strip above the day (utils/allDay).
+    const start = e.startDate || date;
+    return {
+      id: calendarTaskId(provider, e.id, start, opts.recurring),
+      text: e.title,
+      isFixed: false,
+      allDay: true,
+      date: start,
+      endDate: e.endDate && e.endDate > start ? e.endDate : undefined,
+      durationMinutes: 24 * 60,
+      status: 'pending',
+      source: 'calendar',
+      calendarEventId: provider === 'google' ? e.id : `${provider}:${e.id}`,
+      location: place,
+      hasLocation: Boolean(place),
+      calendarName: opts.calendarName,
+      category: label.category,
+      priority: label.priority,
+      createdAt: Date.now(),
+      historicalDurations: [],
+    } as unknown as Task;
+  }
   return {
     id,
     text: e.title,

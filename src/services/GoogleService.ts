@@ -12,6 +12,7 @@
  * without a user-confirmed origin. Consumers: LLMService, LumiCoachEngine,
  * WakeCalculator screen.
  */
+import { endFromExclusive } from '../utils/allDay';
 import * as AuthSession from 'expo-auth-session';
 import * as SecureStore from 'expo-secure-store';
 import * as WebBrowser from 'expo-web-browser';
@@ -31,6 +32,8 @@ WebBrowser.maybeCompleteAuthSession();
  */
 export interface CalendarFetchResult {
   events: CalendarEvent[];
+  /** Whole-day events, apart: `events` stays timed-only for the brief and the alarm (29.10). */
+  allDay?: CalendarEvent[];
   error?: string;
 }
 
@@ -468,6 +471,21 @@ export const GoogleService = {
       // database decides the offset on both sides of a DST change.
       const hhmm = localClockOf;
 
+      // A vacation or a conference in Google is an all-day event: imported as
+      // a whole day / a range (utils/allDay), never as 00:00 (29.10, Koral).
+      const allDay: CalendarEvent[] = (data.items || [])
+        .filter((item: any) => item.start?.date && !item.start?.dateTime && item.status !== 'cancelled' && item.summary)
+        .map((item: any) => ({
+          id: item.id,
+          title: item.summary,
+          startTime: '',
+          endTime: '',
+          allDay: true,
+          startDate: String(item.start.date),
+          endDate: endFromExclusive(String(item.start.date), item.end?.date),
+          location: item.location || undefined,
+          description: item.description,
+        }));
       const events: CalendarEvent[] = (data.items || [])
         // An all-day event has `start.date` and no `start.dateTime`. It has no
         // clock time at all, so giving it 00:00 would invent a midnight
@@ -499,7 +517,7 @@ export const GoogleService = {
             .filter(Boolean),
           organizer: item.organizer?.email,
         }));
-      return { events };
+      return { events, allDay };
     } catch (e) {
       const reason = `network: ${String((e as Error)?.message || e).slice(0, 200)}`;
       console.warn('[Google] calendar fetch threw', date, reason);

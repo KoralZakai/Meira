@@ -6,7 +6,7 @@ import place_reminder as pr
 
 def test_hebrew_arrive_both_orders():
     assert pr.parse("כשאגיע לעבודה תזכירי לי להתקשר לדני") == {
-        "trigger": "arrive", "place": "עבודה", "what": "להתקשר לדני"}
+        "trigger": "arrive", "place": "עבודה", "what": "להתקשר לדני", "person": "דני"}  # 29.10: which Dani is asked
     p = pr.parse("תזכירי לי לקנות חלב כשאגיע לסופר")
     assert p["trigger"] == "arrive" and p["place"] == "סופר" and p["what"] == "לקנות חלב"
 
@@ -58,3 +58,12 @@ def test_hebrew_prepositions():
     assert pr.he_when("arrive", "העבודה", True) == "כשתגיעי לעבודה"
     assert pr.he_when("arrive", "סופר", False) == "הגעת לסופר"
     assert pr.he_when("leave", "הבית", False) == "יצאת מהבית"
+
+
+def test_heading_to_a_place_reminds_on_leaving_home_and_names_the_person():
+    # Koral 29.10: "Remember me when i am heading to Florentin to return the pc to Moshe"
+    p = pr.parse("Remember me when i am heading to Florentin to return the pc to Moshe")
+    assert p == {"trigger": "leave", "place": "home", "what": "return the pc to Moshe",
+                 "dest": "Florentin", "person": "Moshe"}
+    p = pr.parse("תזכירי לי כשאני בדרך לפלורנטין להחזיר את המחשב למשה")
+    assert p["trigger"] == "leave" and p["dest"] == "פלורנטין" and p["person"] == "משה"

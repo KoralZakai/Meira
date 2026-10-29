@@ -229,6 +229,12 @@ def seal_task_row(user_id: str, row: dict, prior: Optional[dict] = None) -> dict
     return out
 
 
+_NEW_COLUMNS = {"allDay", "endDate"}   # migration 0017
+_HAS_0017: Optional[bool] = None         # learned on the first read: None = not asked yet
+_NO_0017_AT = 0.0                        # when it was found missing: asked again after _REPROBE_S
+_REPROBE_S = 600
+
+
 def _task_row(user_id: str, task: dict) -> dict:
     """The `tasks` row for one inbound task, before any merge with the stored
     copy. Split out of upsert_task so the parts that need no network — above
@@ -277,6 +283,14 @@ def _task_row(user_id: str, task: dict) -> dict:
     # invited) — the app's Notes field is `progress`.
     if task.get("notes"):
         row["progress"] = str(task["notes"])[:400]
+    # A whole day / a range (29.10, migration 0017).
+    if task.get("allDay"):
+        row["allDay"] = True
+        row["isFixed"] = False
+        end = str(task.get("endDate") or "")[:10]
+        # Only a real day after the first one (security review 29.10): ranges are compared as strings.
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", end) and end > str(row.get("date") or ""):
+            row["endDate"] = end
     return row
 
 
@@ -393,6 +407,9 @@ async def upsert_task(user_id: str, task: dict, trust_status: bool = False) -> O
                 logger.warning("upsert_task: the stored copy will not open — not overwriting it")
                 return None
             row = seal_task_row(user_id, row, existing if existing and existing.get("id") == row["id"] else None)
+            global _HAS_0017, _NO_0017_AT
+            if _HAS_0017 is False and time.time() - _NO_0017_AT <= _REPROBE_S:
+                row = {k: v for k, v in row.items() if k not in _NEW_COLUMNS}   # known missing: no doomed POST
             r = await client.post(
                 _rest("tasks"),
                 headers={**_headers(), "Prefer": "resolution=merge-duplicates"},
@@ -400,6 +417,19 @@ async def upsert_task(user_id: str, task: dict, trust_status: bool = False) -> O
                 json=[row],
             )
             ok = r.status_code in (200, 201, 204)
+            if not ok and _NEW_COLUMNS & set(row) and "PGRST204" in (r.text or ""):
+                # Migration 0017 not run yet: the row is saved without the
+                # whole-day columns, and the log says so (never a lost task).
+                logger.warning("upsert_task: tasks.allDay/endDate missing — run migration 0017; saved without them")
+                _HAS_0017, _NO_0017_AT = False, time.time()
+                row = {k: v for k, v in row.items() if k not in _NEW_COLUMNS}
+                r = await client.post(
+                    _rest("tasks"),
+                    headers={**_headers(), "Prefer": "resolution=merge-duplicates"},
+                    params={"on_conflict": "userId,id"},
+                    json=[row],
+                )
+                ok = r.status_code in (200, 201, 204)
             if not ok:
                 logger.warning("upsert_task rejected (%s): %s", r.status_code, _pg_reason(r.text))
                 return None
@@ -580,18 +610,32 @@ async def tasks_for_user(user_id: str, date_from: Optional[str] = None,
         date_filter.append(f"gte.{date_from}")
     if date_to:
         date_filter.append(f"lte.{date_to}")
+    global _HAS_0017, _NO_0017_AT
+    if _HAS_0017 is False and time.time() - _NO_0017_AT > _REPROBE_S:
+        _HAS_0017 = None          # the migration may have run since: ask again
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            r = await client.get(
-                _rest("tasks"),
-                headers=_headers(),
-                params={
-                    "select": columns,
-                    "userId": f"eq.{user_id}",
-                    "order": "date.asc,fixedTime.asc.nullslast",
-                    **({"date": date_filter} if date_filter else {}),
-                },
-            )
+            async def ask(cols: str):
+                return await client.get(
+                    _rest("tasks"),
+                    headers=_headers(),
+                    params={
+                        "select": cols,
+                        "userId": f"eq.{user_id}",
+                        "order": "date.asc,fixedTime.asc.nullslast",
+                        **({"date": date_filter} if date_filter else {}),
+                    },
+                )
+            r = await ask(columns + (",allDay,endDate" if _HAS_0017 is not False else ""))
+            if r.status_code == 400 and _HAS_0017 is not False and ("42703" in r.text or "PGRST204" in r.text) \
+                    and ("allDay" in r.text or "endDate" in r.text):
+                # Migration 0017 not run: read as before, and say so once.
+                logger.warning("tasks_for_user: tasks.allDay/endDate missing — run migration 0017")
+                _HAS_0017 = False
+                _NO_0017_AT = time.time()
+                r = await ask(columns)
+            elif r.status_code == 200:
+                _HAS_0017 = _HAS_0017 if _HAS_0017 is False else True
             if r.status_code != 200:
                 logger.warning("tasks_for_user rejected (%s): %s", r.status_code, _pg_reason(r.text))
                 return []
@@ -606,6 +650,8 @@ async def tasks_for_user(user_id: str, date_from: Optional[str] = None,
                     "date": row.get("date"),
                     "status": row.get("status"),
                     **({"location": row["location"]} if row.get("location") else {}),
+                    **({"allDay": True} if row.get("allDay") else {}),
+                    **({"endDate": row["endDate"]} if row.get("endDate") else {}),
                 }
                 for row in (open_task_row(user_id, raw) for raw in r.json())
                 if not row.get("_unreadable")

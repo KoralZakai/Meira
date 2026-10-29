@@ -8,6 +8,7 @@
  * Nearly every screen and service depends on this module — extend it
  * additively; do not change existing function signatures.
  */
+import { coversDay } from '../utils/allDay';
 import { heldByHerMove, MOVE_HELD_FIELDS } from '../utils/moveHeld';
 import AsyncStorage from './EncryptedStorage';  // AES-256-GCM at rest (7.10)
 import { AppSettings, DailyLog, Task } from '../types/models';
@@ -1028,10 +1029,10 @@ async function mergeExternalTasksUnlocked(
   return changed;
 }
 
-/** Tasks whose date equals the YYYY-MM-DD key. */
+/** Tasks on the YYYY-MM-DD day — its own, and an all-day range covering it (utils/allDay). */
 export async function getTasksForDate(date: string): Promise<Task[]> {
   const tasks = await getAllTasks();
-  return tasks.filter((task) => task.date === date && task.status !== 'moved');
+  return tasks.filter((task) => coversDay(task, date) && task.status !== 'moved');
 }
 
 /** Remove old occurrences of tasks that were repeated across multiple dates. */

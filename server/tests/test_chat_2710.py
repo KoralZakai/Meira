@@ -65,9 +65,10 @@ class FreeDays(unittest.TestCase):
         ]
         with mock.patch.object(tz, "today_il", lambda: TUESDAY):
             tasks = agent_turn.tasks_of(actions, "")
-        self.assertEqual([t["date"] for t in tasks],
-                         [f"2026-11-0{d}" for d in range(2, 9)])
-        self.assertTrue(all(t["fixed_time"] for t in tasks), "a day off is a whole day")
+        # 29.10: Mon–Sat is ONE whole-day range, and "the Sunday after" its own whole day.
+        self.assertEqual([(t["date"], t.get("endDate")) for t in tasks],
+                         [("2026-11-02", "2026-11-07"), ("2026-11-08", None)])
+        self.assertTrue(all(t.get("allDay") and not t.get("fixed_time") for t in tasks), "a day off is a whole day, no hour")
 
     def test_seven_days_off_are_said_in_one_line(self):
         saved = [{"id": str(d), "text": "חופש", "date": f"2026-11-0{d}", "fixed_time": "08:00"}

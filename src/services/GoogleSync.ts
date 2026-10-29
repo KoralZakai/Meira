@@ -147,7 +147,7 @@ export async function syncCalendarForDate(date: string, lang: AppLanguage): Prom
     let failed = false;
     for (const account of accounts.length ? accounts : [null]) {
       const label = account?.email || '';
-      const { events, error } = await GoogleService.fetchCalendarEvents(date, account?.email || undefined);
+      const { events, allDay, error } = await GoogleService.fetchCalendarEvents(date, account?.email || undefined);
       // Only a real failure is remembered. A day that genuinely has nothing on
       // it must not overwrite the 403 we learned about yesterday's day.
       if (error) {
@@ -157,7 +157,7 @@ export async function syncCalendarForDate(date: string, lang: AppLanguage): Prom
       } else {
         delete lastCalendarErrors[label];
       }
-      tasks.push(...events.filter((e) => e.title)
+      tasks.push(...[...events, ...(allDay || [])].filter((e) => e.title)
         .map((e) => calendarEventToTask(e, date, 'google', label ? { calendarName: label } : {})));
     }
     if (!failed && lastCalendarError && lastCalendarError !== 'not_connected') lastCalendarError = null;

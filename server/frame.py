@@ -25,6 +25,7 @@ her availability is CONTEXT, never an instruction to schedule.
 """
 from __future__ import annotations
 
+import difflib
 import re
 from datetime import date, timedelta
 from typing import Optional
@@ -81,7 +82,39 @@ def _week_start(d: date) -> date:
     return d - timedelta(days=(d.weekday() + 1) % 7)
 
 
+_RANGE_RE = re.compile(
+    r"(?:\bfrom\s+|(?<![\u0590-\u05FF])מ(?:-|יום\s+|יום|)\s*)(?P<a>[^,.]{2,25}?)\s+(?:\bto\b|\buntil\b|\btill\b|\bthrough\b|עד(?:\s+ל|\s+יום|\s+)?)\s*(?P<b>[^,.]{2,25}?)(?=$|[,.]|\s+(?:and|ו|i\b|אני|ואני))",
+    re.I)
+RECOVERY_RE = re.compile(r"(recovery|rest\s+day|התאוששות|להתאושש|יום מנוחה|מנוחה)", re.I)
+
+
+def _range(text: str, today: date) -> list:
+    """"from Monday to Saturday" / "מיום שני עד שבת" → every day in it (forward)."""
+    m = _RANGE_RE.search(text or "")
+    if not m:
+        return []
+    a = past_log.days_named("ב" + m.group("a") if re.match(r"^[\u0590-\u05FF]", m.group("a")) and not m.group("a").startswith(("יום", "ב")) else m.group("a"), today, past=False)
+    if not a:
+        a = past_log.days_named("יום " + m.group("a"), today, past=False)
+    b = past_log.days_named("ב" + m.group("b") if re.match(r"^[\u0590-\u05FF]", m.group("b")) and not m.group("b").startswith(("יום", "ב")) else m.group("b"), a[0] if a else today, past=False)
+    if not b:
+        b = past_log.days_named("יום " + m.group("b"), a[0] if a else today, past=False)
+    if not a or not b:
+        return []
+    first, last = a[0], b[0]
+    if last < first:
+        last += timedelta(days=7)
+    if (last - first).days > 31:
+        return []
+    return [first + timedelta(days=i) for i in range((last - first).days + 1)]
+
+
 def _days(text: str, today: date, past: bool) -> list:
+    span = [] if past else _range(text, today)
+    if span:
+        rest = _RANGE_RE.sub(" ", text)
+        extra = [d for d in past_log.days_named(rest, span[-1], past=False) if d not in span]
+        return [d.isoformat() for d in span + extra]
     days = past_log.days_named(text, today, past=past)
     if not past and re.search(r"(הבא|הבאה|\bnext\b)", text, re.I):
         # "next Monday" on a Monday is a week on, never today.
@@ -99,10 +132,35 @@ def _frame(intent, time, action="none", routine=None, entity=None, days=None,
             "constraint": constraint, "why": why}
 
 
+_VOCAB = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+          "vacation", "holiday", "tomorrow", "yesterday", "workout", "schedule", "recovery", "until")
+# Real words a day-name fix would swallow.
+_KEEP_WORDS = {"study", "steady", "ready", "today", "money", "sunny", "sandy", "sadly", "muddy", "daily",
+               "studying", "wedding", "friendly", "fridays", "thirsty", "theory", "saturn", "tidy"}
+
+
+def normalize(text: str) -> str:
+    """Typed fast: "vaction", "sutarday" (Koral, 29.10) read as the words she meant.
+    English words of 5+ letters only, against a short vocabulary — never a rewrite."""
+    def fix(m):
+        w = m.group(0)
+        if len(w) < 5 or w.lower() in _VOCAB or w.lower() in _KEEP_WORDS:
+            return w
+        low = w.lower()
+        for cand in difflib.get_close_matches(low, _VOCAB, n=3, cutoff=0.72):
+            if cand[0] != low[0] or abs(len(cand) - len(low)) > 2:
+                continue
+            if cand.endswith("day") and not (low.endswith("y") and "d" in low):
+                continue          # "money", "sunny", "mondays" stay what they are
+            return cand
+        return w
+    return re.sub(r"[A-Za-z]+", fix, str(text or ""))
+
+
 def read(text: str, today: date, after_meira: bool = True) -> dict:
     """The frame of one message. `after_meira`: there is a Meira reply before
     it (a bare "No, I meant…" with nothing before it corrects nothing)."""
-    t = str(text or "").strip()
+    t = normalize(str(text or "").strip())
     entity = past_log.kinds_in(t)
     is_q = bool(_Q.search(t))
     past_hint = bool(_PAST_HINT.search(t)) and not (_FUTURE_HINT.search(t) and not _LAST_RE.search(t))

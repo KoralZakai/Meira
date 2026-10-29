@@ -203,9 +203,10 @@ def run_case(case: dict) -> dict:
             if turn.get("blocks"):
                 c["context_retention"] = set(turn["blocks"]) <= closed
             if case.get("area") == "conflict":
+                booked = [t for t in created if not t.get("allDay")]   # the vacation itself is the closure
                 c["conflict"] = not any(str(t.get("date")) in closed or
                                         any("חופש" in str(x.get("text")) and x.get("date") == t.get("date")
-                                            for x in w.tasks) for t in created)
+                                            for x in w.tasks) for t in booked)
             if turn.get("agent") is False:
                 c["no_unneeded_agent"] = w.agent_calls == before_agent
             if "says" in turn or "not_says" in turn:

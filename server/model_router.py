@@ -65,6 +65,7 @@ DEFAULT_TIER: dict[str, str] = {
     "task_extract":    SMALL,
     "understand":      MEDIUM,   # meaning, not keywords: the conversation → actions
     "advice":          LARGE,    # "which one helps me more?" — judgment about HER, 2 options (27.10)
+    "program":         MEDIUM,   # 5 small steps as JSON; code dates them (program_plan, 29.10)
     "vehicle_understand": MEDIUM,  # her bike/car elsewhere: the slots for vehicle_chain
     "profile_extract": SMALL,
     "email_events":    SMALL,

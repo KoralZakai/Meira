@@ -787,6 +787,17 @@ async def admin_chat_feedback(request: Request, reaction: Optional[str] = None):
     return {"feedback": chat_feedback.list_all(reaction=reaction)}
 
 
+@app.get("/admin/chat-feedback/insights")
+async def admin_chat_feedback_insights(request: Request):
+    """What her 👍/👎 taught: reward per intent, which intents now get the large
+    model, and every 👎 as a draft golden case (feedback_learning)."""
+    denied = _require_admin(request)
+    if denied:
+        return denied
+    import feedback_learning
+    return feedback_learning.report()
+
+
 @app.get("/usage")
 async def get_usage(request: Request):
     """LLM token spend: today + this month, per source, estimated USD at the

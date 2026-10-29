@@ -12,6 +12,7 @@
  *    calendarEventToTask refuses as a place; its link is onlineMeeting.joinUrl.
  *  - A meeting she DECLINED is still returned. It is not in her day.
  */
+import { endFromExclusive } from './allDay';
 import { meetingUrlFromEvent } from './meetingLink';
 import { addressFromDescription, addressFromTitle } from './eventAddress';
 import type { CalendarEvent } from '../types/index';
@@ -39,8 +40,19 @@ function placeOf(loc: any): string | undefined {
 }
 
 export function graphEventToCalendarEvent(it: any): { event: CalendarEvent; date: string } | null {
-  if (!it || !it.subject || it.isAllDay || it.isCancelled) return null;
+  if (!it || !it.subject || it.isCancelled) return null;
   if (String(it.responseStatus?.response || '').toLowerCase() === 'declined') return null;
+  if (it.isAllDay) {
+    // Outlook: midnight to midnight in her zone, end EXCLUSIVE (29.10).
+    const startDate = String(it.start?.dateTime || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) return null;
+    const endDate = endFromExclusive(startDate, String(it.end?.dateTime || '').slice(0, 10));
+    return {
+      date: startDate,
+      event: { id: String(it.id), title: String(it.subject), startTime: '', endTime: '', allDay: true, startDate, endDate,
+        location: placeOf(it.location) || undefined, description: String(it.bodyPreview || '') || undefined },
+    };
+  }
   const start = parseGraphTime(it.start);
   const end = parseGraphTime(it.end);
   if (!start) return null;

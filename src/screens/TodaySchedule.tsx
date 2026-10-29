@@ -3,6 +3,7 @@
  * Also: 🔊 spoken day briefing (button + first-open-of-day offer banner).
  * Dependencies: TaskStorage, MorningBriefingService, SpeechService.
  */
+import { allDayLabel, coversDay, isAllDay } from '../utils/allDay';
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View, ScrollView, StyleSheet, Text, TouchableOpacity, ActivityIndicator, Alert, Linking,
@@ -992,7 +993,7 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
   const load = async (showSpinner = true) => {
     const loadT0 = Date.now();
     const today = getTodayString();
-    const onToday = (all: Task[]) => all.filter((t) => t.date === today && t.status !== 'moved');
+    const onToday = (all: Task[]) => all.filter((t) => coversDay(t, today) && t.status !== 'moved');
     try {
       // A refresh after an action must not blank the screen — only the first
       // load has nothing to show yet.
@@ -1342,7 +1343,7 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
    */
   const redrawDay = async (date: string): Promise<Task[]> => {
     const rows = sortTasksByPriorityAndTime(
-      (await getLocalTasks()).filter((x) => x.date === date && x.status !== 'moved'),
+      (await getLocalTasks()).filter((x) => coversDay(x, date) && x.status !== 'moved'),
     );
     if (date === getTodayString()) setTasks(rows);
     if (!shownRef.current.showingToday && shownRef.current.dateKey === date) {
@@ -1861,8 +1862,12 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
   // …and a task she postponed ('missed': "not going, new time later") leaves the day at once —
   // it waits on the 🔔 as "⏳ waiting for a new date" (28.10: "I pressed later many times and it
   // is STILL there — the interface must update fast").
-  const dayTasks = collapseSameMeetings((showingToday ? tasks : (dayLoading ? [] : otherDayTasks))
+  const shownRows = collapseSameMeetings((showingToday ? tasks : (dayLoading ? [] : otherDayTasks))
     .filter((t) => !followUpOriginal(t.text) && t.status !== 'missed'));
+  // A whole day (vacation, a conference, 2.11–7.11) is a strip above the day,
+  // never a card at 08:00 that the planner works around (29.10, Koral).
+  const allDayTasks = shownRows.filter(isAllDay);
+  const dayTasks = shownRows.filter((t) => !isAllDay(t));
   // She is LOOKING at a day with a trip nobody has routed: route it now. Rule 7
   // — "she went looking" is a trigger. Once per day per visit; the card says
   // "routing…" meanwhile, and the chain's own warn says why if it fails (1.10:
@@ -2921,6 +2926,17 @@ export default function TodaySchedule({ navigation }: TodayScheduleProps) {
             </TouchableOpacity>
           </View>
         )}
+        {allDayTasks.length ? (
+          <View style={styles.allDayStrip}>
+            {allDayTasks.map((t) => (
+              <TouchableOpacity key={`allday-${t.id}`} style={styles.allDayItem} onPress={() => setSelectedTask(t)}
+                accessibilityRole="button" accessibilityLabel={`${allDayLabel(t, dateKey, he)} · ${t.text}`}>
+                <Text style={[styles.allDayKicker, he && { textAlign: 'right' }]} numberOfLines={1}>{allDayLabel(t, dateKey, he)}</Text>
+                <Text style={[styles.allDayTitle, he && { textAlign: 'right' }]} numberOfLines={2}>{t.text}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        ) : null}
         {/* Task list */}
         {loading || dayLoading ? (
           <ActivityIndicator color={BRAND.sunGold} size="large" style={{ marginTop: 32 }} />
@@ -3387,6 +3403,11 @@ const styles = StyleSheet.create({
   focusHero: { flexDirection: 'row', alignItems: 'center', gap: 16, paddingHorizontal: 6, paddingBottom: 14 },
   focusClock: { fontFamily: FONTS.bodyHeavy, fontSize: 46, lineHeight: 50, fontVariant: ['tabular-nums'] },
   focusSub: { fontFamily: FONTS.bodySemi, fontSize: 14, marginTop: 4 },
+  allDayStrip: { marginHorizontal: 16, marginBottom: 10, gap: 8 },
+  allDayItem: { minHeight: 44, paddingVertical: 10, paddingHorizontal: 14, borderRadius: 16,
+    backgroundColor: '#FFF4D6', borderWidth: 1, borderColor: '#F3D98B' },
+  allDayKicker: { fontFamily: FONTS.bodyBold, fontSize: 12, color: BRAND.goldInk },
+  allDayTitle: { fontFamily: FONTS.bodyHeavy, fontSize: 15, color: BRAND.warmInk, marginTop: 2 },
   allDayLink: {
     alignSelf: 'center', minHeight: 44, justifyContent: 'center', paddingHorizontal: 18, marginTop: 4,
     borderRadius: RADIUS.pill, backgroundColor: 'rgba(255,253,247,0.85)',

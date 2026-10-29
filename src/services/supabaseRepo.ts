@@ -246,6 +246,9 @@ function taskToRow(userId: string, t: Task): Record<string, unknown> {
     lastWakeReminderAt: t.lastWakeReminderAt ?? null,
     lastDepartureDetectedAt: t.lastDepartureDetectedAt ?? null,
     lastArrivalDetectedAt: t.lastArrivalDetectedAt ?? null,
+    // 29.10 (migration 0017). upsertTolerant drops them with a warning until it is run.
+    allDay: t.allDay ?? null,
+    endDate: t.endDate ?? null,
   };
 }
 
@@ -298,6 +301,8 @@ function rowToTask(r: any): Task {
     lastWakeReminderAt: u(r.lastWakeReminderAt),
     lastDepartureDetectedAt: u(r.lastDepartureDetectedAt),
     lastArrivalDetectedAt: u(r.lastArrivalDetectedAt),
+    allDay: u(r.allDay),
+    endDate: u(r.endDate),
   };
 }
 
